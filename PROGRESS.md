@@ -77,7 +77,7 @@
 
 ## 6. Related Work in Agenthood
 
-- [x] PR #474: `feat/issue-474-run-event-feed` — execution event feed
+- [x] PR #475: `feat/issue-474-run-event-feed` — execution event feed
       (base for the atlaslink event bridge)
 
 ---
