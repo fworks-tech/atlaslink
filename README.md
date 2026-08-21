@@ -1,6 +1,6 @@
 # Atlaslink
 
-> **Status: Coming soon** — Atlaslink is an early proof-of-concept. Today only the underlying **Agenthood** runtime is runnable; the live diagram-flow UI and HTTP surface are on the roadmap.
+> **Status: M1 shipped** — The daemon core is live: long-running HTTP server, one-shot member runs, and 16 hermetic tests. M2 (Event Bridge), M3 (Task API), and M4 (Live Dashboard) are on the roadmap.
 
 Multi-agent orchestrator, Agenthood proof-of-concept, and modern UI to integrate agents through gorgeous, easy-to-use, live diagram flows.
 
@@ -28,9 +28,9 @@ Orchestrating multiple AI agents today means hand-written glue code, opaque exec
 
 ## What runs today
 
-The scaffold is in. What works right now is the **Agenthood Autonomous Runtime** that Atlaslink is built on: a 20-member agent team you can invoke directly from the CLI.
+The **M1 Daemon Core** is shipped and working: a long-running HTTP server that validates the LLM provider config up front, hosts an `ApplicationContext` per task, and subscribes to its `RunEventBus`. You can boot the daemon, hit `/health`, and run one-shot member tasks from the CLI.
 
-This is **not yet** the Atlaslink UI — that arrives with roadmap milestones **M1 (Daemon Core)** through **M4 (Live Dashboard)**.
+This is **not yet** the Atlaslink UI — that arrives with roadmap milestones **M2 (Event Bridge)** through **M4 (Live Dashboard)**.
 
 ## Getting started
 
@@ -78,22 +78,24 @@ npx agenthood run the-architect "plan the implementation for issue #42"
 
 ```bash
 npm start        # listens on http://127.0.0.1:3000 (ATLASLINK_HOST/PORT override)
+npm run dev      # same, with file watching (tsx watch)
 curl http://127.0.0.1:3000/health
 
 npm run run -- the-architect "1-line plan for the event bridge"   # one-shot member run
 npm test         # hermetic test suite (no LLM/API key required)
+npm run typecheck  # TypeScript type checking
 ```
 
 The daemon boots a long-running server that validates the LLM provider config up front, hosts an `ApplicationContext` per task, and subscribes to its `RunEventBus` — the spine the event bridge (M2) and the dashboard (M4) build on.
 
 ## Roadmap
 
-| Milestone | Scope |
-|-----------|-------|
-| **M1 — Daemon Core** | Long-running daemon, agent runtime hosting |
-| **M2 — Event Bridge** | Real-time event feed bridged to the browser |
-| **M3 — Task API** | HTTP surface for driving the orchestrator |
-| **M4 — Live Dashboard** | The live diagram-flow UI |
+| Milestone | Scope | Status |
+|-----------|-------|--------|
+| **M1 — Daemon Core** | Long-running daemon, agent runtime hosting | Shipped |
+| **M2 — Event Bridge** | Real-time event feed bridged to the browser | Planned |
+| **M3 — Task API** | HTTP surface for driving the orchestrator | Planned |
+| **M4 — Live Dashboard** | The live diagram-flow UI | Planned |
 
 Track active work and open issues on the [issues page](https://github.com/fworks-tech/atlaslink/issues).
 

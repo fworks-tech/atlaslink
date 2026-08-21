@@ -1,6 +1,6 @@
 # Atlaslink — Session Progress Checklist
 
-> Status snapshot of the atlaslink scaffolding session.
+> Status snapshot of the atlaslink project.
 > Updated: 2026-08-21
 
 ## Legend
@@ -85,13 +85,17 @@
 ## Recommended Next Steps (M1–M4 roadmap per ADR-002/ADR-003)
 
 ### M1 — Daemon Core
-1. [x] Scaffold atlaslink daemon that starts an `ApplicationContext` and
-       subscribes to `ctx.events` — `src/server.js`, `src/daemon/*`,
-       `src/tasks/taskRegistry.js`, `npm test` (16 hermetic tests on
-       `feat/issue-3-daemon-core`). E2E verified with the real provider:
+1. [x] TypeScript conversion of daemon core — all source in `src/**/*.ts`,
+       zero-build dev via `tsx`, `tsconfig.json` with `noEmit: true`.
+       `src/server.ts`, `src/config.ts`, `src/daemon/contextFactory.ts`,
+       `src/daemon/runTask.ts`, `src/tasks/taskRegistry.ts`.
+       16 hermetic tests on `feat/m1-daemon-core-typescript`.
+       E2E verified with the real provider:
        `run.started → reasoning → tool.called/result → decision.recorded →
        provenance.recorded → run.finished`. Fixed a stale-shell-key shadowing
        bug (project `.env` now overrides exported vars via `loadEnvFile`).
+       Fixed session lifecycle bug: `createContext` errors now properly fail
+       the session instead of leaving it stuck in QUEUED.
 
 ### M2 — Event Bridge
 2. [ ] Bridge events to the browser via SSE/WebSocket (`GET /events`)
