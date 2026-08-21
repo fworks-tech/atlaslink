@@ -68,11 +68,13 @@ Members can also be executed as real LLM agents via the TypeScript runtime.
 This is optional and additive — the prompt-driven workflow above continues to work unchanged.
 
 ```bash
-# Build the runtime (once, after install)
-npm run build
+# Build the runtime once (the agenthood package is a sibling file dependency
+# at ../agenthood and must be built before first run)
+#   cd ../agenthood && npm run build && cd -
 
 # Set the LLM provider key in your environment (do NOT commit it)
-# Set GROQ_API_KEY in your shell profile or CI secrets (free at console.groq.com)
+# Set OPENCODE_API_KEY for the opencode-go provider (primary)
+# or GROQ_API_KEY for the Groq fallback (free at console.groq.com)
 # or use Ollama for fully offline execution — no key required
 
 # List available members
