@@ -72,7 +72,7 @@ npx agenthood run the-scribe "write a commit message for the current diff"
 npx agenthood run the-architect "plan the implementation for issue #42"
 ```
 
-> **No key?** The `just-do` CLI and member tooling fall back to Groq (`GROQ_API_KEY`, free at console.groq.com), or to Ollama for fully offline execution — no key required.
+> **No key?** `agenthood run` falls back through its configured providers (Groq via `GROQ_API_KEY`, free at console.groq.com), or to Ollama for fully offline execution — no key required.
 
 ## Roadmap
 
