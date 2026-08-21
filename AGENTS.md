@@ -59,6 +59,7 @@ Load skills from `skills/` to activate specialized agents:
 - `the-steward` — context economy, member routing, provider cache strategy, session triage
 - `the-operator` — runtime health, deployment, incidents, rollback, monitoring
 - `the-strategist` — goal refinement, requirement discovery, ambiguity resolution
+- `the-mediator` — first-in-line intent router, classify intent → hand off to specialist
 - `the-mailman` — message delivery, content scheduling, notification dispatch, cross-posting
 - `the-inspector` — visual-reasoning benchmarking, pixel-level analysis, multi-panel correspondence
 
