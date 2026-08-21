@@ -12,7 +12,7 @@
     "multi-agent"
   ],
   "author": "Fabio Ritzel Borges",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "dependencies": {
     "agenthood": "file:../agenthood"
   }
