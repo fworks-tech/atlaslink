@@ -9,7 +9,7 @@ Be respectful and constructive. This is a small, product-oriented project and we
 ## Getting started
 
 1. **Fork** the repository (or ask for write access) and clone it.
-2. Install the prerequisites and run the scaffold setup — see the [README](README.md#getting-started).
+2. Install the prerequisites and run the setup — see the [README](README.md#getting-started).
 3. Pick an issue from the [issues page](https://github.com/fworks-tech/atlaslink/issues) or open a new one describing what you want to do.
 
 ## Branch conventions
@@ -52,7 +52,7 @@ type(scope)!: subject
 ## Pull request workflow
 
 1. Create your branch, implement, and commit using Conventional Commits.
-2. Ensure any relevant tests pass and the change is lint/type clean.
+2. Run `npm test` and `npm run typecheck` to verify your changes.
 3. Open a PR that:
    - Links to the issue it resolves — `Closes #N` or `Fixes #N` in the description.
    - Has a title following the same Conventional Commit format as commits.
@@ -72,7 +72,12 @@ Use them when you want a second pair of eyes or help with standards — but the 
 
 ## Tests
 
-There is no test suite in the scaffold yet; tests arrive with the first code milestones. When code lands:
+The project uses Node's built-in test runner with `tsx` for TypeScript support. Run the full suite before submitting a PR:
+
+```bash
+npm test          # hermetic tests (no LLM/API key required)
+npm run typecheck # TypeScript type checking
+```
 
 - Follow test-driven development where practical.
 - Keep coverage on the behavior that matters, not for its own sake.
