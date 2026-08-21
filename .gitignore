@@ -143,6 +143,7 @@ vite.config.ts.timestamp-*
 .vite/
 
 # Agenthood runtime artifacts
+.agenthood/alerts/
 .agenthood/memory/
 .agenthood/decisions/
 .agenthood/provenance/
