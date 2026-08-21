@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Multi-agent orchestrator and Agenthood proof-of-concept with a live diagram-flow UI",
   "type": "module",
-  "main": "dist/server.js",
   "scripts": {
     "start": "tsx src/server.ts",
     "dev": "tsx watch src/server.ts",

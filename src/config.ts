@@ -42,8 +42,6 @@ export function loadEnvFile(envPath: string): void {
   }
 }
 
-loadEnvFile(resolve(process.cwd(), '.env'))
-
 /**
  * Loads both the atlaslink daemon settings (env-driven) and the agenthood
  * LLM config (.agenthood/config.json). The daemon must run from the project
@@ -51,6 +49,8 @@ loadEnvFile(resolve(process.cwd(), '.env'))
  * against process.cwd().
  */
 export async function loadDaemonConfig(): Promise<DaemonConfig> {
+  loadEnvFile(resolve(process.cwd(), '.env'))
+
   const host = process.env.ATLASLINK_HOST ?? DEFAULT_HOST
   const port = Number(process.env.ATLASLINK_PORT ?? DEFAULT_PORT)
   const dataDir = resolve(process.cwd(), 'data')
