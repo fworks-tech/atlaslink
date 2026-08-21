@@ -85,8 +85,13 @@
 ## Recommended Next Steps (M1–M4 roadmap per ADR-002/ADR-003)
 
 ### M1 — Daemon Core
-1. [ ] Scaffold atlaslink daemon that starts an `ApplicationContext` and
-       subscribes to `ctx.events`
+1. [x] Scaffold atlaslink daemon that starts an `ApplicationContext` and
+       subscribes to `ctx.events` — `src/server.js`, `src/daemon/*`,
+       `src/tasks/taskRegistry.js`, `npm test` (16 hermetic tests on
+       `feat/issue-3-daemon-core`). E2E verified with the real provider:
+       `run.started → reasoning → tool.called/result → decision.recorded →
+       provenance.recorded → run.finished`. Fixed a stale-shell-key shadowing
+       bug (project `.env` now overrides exported vars via `loadEnvFile`).
 
 ### M2 — Event Bridge
 2. [ ] Bridge events to the browser via SSE/WebSocket (`GET /events`)

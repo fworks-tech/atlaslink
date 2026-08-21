@@ -28,7 +28,7 @@ Orchestrating multiple AI agents today means hand-written glue code, opaque exec
 
 ## What runs today
 
-The scaffold is in. What works right now is the **Agenthood Autonomous Runtime** that Atlaslink is built on: a 19-member agent team you can invoke directly from the CLI.
+The scaffold is in. What works right now is the **Agenthood Autonomous Runtime** that Atlaslink is built on: a 20-member agent team you can invoke directly from the CLI.
 
 This is **not yet** the Atlaslink UI — that arrives with roadmap milestones **M1 (Daemon Core)** through **M4 (Live Dashboard)**.
 
@@ -73,6 +73,18 @@ npx agenthood run the-architect "plan the implementation for issue #42"
 ```
 
 > **No key?** `agenthood run` falls back through its configured providers (Groq via `GROQ_API_KEY`, free at console.groq.com), or to Ollama for fully offline execution — no key required.
+
+### Run the Atlaslink daemon (M1)
+
+```bash
+npm start        # listens on http://127.0.0.1:3000 (ATLASLINK_HOST/PORT override)
+curl http://127.0.0.1:3000/health
+
+npm run run -- the-architect "1-line plan for the event bridge"   # one-shot member run
+npm test         # hermetic test suite (no LLM/API key required)
+```
+
+The daemon boots a long-running server that validates the LLM provider config up front, hosts an `ApplicationContext` per task, and subscribes to its `RunEventBus` — the spine the event bridge (M2) and the dashboard (M4) build on.
 
 ## Roadmap
 
