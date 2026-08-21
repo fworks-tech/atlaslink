@@ -83,7 +83,7 @@ npx agenthood run the-architect "plan the implementation for issue #42"
 | **M3 — Task API** | HTTP surface for driving the orchestrator |
 | **M4 — Live Dashboard** | The live diagram-flow UI |
 
-See the [project board](https://github.com/fworks-tech/atlaslink/projects) for current work and open issues.
+Track active work and open issues on the [issues page](https://github.com/fworks-tech/atlaslink/issues).
 
 ## Contributing
 
