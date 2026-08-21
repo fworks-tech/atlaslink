@@ -1,13 +1,17 @@
 {
   "name": "atlaslink",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Multi-agent orchestrator and Agenthood proof-of-concept with a live diagram-flow UI",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "agenthood",
+    "orchestrator",
+    "agents",
+    "multi-agent"
+  ],
+  "author": "Fabio Ritzel Borges",
   "license": "ISC",
   "dependencies": {
     "agenthood": "file:../agenthood"
