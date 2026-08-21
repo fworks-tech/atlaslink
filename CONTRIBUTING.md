@@ -10,7 +10,7 @@ Be respectful and constructive. This is a small, product-oriented project and we
 
 1. **Fork** the repository (or ask for write access) and clone it.
 2. Install the prerequisites and run the scaffold setup — see the [README](README.md#getting-started).
-3. Pick an issue from the [project board](https://github.com/fworks-tech/atlaslink/projects) or open a new one describing what you want to do.
+3. Pick an issue from the [issues page](https://github.com/fworks-tech/atlaslink/issues) or open a new one describing what you want to do.
 
 ## Branch conventions
 
@@ -79,4 +79,4 @@ There is no test suite in the scaffold yet; tests arrive with the first code mil
 
 ## Questions
 
-Open an issue or ask on the [project board](https://github.com/fworks-tech/atlaslink/projects). We're friendly.
+Open an issue or ask on the [issues page](https://github.com/fworks-tech/atlaslink/issues). We're friendly.
