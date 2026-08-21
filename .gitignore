@@ -141,3 +141,16 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Agenthood runtime artifacts
+.agenthood/memory/
+.agenthood/decisions/
+.agenthood/provenance/
+.agenthood/snapshots/
+.agenthood/metrics/
+.agenthood/traces/
+.agenthood/skills/
+.agenthood/residual.json
+.agenthood/society-graph.json
+.agenthood/preferences.json
+!.agenthood/config.json
