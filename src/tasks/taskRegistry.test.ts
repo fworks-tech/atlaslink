@@ -43,10 +43,11 @@ test('invalid status transitions are rejected', () => {
   const session = registry.create({ member: 'the-architect', prompt: 'plan' })
 
   assert.throws(() => registry.succeed(session.id, { output: 'x' }), /cannot succeed/)
+  assert.throws(() => registry.fail(session.id, { error: 'nope' }), /cannot fail session in status/)
   registry.start(session.id)
   assert.throws(() => registry.start(session.id), /cannot start session in status/)
   registry.succeed(session.id, { output: 'ok' })
-  assert.throws(() => registry.fail(session.id, { error: 'nope' }), /cannot fail a succeeded session/)
+  assert.throws(() => registry.fail(session.id, { error: 'nope' }), /cannot fail session in status/)
 })
 
 test('fail marks the session failed with the error', () => {

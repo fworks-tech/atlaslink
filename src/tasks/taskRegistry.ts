@@ -88,8 +88,8 @@ export class TaskRegistry {
   fail(id: string, { error, durationMs }: { error: string; durationMs?: number }): Session {
     const session = this.#sessions.get(id)
     if (!session) throw new Error(`unknown session "${id}"`)
-    if (session.status === SessionStatus.SUCCEEDED) {
-      throw new Error(`cannot fail a succeeded session`)
+    if (session.status !== SessionStatus.RUNNING) {
+      throw new Error(`cannot fail session in status "${session.status}"`)
     }
     session.status = SessionStatus.FAILED
     session.error = error

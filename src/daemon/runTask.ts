@@ -1,4 +1,5 @@
 import { msg } from '../tasks/taskRegistry'
+import { createContext } from './contextFactory'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
 
@@ -24,7 +25,7 @@ export async function runSession(params: {
 }): Promise<import('../tasks/taskRegistry.js').Session> {
   const app = params.createApp
     ? await params.createApp({ config: params.config, correlationId: params.session.correlationId })
-    : await (await import('./contextFactory')).createContext({ config: params.config, correlationId: params.session.correlationId })
+    : await createContext({ config: params.config, correlationId: params.session.correlationId })
 
   const unsubscribe = app.events.subscribe(params.onEvent ?? (() => {}))
   params.registry.start(params.session.id)

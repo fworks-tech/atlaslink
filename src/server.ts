@@ -94,7 +94,6 @@ async function main(): Promise<void> {
   }
 
   const server = await listen(config)
-  server.close ?? null
 
   const shutdown = (signal: string): void => {
     console.log(`\n[daemon] ${signal} received, shutting down`)
