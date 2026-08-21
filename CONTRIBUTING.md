@@ -61,7 +61,7 @@ type(scope)!: subject
 
 ## Agenthood standards
 
-Atlaslink is built on **Agenthood**, an agent-team runtime with 19 specialized members (see `AGENTS.md`). Members such as the **Scribe** (commit messages), the **Builder** (implementation), and the **Reviewer** (code review) can be invoked to help:
+Atlaslink is built on **Agenthood**, an agent-team runtime with 20 specialized members (see `AGENTS.md`). Members such as the **Scribe** (commit messages), the **Builder** (implementation), and the **Reviewer** (code review) can be invoked to help:
 
 ```bash
 npx agenthood run the-scribe "write a commit message for the current diff"
