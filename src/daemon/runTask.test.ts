@@ -129,3 +129,20 @@ test('runSession unsubscribes from the bus after the run finishes', async () => 
   assert.equal(app.listenerCount(), 0)
   assert.equal(app.subscribeCount(), 2)
 })
+
+test('runSession fails the session when createContext rejects', async () => {
+  const registry = new TaskRegistry()
+  const session = baseSession(registry)
+
+  const finished = await runSession({
+    registry,
+    session,
+    config: {},
+    createApp: async () => { throw new Error('provider key missing') },
+  })
+
+  assert.equal(finished.status, 'failed')
+  assert.equal(finished.error, 'provider key missing')
+  assert.ok(finished.startedAt)
+  assert.ok(finished.finishedAt)
+})
