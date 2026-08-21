@@ -1,0 +1,60 @@
+{
+  "_comment": "Copy this file to .agenthood/config.json and remove all _comment fields.",
+
+  "version": "1",
+
+  "_comment_runtime": "Your AI coding assistant. One of: claude-code | copilot | gemini-cli | agenthood/agents | other",
+  "runtime": "other",
+
+  "_comment_members": "Which Society members to activate. Skills are installed into the runtime's skills directory.",
+  "members": [
+    "the-scribe",
+    "the-architect",
+    "the-builder",
+    "the-reviewer",
+    "the-tester",
+    "the-debugger",
+    "the-auditor",
+    "the-herald",
+    "the-librarian",
+    "the-doorman",
+    "the-oracle",
+    "the-envoy",
+    "the-sentinel",
+    "the-warden",
+    "the-steward",
+    "the-strategist",
+    "the-operator",
+    "the-mailman",
+    "the-inspector"
+  ],
+
+  "_comment_hooks": "Path where git hooks are installed. .githooks is a bare git hook directory managed via core.hooksPath.",
+  "hooks": {
+    "hooksPath": ".githooks"
+  },
+
+  "_comment_conventions": "Paths to the commit template and commitlint config files in your project root.",
+  "conventions": {
+    "commitTemplate": "docs/conventions/.gitmessage",
+    "commitlintConfig": "docs/conventions/commitlint.config.ts"
+  },
+
+  "_comment_provider": "Optional: preferred LLM provider and model. Members use this when they can select their own model.",
+  "provider": {
+    "name": "opencode-go",
+    "model": "deepseek-v4-flash"
+  },
+
+  "_comment_providers": "Optional: Ordered list of LLM providers for failover. First = primary, subsequent = fallbacks. Each provider can specify fallback models for model downgrade on failure.",
+  "providers": [
+    {
+      "name": "opencode-go",
+      "model": "deepseek-v4-flash"
+    },
+    {
+      "name": "groq",
+      "model": "mixtral-8x7b-32768"
+    }
+  ]
+}
