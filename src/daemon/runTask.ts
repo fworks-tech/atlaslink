@@ -23,13 +23,14 @@ export async function runSession(params: {
   onEvent?: (event: RunEvent) => void
   createApp?: (params: { config: LLMConfig; correlationId: string }) => Promise<AppLike>
 }): Promise<import('../tasks/taskRegistry.js').Session> {
-  const app = params.createApp
-    ? await params.createApp({ config: params.config, correlationId: params.session.correlationId })
-    : await createContext({ config: params.config, correlationId: params.session.correlationId })
-
-  const unsubscribe = app.events.subscribe(params.onEvent ?? (() => {}))
   params.registry.start(params.session.id)
+  let unsubscribe = (): void => {}
   try {
+    const app = params.createApp
+      ? await params.createApp({ config: params.config, correlationId: params.session.correlationId })
+      : await createContext({ config: params.config, correlationId: params.session.correlationId })
+
+    unsubscribe = app.events.subscribe(params.onEvent ?? (() => {}))
     const { output, durationMs } = await app.runner.runMemberTask(params.session.task.member, params.session.task.prompt, params.config)
     params.registry.succeed(params.session.id, { output, durationMs })
   } catch (err) {
