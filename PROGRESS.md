@@ -21,14 +21,15 @@
 - [x] `.agenthood/config.json` scaffolded
 - [x] `.gitignore` present
 
-## 2. Member Activation (19/19)
+## 2. Member Activation (20/20)
 
-- [x] All 19 members activated:
+- [x] All 20 members activated:
       the-scribe, the-architect, the-builder, the-reviewer, the-tester,
       the-debugger, the-auditor, the-herald, the-librarian, the-doorman,
       the-oracle, the-envoy, the-sentinel, the-warden, the-strategist,
-      the-steward, the-operator, the-mailman, the-inspector
-- [x] `npx agenthood check` → 19/19 skills installed, 11 passing · 0 failing
+      the-steward, the-operator, the-mediator, the-mailman, the-inspector
+- [x] `the-mediator` (first-in-line intent router) added via agenthood PR #482
+- [x] `npx agenthood check` → 20/20 skills installed, 11 passing · 0 failing
 
 ## 3. LLM Provider (Core Fix)
 
@@ -60,21 +61,40 @@
       — options under consideration: PostgreSQL+Prisma, LanceDB, JSON+retention
 - [ ] MCP support (DEFERRED — agenthood already has MCP via Portals)
 - [ ] Live web app architecture (SSE/WebSocket bridge from event feed to browser)
-- [ ] Task delegation API (`POST /tasks`)
-- [ ] Agenthood member run live-update dashboard
+      — now governed by ADR-002 (M2/M4)
+- [ ] Task delegation API (`POST /tasks`) — M3 Task API
+- [ ] Agenthood member run live-update dashboard — defined in ADR-002, Atlas as
+      root node per ADR-003 (M4)
+
+### Merged documentation (on `main`)
+- [x] ADR-002 — `docs/adr/ADR-002-live-diagram-of-society-provenance.md`
+      (M4 foundation: live diagram of society provenance)
+- [x] ADR-003 — `docs/adr/ADR-003-atlas-holds-the-sky-of-sessions.md`
+      (Atlas as the root node of the M4 Live Dashboard)
+- [x] `docs/sequence-diagrams-evidence.md` —
+      delegation-chain evidence the M4 dashboard must render from
+      `RunEventBus` events and `.agenthood/provenance/*.json`
 
 ## 6. Related Work in Agenthood
 
-- [x] PR #475: `feat/issue-474-run-event-feed` — execution event feed
+- [x] PR #474: `feat/issue-474-run-event-feed` — execution event feed
       (base for the atlaslink event bridge)
 
 ---
 
-## Recommended Next Steps
+## Recommended Next Steps (M1–M4 roadmap per ADR-002/ADR-003)
 
+### M1 — Daemon Core
 1. [ ] Scaffold atlaslink daemon that starts an `ApplicationContext` and
        subscribes to `ctx.events`
+
+### M2 — Event Bridge
 2. [ ] Bridge events to the browser via SSE/WebSocket (`GET /events`)
-3. [ ] Add `POST /tasks` endpoint to delegate runs
-4. [ ] Resolve ADR-001 persistence decision
-5. [ ] Add a live dashboard UI
+3. [ ] Resolve ADR-001 persistence decision (governs event replay for M2)
+
+### M3 — Task API
+4. [ ] Add `POST /tasks` endpoint to delegate runs
+
+### M4 — Live Dashboard
+5. [ ] Add a live dashboard UI rendering society provenance
+       (ADR-002) with Atlas as the root node (ADR-003)
