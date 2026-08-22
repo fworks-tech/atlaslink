@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { loadDaemonConfig } from './config'
 import { buildInsightsReport } from './bridge/insights'
 import type { TraceEnvelope } from 'agenthood/dist/core/types.js'
 
@@ -37,7 +36,7 @@ function print(report: ReturnType<typeof buildInsightsReport>): void {
 
   if (report.costTrend && report.costTrend.changePct !== Infinity) {
     const signed = report.costTrend.changePct >= 0 ? '+' : ''
-    console.log(`\n  Cost trend: first-half $${report.costTrend.first.toFixed(4)} → second-half $${report.costTrend.second.toFixed(4)} (${signed}${report.costTrend.changePct}%)`)
+    console.log(`\n  Cost trend: first-half $${report.costTrend.first.toFixed(4)} → second-half $${report.costTrend.second.toFixed(4)} (${signed}${Math.round(report.costTrend.changePct * 100)}%)`)
   }
 
   console.log('\n  Output/input ratio (efficiency, higher = more output per token):')
@@ -48,8 +47,7 @@ function print(report: ReturnType<typeof buildInsightsReport>): void {
 }
 
 async function main(): Promise<void> {
-  const data = await loadDaemonConfig()
-  const tracesPath = resolve(data.dataDir, '..', '.agenthood', 'traces', 'traces.ndjson')
+  const tracesPath = resolve(process.cwd(), '.agenthood', 'traces', 'traces.ndjson')
   if (!existsSync(tracesPath)) {
     console.error(`No trace data at ${tracesPath}. Run \`npm run run\`/daemon sessions first.`)
     process.exitCode = 1
@@ -57,8 +55,15 @@ async function main(): Promise<void> {
   }
   const envelopes: TraceEnvelope[] = readFileSync(tracesPath, 'utf8')
     .split(/\r?\n/)
-    .filter((line) => line.trim() !== '')
-    .map((line) => JSON.parse(line) as TraceEnvelope)
+    .map((line) => {
+      if (line.trim() === '') return null
+      try {
+        return JSON.parse(line) as TraceEnvelope
+      } catch {
+        return null
+      }
+    })
+    .filter((e): e is TraceEnvelope => e !== null)
 
   print(buildInsightsReport(envelopes))
 }
