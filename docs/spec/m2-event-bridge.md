@@ -1,7 +1,7 @@
 # M2 Event Bridge — Plan (agenthood-ratified)
 
 **Date:** 2026-08-22
-**Status:** Proposed — input to ADR-001 (Accepted) and the M2 implementation branches
+**Status:** Proposed — implemented by ADR-001 (Accepted) and the M2 implementation branches
 **Issue:** #4 (M2 Event Bridge)
 
 Ratified by an Agenthood Society planning session (the-strategist, the-architect,
@@ -163,6 +163,7 @@ Still open (tuning, no scope impact):
 
 ## References
 
+- ADR-001 — event log retention via NDJSON (Atlaslink, Accepted).
 - ADR-002 — live diagram of society provenance (Atlaslink).
 - ADR-003 — Atlas holds the sky of sessions (Atlaslink).
 - Agenthood ADR-021 — read-only PROJECTION CONTRACT.
