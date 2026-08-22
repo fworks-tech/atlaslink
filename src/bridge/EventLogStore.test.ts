@@ -221,3 +221,37 @@ test('cursor falls back to a tail scan when events.seq is absent', async () => {
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('a single rotation writes a valid sidecar that drives restore across rotations', async () => {
+  const dir = tmpDataDir()
+  try {
+    const first = await EventLogStore.open(dir, { maxBytes: lineByte * 2 })
+    for (let i = 0; i < 6; i++) first.append(smallEnv(i))
+    assert.ok(existsSync(join(dir, 'events.seq')))
+
+    // the sidecar is a single valid integer (never multi-line garbage)
+    const seq = readFileSync(join(dir, 'events.seq'), 'utf8').trim()
+    assert.ok(/^\d+$/.test(seq), `sidecar should be one integer, got ${JSON.stringify(seq)}`)
+
+    // reopen reconciles sidecar + tail scan to the true monotonic cursor
+    const second = await EventLogStore.open(dir)
+    assert.equal(second.nextEventId, 6)
+    assert.deepEqual(second.replay(-1).map((s) => s.eventId), [0, 1, 2, 3, 4, 5])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('append rejects duplicate and descending eventIds, keeping replay ascending', async () => {
+  const dir = tmpDataDir()
+  try {
+    const store = await EventLogStore.open(dir)
+    store.append(env(2))
+    store.append(env(2)) // duplicate — ignored
+    store.append(env(1)) // descending — ignored
+    assert.equal(store.nextEventId, 3)
+    assert.deepEqual(store.replay(-1).map((s) => s.eventId), [2])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

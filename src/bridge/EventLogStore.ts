@@ -1,4 +1,4 @@
-import { appendFileSync, renameSync, readFileSync, mkdirSync, existsSync } from 'node:fs'
+import { appendFileSync, writeFileSync, renameSync, readFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 export const ROTATION_FILES = 3
@@ -69,8 +69,8 @@ export class EventLogStore {
   }
 
   append(envelope: BridgeEnvelope): void {
-    if (!Number.isInteger(envelope.eventId) || envelope.eventId < 0) return
-    this.#nextEventId = Math.max(this.#nextEventId, envelope.eventId + 1)
+    if (!Number.isInteger(envelope.eventId) || envelope.eventId < this.#nextEventId) return
+    this.#nextEventId = envelope.eventId + 1
     const line = JSON.stringify(envelope) + '\n'
     this.#rotateIfNeeded(Buffer.byteLength(line, 'utf8'))
     try {
@@ -132,7 +132,6 @@ export class EventLogStore {
     }
     const scanMax = this.#scanMaxEventId()
     this.#nextEventId = Math.max(seqValue, scanMax + 1)
-    if (this.#nextEventId < 0) this.#nextEventId = 0
     if (existsSync(this.#path(0))) {
       try {
         this.#tailBytes = Buffer.byteLength(readFileSync(this.#path(0), 'utf8'), 'utf8')
@@ -153,7 +152,7 @@ export class EventLogStore {
 
   #writeSeq(): void {
     try {
-      appendFileSync(this.#pathSeq(), String(this.#nextEventId) + '\n', 'utf8')
+      writeFileSync(this.#pathSeq(), String(this.#nextEventId) + '\n', 'utf8')
     } catch {
       // a failed sidecar write is non-fatal; a subsequent rotation retries it
     }
@@ -170,9 +169,9 @@ export class EventLogStore {
 
   #parseLine(line: string): StoredEnvelope | undefined {
     try {
-      const id = this.#parseId(line)
-      if (id === undefined) return undefined
-      return { eventId: id, envelope: JSON.parse(line) as BridgeEnvelope }
+      const envelope = JSON.parse(line) as BridgeEnvelope
+      if (!Number.isInteger(envelope.eventId) || envelope.eventId < 0) return undefined
+      return { eventId: envelope.eventId, envelope }
     } catch {
       return undefined
     }
