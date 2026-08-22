@@ -119,13 +119,32 @@ runner, no LLM, no provider key).
 
 ## 6. Open questions / risks
 
-1. `POST /runs` in M2 (real scope judgment call) — ship as labeled "M3 preview"
-   (`{member, prompt}` → `202 {session}`) or demo via tests only?
+Resolved (2026-08-22, explore agent, evidence in repo):
+
+1. **`POST /runs` in M2 — RESOLVED: SHIP it** (as labeled "M3 preview",
+   `{member, prompt}` → `202 {session}`), routed THROUGH the branch-4
+   `sessionQueue` — never a direct `runSession` call. Justification: the driver
+   path is proven by `runOnce`/`runSession` (`server.ts:34-52`,
+   `runTask.ts:19-25`); `listen()` already owns a registry and receives the full
+   config (`server.ts:55,96`); serial discipline (success criterion 5) requires
+   queue routing and the queue branch precedes the SSE branch; it is the only
+   live/E2E trigger; M3 scope is protected by the "M3 preview" label and the
+   absence of a data model.
+4. **`session.*` extension events — RESOLVED: SHIP them** (emitted by the
+   branch-4 `sessionQueue`, NOT from the registry — `taskRegistry.ts` and
+   `runTask.ts` remain untouched). Justification: the bus cannot represent
+   `queued` or fail-before-any-event (proven by `runTask.test.ts:133-148`);
+   `start` precedes subscribe so `session.started` can't be faithfully derived
+   from `run.started` (`runTask.ts:26,33`); framing already ratified
+   (`§4`); namespaced Addition — no ADR-002 violation (read-only contract binds
+   runtime telemetry, not Atlaslink-side session events); M4's queued-session
+   view depends on it (ADR-003 names Atlas as session holder).
+
+Still open (tuning, no scope impact):
+
 2. Retention defaults — 10 MB × 3 rotated files vs per-day files (counter never
    resets either way).
 3. First connect: live-tail (recommended) vs replay-from-0.
-4. `session.*` extension events — ship now (recommended) vs keep queue invisible
-   until M3.
 5. `correlationId` — pass through as received (recommended).
 6. Boot-time tail scan (O(n), recommended) vs `data/events.seq` sidecar for seq resume.
 7. Slow-client threshold (1 MB) / heartbeat (15 s) — tuning knobs.
@@ -135,12 +154,12 @@ runner, no LLM, no provider key).
 
 ## 7. Next actions
 
-1. Green-light open questions #1 (`POST /runs`) and #4 (`session.*`) — they define
-   branch-5 scope.
-2. Land branch 1 docs: ADR-001 (Accepted, resolves #5), M2 spec, task breakdown —
+1. Land branch 1 docs: ADR-001 (Accepted, resolves #5), M2 spec, task breakdown —
    record SSE, NDJSON, verbatim passthrough before any code.
-3. Start branch 2: `EventLogStore.open(dataDir)` + `append` with the fake-app/M1
+2. Start branch 2: `EventLogStore.open(dataDir)` + `append` with the fake-app/M1
    test pattern; expect 17 existing + 7 new green; no config changes.
+3. Branch 4 `sessionQueue` emits `session.queued/started/succeeded/failed`;
+   branch 5 handles `POST /runs` + `GET /events` + `src/server.test.ts`.
 
 ## References
 
