@@ -91,7 +91,7 @@ export function buildInsightsReport(envelopes: TraceEnvelope[]): InsightsReport 
     const output = e.tokenCount?.output ?? 0
     inputByMember[member] ??= []
     inputByMember[member]!.push(input)
-    if (output > 0) {
+    if (output > 0 && input > 0) {
       ratioByMember[member] ??= []
       ratioByMember[member]!.push(output / input)
     }
@@ -114,7 +114,7 @@ export function buildInsightsReport(envelopes: TraceEnvelope[]): InsightsReport 
   const topContext = Object.entries(inputByMember)
     .map(([member, arr]) => ({
       member,
-      maxInputTokens: Math.max(...arr!),
+      maxInputTokens: arr!.reduce((a, b) => (b > a ? b : a), 0),
       avgInputTokens: Math.round(arr!.reduce((a, b) => a + b, 0) / arr!.length),
     }))
     .sort((a, b) => b.maxInputTokens - a.maxInputTokens)
