@@ -1,0 +1,204 @@
+# M3 Task API — Plan (agenthood-ratified, draft)
+
+**Date:** 2026-08-23
+**Status:** Proposed — draft for review
+**Issue:** #M3 (Task API)
+
+Prepared from the M2 contract and the Agenthood Society planning sessions. The
+Session model reflects ADR-003 (Atlas holds the sky of sessions) and ADR-004 (the
+Session is an event-sourced aggregate materialized in DuckDB).
+
+---
+
+## 1. Problem statement (the-strategist)
+
+M1 hosts the daemon and one-shot runs; M2 bridges the resulting events to the browser
+over SSE with durable NDJSON retention. Missing is a **programmatic surface to drive,
+hold, and reopen orchestrations**. Without it, Atlaslink can only stream what someone
+else triggered; it cannot *be* the bearer of sessions.
+
+M3 closes that gap with a durable Task API: `POST/GET /tasks`, `GET /tasks/{id}`,
+`cancel`, and a per-session event stream. It turns "Atlas holds the sky of sessions"
+(ADR-003) from a documented identity into shipped structure.
+
+### Success criteria (testable)
+
+1. **Durable sessions** — a Session survives a daemon restart and is rebuilt to its
+   current aggregate state from the event log (ADR-004).
+2. **Sessions as live documents** — `GET /tasks/{id}` returns the *current* aggregate
+   (identity, interaction turns, tweaks, lifecycle, reserved diagram), not a terminal row.
+3. **The job triangle** — `POST /tasks` → `201 {sessionId, correlationId, status}`;
+   `GET /tasks/{id}` for status; `POST /tasks/{id}/cancel` (queued-only guaranteed, 202).
+4. **Per-session events** — `GET /events/{sessionId}` replays then live-tails that
+   session's events (filtered by `correlationId`), distinct from the global `/events`.
+5. **Tweaks envelope** — `POST /tasks` carries `{provider?, member?, team?}` overrides;
+   the full envelope is stored and round-trippable on the aggregate. `provider` executes;
+   `member`/`team` validate-and-passthrough until agenthood exposes node seams.
+6. **Read-only contract upheld** — `runTask.ts`/`taskRegistry.ts` untouched; execution
+   never driven inline; all runs route through the `SessionQueue` (ADR-002).
+7. **Hermetic suite** — embedded DuckDB backend is local/offline; no LLM, no provider
+   key, no network (MotherDuck backend never runs in CI).
+8. **Optimistic versioning** — concurrent aggregate mutations cannot silently clobber
+   each other.
+
+### Ranked priorities
+
+durability + correctness (aggregate rebuild, versioning) > read-only contract >
+job-triangle semantics > per-session scoping > tweaks honesty > ops hygiene.
+
+## 2. The Session model (the-architect)
+
+A Session is a **live, authoritative work-document**, event-sourced per ADR-004:
+
+| Field | Kind | Notes |
+|-------|------|-------|
+| `sessionId` | identity | `ses-…`, durable, never renames |
+| `correlationId` | identity | joins events, traces, decisions, provenance |
+| `tenantId`/`projectId` | seam | `"default"` in M3; multi-tenancy = filter later, not migration |
+| `interaction[]` | live | ordered Atlas↔user chat turns (prompts, replies) |
+| `diagram` | reserved | node/edge/gate snapshot — **schema reserved (null) until M4** |
+| `tweaks` | live | full per-run override envelope, round-trippable |
+| `nextStep`/pending | live | what the orchestrator reads to continue |
+| `lifecycle` | state | queued / running / succeeded / failed + timestamps |
+| `version` | concurrency | optimistic revision; increments on each aggregate mutation |
+
+**Not a log, not a terminal row.** The immutable event stream (NDJSON, ADR-001) is
+the source of truth; the Session is the aggregate **rehydrated** from it and materialized
+in embedded DuckDB for hot queryability (ADR-004).
+
+## 3. API surface
+
+### `POST /tasks` — create + enqueue a session
+
+```
+POST /tasks
+Content-Type: application/json
+
+{ "member": "the-architect", "prompt": "plan x", "tweaks": { "provider": "groq" } }
+
+→ 201
+{ "ok": true, "session": { "id": "ses-…", "correlationId": "cor-…", "status": "queued", "tweaks": {…} } }
+```
+
+- Validation errors → `400` (`member` and `prompt` required strings; `tweaks` validated shape).
+- The session is written to the store (event append = commit), **then** `queue.declareSession(session)`
+  (never a direct `runSession`).
+- `tweaks.provider` overrides the run's provider; `tweaks.member`/`tweaks.team` are
+  validated and passed through on the aggregate (execution ceiling in §5).
+
+### `GET /tasks/{id}` — current aggregate
+
+```
+GET /tasks/ses-… → 200 { "session": { id, correlationId, status, task, tweaks, createdAt,
+                        startedAt?, finishedAt?, output?, error?, durationMs?, version } }
+
+GET /tasks/ses-unknown → 404 { "ok": false, "error": "unknown session" }
+```
+
+Returns the **current** materialized aggregate (may be in-flight), not a completed row.
+
+### `POST /tasks/{id}/cancel` — cancel a queued session
+
+```
+POST /tasks/ses-…/cancel → 202 { "ok": true, "status": "cancelled" }
+```
+
+- Guaranteed only **from queued**. A `running` session is left to the runtime
+  (read-only contract, ADR-002); best-effort running-cancel is noted for M4 (requires
+  agenthood-side change).
+- Cancelling from a terminal state → `409` conflict.
+
+### `GET /tasks` — list sessions
+
+```
+GET /tasks?status=failed&since=… → 200 { "sessions": [ … ], "total": n }
+```
+
+- SQL filter/join via the DuckDB materialization (no hand-rolled scan).
+
+### `GET /events/{sessionId}` — per-session SSE
+
+```
+GET /events/ses-…   Accept: text/event-stream
+```
+
+- Replays retained events for that `correlationId` (after optional `Last-Event-ID`),
+  then live-tails new ones. Distinct resource from the global `GET /events`.
+- Implemented as a filtered view over the existing `EventBroadcaster`/`SseHandler`
+  surface — no new wire protocol.
+
+## 4. Storage architecture (ADR-004)
+
+```
+RunEventBus ─► EventLogStore (NDJSON — immutable source of truth, ADR-001/002)
+                    │  append (the commit / the delta)
+                    ▼
+              SessionStore (DuckDB file:) ──► Session aggregate (rehydrated)
+                    │                            identity · interaction[] · tweaks
+                    │                            · diagram (reserved) · lifecycle · version
+                    ▼
+              REST surface (POST/GET/CANCEL + per-session SSE)
+```
+
+- **NDJSON** = cold, immutable, causal log (durability + provenance). **DuckDB** = hot,
+  queryable materialization of current aggregates. They compose, they don't duplicate.
+- Written behind a `SessionBackend` port: **`DuckDbBackend` (embedded, file)** is the
+  only implementation in M3 (local, offline, hermetic). **MotherDuck backend** is
+  designed-as-a-port, built later.
+- Mutations are **read-modify-write** with optimistic `version` bumping; the event
+  append is the commit, so DuckDB and the log cannot drift.
+
+## 5. Tweaks — full Langflow envelope, honest execution ceiling
+
+```json
+"tweaks": {
+  "provider": "groq",
+  "member": { "customModel": "qwen" },
+  "team":   { "maxStages": 3 }
+}
+```
+
+| Key | M3 behavior |
+|-----|-------------|
+| `provider` | **Executes** — overrides the run provider via the config seam. |
+| `member` / `team` | **Validated + passed through** on the aggregate. Execution requires agenthood to expose per-member/per-orchestration seams — the graph model (M4) and agenthood-side changes land later. M3 ships the envelope honestly. |
+
+The full envelope is **stored and round-trippable** — never discarded, never mutated
+into a saved template, never touches `runTask.ts`.
+
+## 6. Open questions / risks
+
+Resolved:
+- Session as event-sourced aggregate — ADR-004 (ADR-004 accepted alongside this plan).
+- Per-session SSE in M3 — INCLUDED (`GET /events/{sessionId}`).
+- Tweaks — FULL envelope in M3 shape; provider executes, member/team passthrough (§5).
+- Cancellation — queued-only (202) in M3.
+
+Still open (tuning / dependency, no architectural impact):
+1. **DuckDB dependency token** — `duckdb` npm package is new. ADR-004 scopes the
+   zero-new-deps lift to the session store *for this milestone*; confirm acceptable.
+2. **MotherDuck backend** — designed-now, built-later (§4); confirm the port interface
+   is enough for M3.
+3. **Aggregate rebuild cadence** — rebuild-on-open-and-on-read vs a continuously
+   maintained materialization; M3 starts with rebuild-on-read (simplest, correct).
+4. **`GET /events/{sessionId}` filter** — by `correlationId` (present on run + session
+   events) is sufficient; confirm no separate session-scoped event type is required.
+5. **Cancel of running** — deferred to M4 with agenthood-side change (§3), per ADR-002
+   read-only contract.
+
+## 7. Next actions
+
+1. Land this spec (ADR-004 + `docs/spec/m3-task-api.md` + `docs/tasks/m3-task-api.md`).
+2. Start branch `feat/3-session-store`: `SessionBackend` port + `DuckDbBackend` +
+   aggregate rehydration + optimistic versioning.
+3. Then `feat/3-task-rest`: REST handlers + per-session SSE + `tweaks` envelope + wiring.
+4. Update README/PROGRESS.
+
+## References
+
+- ADR-001 — event log retention via NDJSON (Atlaslink).
+- ADR-002 — read-only PROJECTION CONTRACT / live diagram of society provenance.
+- ADR-003 — Atlas holds the sky of sessions (Atlaslink).
+- ADR-004 — the Session is an event-sourced aggregate, materialized in DuckDB (new).
+- [`docs/tasks/m3-task-api.md`](../tasks/m3-task-api.md) — M3 task breakdown.
+- Agenthood ADR-021 — read-only PROJECTION CONTRACT.
