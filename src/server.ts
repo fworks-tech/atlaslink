@@ -1,10 +1,15 @@
 import { createServer, type Server } from 'node:http'
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { loadDaemonConfig } from './config'
 import type { DaemonConfig } from './config'
 import { validateConfig, MissingApiKeyError } from './daemon/contextFactory'
 import { TaskRegistry } from './tasks/taskRegistry'
 import { runSession } from './daemon/runTask'
+import { EventLogStore } from './bridge/EventLogStore'
+import { EventBroadcaster } from './bridge/EventBroadcaster'
+import { SessionQueue } from './bridge/SessionQueue'
+import { SseHandler } from './bridge/sseEndpoint'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
 
@@ -51,26 +56,100 @@ async function runOnce({ config, member, task }: { config: LLMConfig; member: st
   return false
 }
 
-async function listen({ host, port }: { host: string; port: number }): Promise<Server> {
-  const registry = new TaskRegistry()
+/**
+ * Build the daemon HTTP server with its routes wired against the given event
+ * log. Does not listen; `listen()` manages the port. The returned broadcaster,
+ * queue, and sse handler let run code (POST /runs) and the entrypoint (shutdown)
+ * drive the live stream, and let tests inject fakes.
+ */
+export function createAppServer(params: {
+  log: EventLogStore
+  registry: TaskRegistry
+  queue: SessionQueue
+  sse: SseHandler
+  version?: string
+}): { server: Server; broadcaster: EventBroadcaster; sse: SseHandler; queue: SessionQueue } {
+  const { log, registry, queue, sse } = params
+  const appVersion = params.version ?? version
 
   const server = createServer((req, res) => {
-    if (req.method === 'GET' && (req.url === '/health' || req.url === '/health/')) {
-      res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ ok: true, name: 'atlaslink', version, uptime: process.uptime() }))
+    // --- SSE endpoint: GET /events ---
+    if (req.method === 'GET' && req.url === '/events') {
+      sse.handle(req, res)
       return
     }
+
+    // --- Safety health ---
+    if (req.method === 'GET' && (req.url === '/health' || req.url === '/health/')) {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ ok: true, name: 'atlaslink', version: appVersion, uptime: process.uptime() }))
+      return
+    }
+
+    // --- POST /runs (M3 preview, spec §6): delegate a session to the queue ---
+    if (req.method === 'POST' && req.url === '/runs') {
+      let body = ''
+      req.on('data', (chunk) => (body += chunk))
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body) as { member?: unknown; prompt?: unknown }
+          if (typeof parsed.member !== 'string' || typeof parsed.prompt !== 'string') {
+            res.writeHead(400, { 'content-type': 'application/json' })
+            res.end(JSON.stringify({ ok: false, error: 'member and prompt are required strings' }))
+            return
+          }
+          const session = registry.create({ member: parsed.member, prompt: parsed.prompt })
+          queue.declareSession(session)
+          res.writeHead(202, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ ok: true, session: { id: session.id, status: session.status } }))
+        } catch (err) {
+          res.writeHead(400, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }))
+        }
+      })
+      return
+    }
+
     res.writeHead(404, { 'content-type': 'application/json' })
     res.end(JSON.stringify({ ok: false, error: 'not found' }))
   })
 
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(port, host, resolve)
+  return { server, broadcaster: sse.broadcaster, sse, queue }
+}
+
+async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseHandler; registry: TaskRegistry; queue: SessionQueue }> {
+  const registry = new TaskRegistry()
+
+  const log = await EventLogStore.open(config.dataDir, { maxBytes: 10 * 1024 * 1024 })
+  const broadcaster = new EventBroadcaster(log)
+  const sse = new SseHandler(log, broadcaster)
+
+  const queue = new SessionQueue({
+    broadcaster,
+    registry,
+    runner: async (sessionId) => {
+      const session = registry.get(sessionId)!
+      try {
+        await runSession({
+          registry,
+          session,
+          config: config.agenthood,
+          onEvent: (event: RunEvent) => broadcaster.emit({ eventId: 0, ...event }),
+        })
+      } catch {
+        /* runSession already fails the session */
+      }
+    },
   })
 
-  console.log(`[daemon] atlaslink online at http://${host}:${port} (v${version})`)
-  return server
+  const { server } = createAppServer({ log, registry, queue, sse })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(config.port, config.host, resolve)
+  })
+
+  console.log(`[daemon] atlaslink online at http://${config.host}:${config.port} (v${version})`)
+  return { server, sse, registry, queue }
 }
 
 async function main(): Promise<void> {
@@ -93,10 +172,11 @@ async function main(): Promise<void> {
     process.exit(ok ? 0 : 1)
   }
 
-  const server = await listen(config)
+  const { server, sse } = await listen(config)
 
   const shutdown = (signal: string): void => {
     console.log(`\n[daemon] ${signal} received, shutting down`)
+    sse.shutdown()
     server.close(() => process.exit(0))
     setTimeout(() => process.exit(0), 3000).unref()
   }
@@ -104,7 +184,11 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => shutdown('SIGTERM'))
 }
 
-main().catch((err) => {
-  console.error(`[daemon] startup failed: ${err instanceof Error ? err.message : String(err)}`)
-  process.exit(1)
-})
+// Only boot the daemon when executed directly (e.g. `tsx src/server.ts`), never
+// when imported by tests.
+if (process.argv[1] && new URL(`file://${resolve(process.argv[1])}`).href === import.meta.url) {
+  main().catch((err) => {
+    console.error(`[daemon] startup failed: ${err instanceof Error ? err.message : String(err)}`)
+    process.exit(1)
+  })
+}
