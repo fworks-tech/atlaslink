@@ -1,4 +1,4 @@
-import { EventLogStore, BridgeEnvelope } from './EventLogStore'
+import { BridgeEnvelope } from './EventLogStore'
 import { EventBroadcaster } from './EventBroadcaster'
 import { SessionStatus } from '../tasks/taskRegistry'
 
