@@ -86,14 +86,40 @@ npm test         # hermetic test suite (no LLM/API key required)
 npm run typecheck  # TypeScript type checking
 ```
 
-The daemon boots a long-running server that validates the LLM provider config up front, hosts an `ApplicationContext` per task, and subscribes to its `RunEventBus` — the spine the event bridge (M2) and the dashboard (M4) build on.
+The daemon boots a long-running server that validates the LLM provider config up front, hosts an `ApplicationContext` per task, and subscribes to its `RunEventBus` — the spine the event bridge (M2) and the dashboard (M4) build on. The event log lives at `data/events.ndjson` (rotated 10 MB × 3, cursor in `data/events.seq`).
+
+### Event Bridge (M2)
+
+Run events persist to an append-only NDJSON log and stream to the browser over Server-Sent Events:
+
+```bash
+curl -N http://127.0.0.1:3000/events                          # live-tail only
+curl -N -H "Last-Event-ID: 42" http://127.0.0.1:3000/events   # resume from 43
+```
+
+Each SSE frame carries `id:` (the replay cursor), `event:` (the type, passed **verbatim** per the read-only projection contract), and `data:` (one JSON line). A resume older than the retention window yields `event: bridge.gap`, never silence. Idle connections receive a `: ping` every 15 s; SIGINT/SIGTERM sends `event: bridge.shutdown` before closing.
+
+Delegating a run publishes `session.*` events (`session.queued/started/succeeded/failed`) and processes the queue strictly one session at a time:
+
+```bash
+curl -X POST http://127.0.0.1:3000/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"member":"the-scribe","prompt":"draft a commit message"}'   # 202 {session}
+```
+
+The bridge is layered in `src/bridge/`:
+
+- **`EventLogStore`** — durable source of truth: monotonic `eventId`, rotation, corrupt-tail tolerance, cursor restore.
+- **`EventBroadcaster`** — verbatim fan-out, replay (slow-client eviction bounds catch-up), and `detectGap()`.
+- **`SessionQueue`** — serial FIFO worker emitting `session.*` events with an injectable runner.
+- **`sseEndpoint`** — `SseHandler` (framing, replay, `bridge.gap`/`bridge.shutdown`, ping) + `formatSse`.
 
 ## Roadmap
 
 | Milestone | Scope | Status |
 |-----------|-------|--------|
 | **M1 — Daemon Core** | Long-running daemon, agent runtime hosting | Shipped |
-| **M2 — Event Bridge** | Real-time event feed bridged to the browser | Planned |
+| **M2 — Event Bridge** | Real-time event feed bridged to the browser | Shipped |
 | **M3 — Task API** | HTTP surface for driving the orchestrator | Planned |
 | **M4 — Live Dashboard** | The live diagram-flow UI | Planned |
 
