@@ -23,27 +23,51 @@ function env(eventId: number, overrides: Record<string, unknown> = {}): BridgeEn
   }
 }
 
-function isBridgeEvent(e: unknown): e is { eventId?: number; type?: string } {
-  return typeof e === 'object' && e !== null
-}
-
-test('subscribe replays persisted events and then receives live events', async () => {
+test('emit persists and replays the event verbatim with a monotonic eventId', async () => {
   const dir = tmpDataDir()
   try {
     const store = await EventLogStore.open(dir)
-    store.append(env(0, { type: 'run.started' }))
-    store.append(env(1, { type: 'reasoning', step: 1, content: 'thinking' }))
-
     const broadcaster = new EventBroadcaster(store)
-    const received: unknown[] = []
+    const received: BridgeEnvelope[] = []
     broadcaster.subscribe((event) => received.push(event))
 
-    store.append(env(2, { type: 'tool.called', step: 1, name: 'read_file' }))
-    broadcaster.emit(env(2, { type: 'tool.called', step: 1, name: 'read_file' }))
+    broadcaster.emit(env(0, { type: 'run.started' }))
+    broadcaster.emit(env(0, { type: 'reasoning', step: 1, content: 'thinking' }))
 
-    assert.equal(received.length, 3)
-    for (const event of received) assert.ok(isBridgeEvent(event) && event.type === 'bridge')
-    assert.ok(isBridgeEvent(received[0]) && Number.isInteger(received[0].eventId))
+    assert.equal(received.length, 2)
+    assert.equal(received[0].eventId, 0)
+    assert.equal(received[1].eventId, 1)
+    // verbatim: type is preserved, never rewritten
+    assert.equal(received[0].type, 'run.started')
+    assert.equal(received[1].type, 'reasoning')
+
+    const replayed = broadcaster.replayFrom(0)
+    assert.deepEqual(replayed.map((e) => e.eventId), [0, 1])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('subscribe with replay replays recent events then live; replay:false is live-only', async () => {
+  const dir = tmpDataDir()
+  try {
+    const store = await EventLogStore.open(dir)
+    const broadcaster = new EventBroadcaster(store)
+    broadcaster.emit(env(0, { type: 'run.started' }))
+    broadcaster.emit(env(1, { type: 'reasoning', content: 'a' }))
+
+    const caughtUp: BridgeEnvelope[] = []
+    broadcaster.subscribe((event) => caughtUp.push(event))
+    assert.equal(caughtUp.length, 2)
+
+    const liveOnly: BridgeEnvelope[] = []
+    broadcaster.subscribe((event) => liveOnly.push(event), { replay: false })
+    assert.equal(liveOnly.length, 0)
+
+    broadcaster.emit(env(2, { type: 'run.finished', output: 'ok' }))
+    assert.equal(caughtUp.length, 3)
+    assert.equal(liveOnly.length, 1)
+    assert.equal(liveOnly[0].eventId, 2)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -54,11 +78,9 @@ test('subscribe returns an unsubscribe function that stops delivery', async () =
   try {
     const store = await EventLogStore.open(dir)
     const broadcaster = new EventBroadcaster(store)
-    const received: unknown[] = []
-    const unsubscribe = broadcaster.subscribe((event) => received.push(event))
+    const received: BridgeEnvelope[] = []
+    const unsubscribe = broadcaster.subscribe((event) => received.push(event), { replay: false })
     unsubscribe()
-
-    store.append(env(0))
     broadcaster.emit(env(0))
     assert.equal(received.length, 0)
   } finally {
@@ -71,37 +93,30 @@ test('a throwing subscriber never breaks the broadcaster or other listeners', as
   try {
     const store = await EventLogStore.open(dir)
     const broadcaster = new EventBroadcaster(store)
-    const received: unknown[] = []
+    const received: BridgeEnvelope[] = []
     broadcaster.subscribe(() => {
       throw new Error('boom')
-    })
-    broadcaster.subscribe((event) => received.push(event))
+    }, { replay: false })
+    broadcaster.subscribe((event) => received.push(event), { replay: false })
 
-    store.append(env(0))
     broadcaster.emit(env(0))
     assert.equal(received.length, 1)
-    assert.ok(isBridgeEvent(received[0]) && received[0].type === 'bridge')
+    assert.equal(received[0].eventId, 0)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('emit wraps the envelope and assigns a monotonic eventId-derived bridge id', async () => {
+test('slow clients are evicted: replay is bounded by highWaterMark', async () => {
   const dir = tmpDataDir()
   try {
     const store = await EventLogStore.open(dir)
-    const broadcaster = new EventBroadcaster(store)
-    const received: unknown[] = []
+    const broadcaster = new EventBroadcaster(store, { highWaterMark: 2 })
+    for (let i = 0; i < 5; i++) broadcaster.emit(env(i, { type: 'run.started' }))
+
+    const received: BridgeEnvelope[] = []
     broadcaster.subscribe((event) => received.push(event))
-
-    store.append(env(41, { type: 'run.finished', output: 'done' }))
-    broadcaster.emit(env(41, { type: 'run.finished', output: 'done' }))
-
-    assert.equal(received.length, 1)
-    const event = received[0]
-    assert.ok(isBridgeEvent(event))
-    assert.equal(event.eventId, 41)
-    assert.equal(event.type, 'bridge')
+    assert.equal(received.length, 2)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
@@ -111,11 +126,8 @@ test('detectGap returns null for a contiguous sequence', async () => {
   const dir = tmpDataDir()
   try {
     const store = await EventLogStore.open(dir)
-    store.append(env(0))
-    store.append(env(1))
-    store.append(env(2))
-
     const broadcaster = new EventBroadcaster(store)
+    for (let i = 0; i < 3; i++) broadcaster.emit(env(i))
     assert.equal(broadcaster.detectGap(), null)
     assert.equal(broadcaster.getGap(), null)
   } finally {
@@ -123,67 +135,44 @@ test('detectGap returns null for a contiguous sequence', async () => {
   }
 })
 
-test('detectGap reports the first missing eventId in a non-contiguous sequence', async () => {
+test('detectGap reports the missing eventId when the sequence is gapped', async () => {
   const dir = tmpDataDir()
   try {
     const store = await EventLogStore.open(dir)
-    store.append(env(0))
-    store.append(env(1))
-    store.append(env(2))
-    store.append(env(4)) // 3 is missing
-
     const broadcaster = new EventBroadcaster(store)
-    assert.equal(broadcaster.detectGap(), 3)
-    assert.equal(broadcaster.getGap(), 3)
+    broadcaster.emit(env(0))
+    broadcaster.emit(env(1))
+    // force a skip by appending directly to the log
+    store.append(env(4))
+    broadcaster.emit(env(5))
+
+    assert.equal(broadcaster.detectGap(), 2)
+    assert.equal(broadcaster.getGap(), 2)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('detectGap returns null when there are fewer than two eventIds', async () => {
+test('detectGap returns null with fewer than two eventIds', async () => {
   const dir = tmpDataDir()
   try {
     const store = await EventLogStore.open(dir)
+    const broadcaster = new EventBroadcaster(store)
     store.append(env(5))
-
-    const broadcaster = new EventBroadcaster(store)
     assert.equal(broadcaster.detectGap(), null)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('detectGap ignores non-integer eventIds when scanning for gaps', async () => {
-  const dir = tmpDataDir()
-  try {
-    const store = await EventLogStore.open(dir)
-    store.append(env(0))
-    store.append(env(1))
-
-    const broadcaster = new EventBroadcaster(store)
-    assert.equal(broadcaster.detectGap(), null)
-  } finally {
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
-
-test('subscribe replays only events persisted before subscription, not later appends until emit', async () => {
+test('replayFrom serves events with eventId >= startId for Last-Event-ID resume', async () => {
   const dir = tmpDataDir()
   try {
     const store = await EventLogStore.open(dir)
     const broadcaster = new EventBroadcaster(store)
-    const received: unknown[] = []
-
-    store.append(env(0))
-    broadcaster.subscribe((event) => received.push(event))
-
-    store.append(env(1))
-    store.append(env(2))
-    assert.equal(received.length, 1)
-
-    broadcaster.emit(env(2))
-    assert.equal(received.length, 2)
-    assert.ok(isBridgeEvent(received[1]) && received[1].eventId === 2)
+    for (let i = 0; i < 4; i++) broadcaster.emit(env(i))
+    const replayed = broadcaster.replayFrom(2)
+    assert.deepEqual(replayed.map((e) => e.eventId), [2, 3])
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
