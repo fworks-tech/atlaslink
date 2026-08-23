@@ -2,17 +2,23 @@ import { EventLogStore, BridgeEnvelope } from './EventLogStore'
 
 /**
  * EventBroadcaster fans out bridge events from an EventLogStore to registered
- * listeners.  It does not couple tightly to the log's internals; instead:
+ * listeners. Envelopes pass verbatim (the read-only projection contract,
+ * ADR-002): `type` is whatever the emitter assigned (e.g. `run.*`, `session.*`,
+ * `bridge.*`) and is never rewritten.
  *
- *  1. After log.append(envelope), call broadcaster.emit(envelope) to notify
- *     all subscribers.
- *  2. On first subscribe(), replay recent events so the subscriber catches up.
- *  3. detectGap() reports any missing eventId in the current store.
- *  4. highWaterMark controls how many events are retained for replay.
+ * Responsibilities:
+ *  1. emit(envelope) assigns a monotonic eventId, persists it, and delivers it
+ *     verbatim to every subscriber.
+ *  2. On subscribe() with replay, the most recent highWaterMark events are
+ *     replayed so a fresh subscriber catches up with bounded memory (slow-client
+ *     eviction drops the oldest).
+ *  3. detectGap() reports the first missing eventId so a consumer can emit
+ *     `bridge.gap` rather than silently skip.
+ *  4. A throwing subscriber never breaks the broadcaster or its peers.
  */
 export class EventBroadcaster {
   private readonly log: EventLogStore
-  private readonly listeners: Set<(event: unknown) => void>
+  private readonly listeners: Set<(event: BridgeEnvelope) => void>
   private readonly highWaterMark: number
   private gap: number | null = null
 
@@ -23,74 +29,59 @@ export class EventBroadcaster {
   }
 
   /**
-   * Register a listener that receives every newly appended bridge event.
-   * By default replays recent events first so the subscriber catches up; pass
-   * `{ replay: false }` to receive only events emitted after the subscription.
+   * Register a listener. By default replays recent events first so the
+   * subscriber catches up; pass `{ replay: false }` for live delivery only.
+   * Returns an unsubscribe function.
    */
-  subscribe(listener: (event: unknown) => void, options: { replay?: boolean } = {}): () => void {
+  subscribe(listener: (event: BridgeEnvelope) => void, options: { replay?: boolean } = {}): () => void {
     this.listeners.add(listener)
     if (options.replay !== false) {
-      // Replay recent events so the subscriber catches up
-      this.#replayFrom(this.log.oldestId ?? 1)
+      const oldest = this.log.oldestId
+      // Slow-client eviction: replay only the most recent highWaterMark events.
+      const floor = Math.max(oldest ?? 0, this.log.nextEventId - this.highWaterMark)
+      for (const stored of this.log.replay((oldest ?? 0) - 1)) {
+        if (stored.eventId < floor) continue
+        this.#deliver(stored.envelope)
+      }
     }
     return () => this.listeners.delete(listener)
   }
 
-  /** Emit a bridge envelope to all registered listeners. */
+  /** Assign a monotonic eventId, persist the envelope, and fan it out verbatim. */
   emit(envelope: BridgeEnvelope): void {
-    const { type: _type, ...envelopeWithoutType } = envelope
-    const event: unknown = {
-      type: 'bridge',
-      executionId: String(envelope.eventId),
-      member: 'bridge',
-      correlationId: String(envelope.eventId),
-      timestamp: new Date().toISOString(),
-      ...envelopeWithoutType,
-    }
-    for (const listener of this.listeners) {
+    const persisted = { ...envelope, eventId: this.log.nextEventId }
+    this.log.append(persisted)
+    this.#deliver(persisted)
+  }
+
+  /** All retained envelopes with `eventId >= startId`, ascending (Last-Event-ID resume). */
+  replayFrom(startId: number): BridgeEnvelope[] {
+    return this.log.replay(startId - 1).map((s) => s.envelope)
+  }
+
+  #deliver(envelope: BridgeEnvelope): void {
+    for (const listener of [...this.listeners]) {
       try {
-        listener(event)
+        listener(envelope)
       } catch {
-        // misbehaving subscriber never breaks the broadcaster
+        // misbehaving subscriber never breaks the broadcaster or its peers
       }
     }
   }
 
-  /** Replay events starting from the given eventId (inclusive). */
-  #replayFrom(startId: number): void {
-    const stored = this.log.replay(startId - 1)
-    for (const s of stored) {
-      const { type: _type, ...envelopeWithoutType } = s.envelope
-      const event: unknown = {
-        type: 'bridge',
-        executionId: String(s.eventId),
-        member: 'bridge',
-        correlationId: String(s.eventId),
-        timestamp: new Date().toISOString(),
-        ...envelopeWithoutType,
-      }
-      for (const listener of this.listeners) {
-        try {
-          listener(event)
-        } catch {
-          // misbehaving subscriber never breaks the broadcaster
-        }
-      }
-    }
-  }
-
-   /** Detect a gap in the eventId sequence and return the missing id, or null. */
+  /**
+   * Detect the first gap in the eventId sequence and return the missing id, or
+   * null when contiguous (or too few events to judge).
+   */
   detectGap(): number | null {
-    const replay = this.log.replay(-1)
-    const ids = replay.map((e) => e.eventId).filter((id): id is number => Number.isInteger(id))
+    const ids = this.log.replay(-1).map((e) => e.eventId).filter((id): id is number => Number.isInteger(id))
     if (ids.length < 2) return null
     for (let i = 1; i < ids.length; i++) {
       if (ids[i] !== ids[i - 1] + 1) {
         const missing = ids[i - 1] + 1
-        if (this.gap === null || missing !== this.gap) {
-          this.gap = missing
-          return missing
-        }
+        if (this.gap === missing) continue
+        this.gap = missing
+        return missing
       }
     }
     return null
