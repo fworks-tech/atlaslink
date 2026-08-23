@@ -22,11 +22,17 @@ export class EventBroadcaster {
     this.highWaterMark = options.highWaterMark ?? 1000
   }
 
-  /** Register a listener that receives every newly appended bridge event. */
-  subscribe(listener: (event: unknown) => void): () => void {
+  /**
+   * Register a listener that receives every newly appended bridge event.
+   * By default replays recent events first so the subscriber catches up; pass
+   * `{ replay: false }` to receive only events emitted after the subscription.
+   */
+  subscribe(listener: (event: unknown) => void, options: { replay?: boolean } = {}): () => void {
     this.listeners.add(listener)
-    // Replay recent events so the subscriber catches up
-    this.#replayFrom(this.log.oldestId ?? 1)
+    if (options.replay !== false) {
+      // Replay recent events so the subscriber catches up
+      this.#replayFrom(this.log.oldestId ?? 1)
+    }
     return () => this.listeners.delete(listener)
   }
 
