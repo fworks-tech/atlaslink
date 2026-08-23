@@ -98,8 +98,15 @@
        the session instead of leaving it stuck in QUEUED.
 
 ### M2 — Event Bridge
-2. [ ] Bridge events to the browser via SSE/WebSocket (`GET /events`)
-3. [ ] Resolve ADR-001 persistence decision (governs event replay for M2)
+2. [x] Bridge events to the browser via SSE/WebSocket (`GET /events`)
+3. [x] Resolve ADR-001 persistence decision (governs event replay for M2)
+
+Delivered on stacked branches `feat/4-event-log-store` → `feat/4-event-broadcaster` →
+`feat/4-session-queue` → `feat/4-sse-endpoint`: NDJSON event log with rotation and
+cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emitting
+`session.*` events, and an SSE endpoint honoring `Last-Event-ID`, `bridge.gap`,
+`bridge.shutdown`, a 15 s `: ping`, and the read-only projection contract
+(ADR-002). `POST /runs` (M3 preview) delegates sessions through the session queue.
 
 ### M3 — Task API
 4. [ ] Add `POST /tasks` endpoint to delegate runs
