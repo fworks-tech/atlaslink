@@ -14,10 +14,9 @@ export function formatSse(envelope: BridgeEnvelope): string {
   return lines.join('\n') + '\n\n'
 }
 
-/** An active SSE client handle: respond + a teardown called on disconnect. */
+/** An active SSE client connection tracked for shutdown. */
 interface SseClient {
   res: ServerResponse
-  teardown: () => void
 }
 
 /**
@@ -83,7 +82,7 @@ export class SseHandler {
       { replay: false },
     )
 
-    const client: SseClient = { res, teardown: unsubscribe }
+    const client: SseClient = { res }
     this.clients.add(client)
     const onClose = (): void => {
       unsubscribe()
