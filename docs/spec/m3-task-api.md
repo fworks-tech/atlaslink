@@ -106,15 +106,39 @@ POST /tasks/ses-…/cancel → 202 { "ok": true, "status": "cancelled" }
 - Guaranteed only **from queued**. A `running` session is left to the runtime
   (read-only contract, ADR-002); best-effort running-cancel is noted for M4 (requires
   agenthood-side change).
+- **M3 response contract for a `running` session:** `202` is returned immediately to
+  acknowledge the request, but cancellation is **best-effort** — the runtime attempts
+  to stop the run and the session transitions to `cancelled` only once the runtime
+  confirms. The body makes the non-guarantee explicit:
+  ```
+  POST /tasks/ses-running/cancel → 202
+  { "ok": true, "status": "running", "cancel": "best-effort" }
+  ```
+  Clients MUST NOT assume the run has stopped until a subsequent `GET /tasks/{id}`
+  shows `lifecycle` = `cancelled`. Full guaranteed running-cancel (agenthood-side
+  change) is deferred to M4; the *response shape* above is fixed in M3 so the
+  contract is unambiguous.
 - Cancelling from a terminal state → `409` conflict.
 
 ### `GET /tasks` — list sessions
 
 ```
-GET /tasks?status=failed&since=… → 200 { "sessions": [ … ], "total": n }
+GET /tasks?status=failed&since=2026-01-01T00:00:00Z&limit=50&offset=0
+  → 200 { "sessions": [ … ], "total": n, "limit": 50, "offset": 0 }
 ```
 
-- SQL filter/join via the DuckDB materialization (no hand-rolled scan).
+- **Scope & ordering:** returns sessions matching the optional `status` and `since`
+  filters, ordered by `createdAt` **descending** (newest first). With no filters,
+  returns all sessions in the store.
+- **Pagination (bounded):** `limit` (default **50**, max **500**) and `offset`
+  (default **0**) are required query parameters for any non-empty store. Responses
+  echo `limit`/`offset` back. `total` is the count of sessions matching the filter
+  *before* pagination — not the page size — so clients can compute page count.
+  Out-of-range `offset`/`limit` (e.g. `limit > 500`, negative values) → `400`.
+- SQL filter/join via the DuckDB materialization (**no hand-rolled scan**). All
+  `status`/`since`/`limit`/`offset`/path parameters are bound as **query parameters**
+  — never string-concatenated into SQL. Injection-class bugs are prevented at the API
+  boundary, not retrofitted.
 
 ### `GET /events/{sessionId}` — per-session SSE
 
@@ -186,7 +210,33 @@ Still open (tuning / dependency, no architectural impact):
 5. **Cancel of running** — deferred to M4 with agenthood-side change (§3), per ADR-002
    read-only contract.
 
-## 7. Next actions
+## 7. Security & trust boundary (auditor review)
+
+The M3 surface is write-capable and **cost-bearing**: `POST /tasks` enqueues runs
+that invoke paid LLM providers, and `GET /tasks` enumerates every session in the
+store. It therefore ships behind an explicit trust boundary — auth is a foundation,
+not a later feature.
+
+- **Network binding:** M3 binds the server to **loopback only** (`127.0.0.1`) by
+  default. Cross-host exposure requires an explicit, documented opt-in; it is not
+  the default posture.
+- **Authentication:** M3 requires an **optional bearer token** on every mutating
+  and listing route (`POST /tasks`, `GET /tasks`, `POST /tasks/{id}/cancel`,
+  `GET /tasks/{id}`, `GET /events/{sessionId}`). When `ATLASLINK_API_TOKEN` is set,
+  requests without a valid `Authorization: Bearer …` header are rejected with
+  `401`. When unset, the server logs a single warning at startup that the API is
+  unauthenticated and must not be network-exposed.
+- **Authorization:** single-tenant in M3 (`tenantId = "default"`, §2), so ownership
+  checks are deferred to multi-tenancy work. The token above is an all-or-nothing
+  gate, not per-resource ACL.
+- **Cost abuse:** because `POST /tasks` spends provider quota, the bearer token is
+  the primary abuse control. Rate-limiting is out of scope for M3 but noted for M4.
+
+This section resolves the A01/A04 gap raised during the pre-implementation audit:
+no endpoint in `feat/3-task-rest` may be implemented without honoring the loopback
+default and the token gate above.
+
+## 8. Next actions
 
 1. Land this spec (ADR-004 + `docs/spec/m3-task-api.md` + `docs/tasks/m3-task-api.md`).
 2. Start branch `feat/3-session-store`: `SessionBackend` port + `DuckDbBackend` +
