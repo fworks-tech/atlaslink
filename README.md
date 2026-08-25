@@ -1,6 +1,6 @@
 # Atlaslink
 
-> **Status: M1 shipped** — The daemon core is live: long-running HTTP server, one-shot member runs, and 16 hermetic tests. M2 (Event Bridge), M3 (Task API), and M4 (Live Dashboard) are on the roadmap.
+> **Status: M1 and M2 shipped** — The daemon core and the real-time Event Bridge are live. M3 (Task API) and M4 (Live Dashboard) are on the roadmap.
 
 Multi-agent orchestrator, Agenthood proof-of-concept, and modern UI to integrate agents through gorgeous, easy-to-use, live diagram flows.
 
@@ -30,7 +30,7 @@ Orchestrating multiple AI agents today means hand-written glue code, opaque exec
 
 The **M1 Daemon Core** is shipped and working: a long-running HTTP server that validates the LLM provider config up front, hosts an `ApplicationContext` per task, and subscribes to its `RunEventBus`. You can boot the daemon, hit `/health`, and run one-shot member tasks from the CLI.
 
-This is **not yet** the Atlaslink UI — that arrives with roadmap milestones **M2 (Event Bridge)** through **M4 (Live Dashboard)**.
+This is **not yet** the Atlaslink UI — the live diagram-flow UI arrives with **M4 (Live Dashboard)**. The **Event Bridge (M2)** that feeds it is already shipped.
 
 ## Getting started
 
