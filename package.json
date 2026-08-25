@@ -8,7 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "run": "tsx src/server.ts --run",
     "insights": "tsx src/insights.ts",
-    "test": "node --import tsx --test src/**/*.test.ts",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
