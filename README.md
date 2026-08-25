@@ -114,6 +114,27 @@ The bridge is layered in `src/bridge/`:
 - **`SessionQueue`** — serial FIFO worker emitting `session.*` events with an injectable runner.
 - **`sseEndpoint`** — `SseHandler` (framing, replay, `bridge.gap`/`bridge.shutdown`, ping) + `formatSse`.
 
+## Logging
+
+Atlaslink emits structured **JSON lines to stderr** (one object per line), so a
+piped `stdout` stays clean for the human-facing result text. Control verbosity
+with `ATLASLINK_LOG_LEVEL` (`debug` | `info` | `warn` | `error`, default `info`):
+
+```bash
+ATLASLINK_LOG_LEVEL=debug npm run dev
+```
+
+Each line is shaped like:
+
+```json
+{ "ts": "2026-08-24T12:00:00.000Z", "level": "info", "msg": "request", "method": "POST", "url": "/runs", "status": 202, "durationMs": 3, "correlationId": "cor-…" }
+```
+
+Session-scoped lines carry `correlationId`, so you can filter every log for one
+session with `jq`. The logging decision and the explicit swallow boundary (which
+failure paths stay silent by design) are recorded in
+[ADR-005](docs/adr/ADR-005-structured-json-logging.md).
+
 ## Roadmap
 
 | Milestone | Scope | Status |

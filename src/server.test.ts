@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -11,6 +11,7 @@ import { SessionQueue } from './bridge/SessionQueue'
 import { SseHandler, formatSse } from './bridge/sseEndpoint'
 import { createAppServer } from './server'
 import { TaskRegistry } from './tasks/taskRegistry'
+import { log as logger } from './log'
 
 function tmpDataDir(): string {
   return mkdtempSync(join(tmpdir(), 'atlaslink-sse-'))
@@ -81,6 +82,44 @@ test('GET /health returns ok status', async () => {
     const srv = await startServer(dir)
     const body = await collectStream(`http://127.0.0.1:${srv.port}/health`, {}, 1500)
     assert.ok(body.includes('"ok":true'))
+    await srv.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('every request emits a structured "request" log line', async () => {
+  const dir = tmpDataDir()
+  try {
+    const info = mock.method(logger, 'info')
+    const srv = await startServer(dir)
+    const body = await collectStream(`http://127.0.0.1:${srv.port}/health`, {}, 1500)
+    assert.ok(body.includes('"ok":true'))
+    const reqCall = info.mock.calls.find((c) => c.arguments[0] === 'request')
+    assert.ok(reqCall, `expected a 'request' log, got: ${info.mock.calls.map((c) => String(c.arguments[0])).join(',')}`)
+    const fields = reqCall!.arguments[1] as Record<string, unknown>
+    assert.equal(fields.method, 'GET')
+    assert.equal(fields.url, '/health')
+    assert.equal(fields.status, 200)
+    assert.equal(typeof fields.durationMs, 'number')
+    info.mock.restore()
+    await srv.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('GET /events does not emit a "request" log (long-lived SSE)', async () => {
+  const dir = tmpDataDir()
+  try {
+    const info = mock.method(logger, 'info')
+    const srv = await startServer(dir)
+    await collectStream(`http://127.0.0.1:${srv.port}/events`, {}, 500)
+    const sseReq = info.mock.calls.find(
+      (c) => c.arguments[0] === 'request' && (c.arguments[1] as Record<string, unknown>).url === '/events'
+    )
+    assert.equal(sseReq, undefined, `expected no 'request' log for /events, got: ${JSON.stringify(sseReq)}`)
+    info.mock.restore()
     await srv.close()
   } finally {
     rmSync(dir, { recursive: true, force: true })
