@@ -1,7 +1,7 @@
 # ADR-004: The Session is an Event-Sourced Aggregate, Materialized in DuckDB
 
 **Date:** 2026-08-23
-**Status:** Proposed — resolves the M3 session-store durability decision deferred in ADR-001
+**Status:** Accepted — resolves the M3 session-store durability decision deferred in ADR-001
 **Issue:** M3 Task API
 
 ## Context

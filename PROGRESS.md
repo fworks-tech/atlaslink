@@ -117,5 +117,5 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
        (`feat/3-task-rest`)
 
 ### M4 — Live Dashboard
-5. [ ] Add a live dashboard UI rendering society provenance
+7. [ ] Add a live dashboard UI rendering society provenance
        (ADR-002) with Atlas as the root node (ADR-003)
