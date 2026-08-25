@@ -34,9 +34,12 @@ on Node primitives alone.
 3. `correlationId` is passed **explicitly as a log field** on session-scoped
    paths (queue runner, `runOnce`, `POST /runs`). No implicit global context.
 4. **Swallow boundary (explicit):**
-   - *Logged-but-not-thrown* (become visible): `EventLogStore` append failure,
-     `EventLogStore` rotation failure, unexpected `runSession` throw in the queue
-     runner.
+    - *Logged-but-not-thrown* (become visible): `EventLogStore` append failure,
+      `EventLogStore` rotation failure, unexpected throw in the queue-runner `catch`
+      at `src/server.ts`. Note: this `catch` only triggers on `registry.start` /
+      subscribe-time setup failures — run-time task errors are swallowed *inside*
+      `runSession` (`src/daemon/runTask.ts`) and returned as a failed session, not
+      re-thrown here. The boundary is narrower than "any `runSession` throw".
    - *Still silent-by-design* (unchanged, corrupt-tail tolerance):
      `#readLines` unreadable-line skip, `#writeSeq` sidecar write failure.
 

@@ -109,6 +109,23 @@ test('every request emits a structured "request" log line', async () => {
   }
 })
 
+test('GET /events does not emit a "request" log (long-lived SSE)', async () => {
+  const dir = tmpDataDir()
+  try {
+    const info = mock.method(logger, 'info')
+    const srv = await startServer(dir)
+    await collectStream(`http://127.0.0.1:${srv.port}/events`, {}, 500)
+    const sseReq = info.mock.calls.find(
+      (c) => c.arguments[0] === 'request' && (c.arguments[1] as Record<string, unknown>).url === '/events'
+    )
+    assert.equal(sseReq, undefined, `expected no 'request' log for /events, got: ${JSON.stringify(sseReq)}`)
+    info.mock.restore()
+    await srv.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('GET /events with Last-Event-ID replays events after that id', async () => {
   const dir = tmpDataDir()
   try {

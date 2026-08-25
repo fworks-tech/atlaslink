@@ -80,9 +80,11 @@ export function createAppServer(params: {
 
   const server = createServer((req, res) => {
     const startedAt = Date.now()
-    res.on('finish', () => {
-      logger.info('request', { method: req.method, url: req.url, status: res.statusCode, durationMs: Date.now() - startedAt })
-    })
+    if (!(req.method === 'GET' && req.url === '/events')) {
+      res.on('finish', () => {
+        logger.info('request', { method: req.method, url: req.url, status: res.statusCode, durationMs: Date.now() - startedAt })
+      })
+    }
 
     // --- SSE endpoint: GET /events ---
     if (req.method === 'GET' && req.url === '/events') {
