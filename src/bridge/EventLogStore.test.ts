@@ -1,9 +1,10 @@
-import { test } from 'node:test'
+import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EventLogStore, ROTATION_FILES, type BridgeEnvelope } from './EventLogStore'
+import { log } from '../log'
 
 function tmpDataDir(): string {
   return mkdtempSync(join(tmpdir(), 'atlaslink-eventlog-'))
@@ -251,6 +252,24 @@ test('append rejects duplicate and descending eventIds, keeping replay ascending
     store.append(env(1)) // descending — ignored
     assert.equal(store.nextEventId, 3)
     assert.deepEqual(store.replay(-1).map((s) => s.eventId), [2])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('append failure is swallowed (not thrown) and logged with context', async () => {
+  const dir = tmpDataDir()
+  try {
+    const store = await EventLogStore.open(dir)
+    // turn the tail file into a directory so appendFileSync throws EISDIR
+    mkdirSync(join(dir, 'events.ndjson'))
+    const warn = mock.method(log, 'warn')
+    assert.doesNotThrow(() => store.append({ eventId: 0, type: 'run.started' }))
+    const call = warn.mock.calls.find((c) => c.arguments[0] === 'append failed, swallowed')
+    assert.ok(call, `expected append-failure warn, got: ${warn.mock.calls.map((c) => String(c.arguments[0])).join(',')}`)
+    const fields = call!.arguments[1] as Record<string, unknown>
+    assert.equal(fields.eventId, 0)
+    warn.mock.restore()
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
