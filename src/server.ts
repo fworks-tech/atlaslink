@@ -4,7 +4,8 @@ import { resolve } from 'node:path'
 import { loadDaemonConfig } from './config'
 import type { DaemonConfig } from './config'
 import { validateConfig, MissingApiKeyError } from './daemon/contextFactory'
-import { TaskRegistry } from './tasks/taskRegistry'
+import { TaskRegistry, msg } from './tasks/taskRegistry'
+import { log as logger } from './log'
 import { runSession } from './daemon/runTask'
 import { EventLogStore } from './bridge/EventLogStore'
 import { EventBroadcaster } from './bridge/EventBroadcaster'
@@ -39,13 +40,18 @@ function friendlyKeyError(err: unknown): string {
 async function runOnce({ config, member, task }: { config: LLMConfig; member: string; task: string }): Promise<boolean> {
   const registry = new TaskRegistry()
   const session = registry.create({ member, prompt: task })
-  console.log(`\n[session] ${session.task.member} — ${session.task.prompt}\n`)
+  logger.info('session created', { correlationId: session.correlationId, member: session.task.member })
   const finished = await runSession({
     registry,
     session,
     config,
     onEvent: (event: RunEvent) => {
-      console.log(`[event] ${event.type}${'step' in event ? ` #${event.step}` : ''}${'name' in event ? ` ${event.name}` : ''}`)
+      logger.info('run event', {
+        correlationId: session.correlationId,
+        type: event.type,
+        ...('step' in event ? { step: (event as { step: number }).step } : {}),
+        ...('name' in event ? { name: (event as { name: string }).name } : {}),
+      })
     },
   })
   if (finished.status === 'succeeded') {
@@ -73,6 +79,11 @@ export function createAppServer(params: {
   const appVersion = params.version ?? version
 
   const server = createServer((req, res) => {
+    const startedAt = Date.now()
+    res.on('finish', () => {
+      logger.info('request', { method: req.method, url: req.url, status: res.statusCode, durationMs: Date.now() - startedAt })
+    })
+
     // --- SSE endpoint: GET /events ---
     if (req.method === 'GET' && req.url === '/events') {
       sse.handle(req, res)
@@ -100,6 +111,7 @@ export function createAppServer(params: {
           }
           const session = registry.create({ member: parsed.member, prompt: parsed.prompt })
           queue.declareSession(session)
+          logger.info('session delegated', { sessionId: session.id, correlationId: session.correlationId, member: parsed.member })
           res.writeHead(202, { 'content-type': 'application/json' })
           res.end(JSON.stringify({ ok: true, session: { id: session.id, status: session.status } }))
         } catch (err) {
@@ -136,8 +148,12 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
           config: config.agenthood,
           onEvent: (event: RunEvent) => broadcaster.emit({ eventId: 0, ...event }),
         })
-      } catch {
-        /* runSession already fails the session */
+      } catch (err) {
+        logger.error('session run threw unexpectedly', {
+          sessionId,
+          correlationId: session.correlationId,
+          error: msg(err),
+        })
       }
     },
   })
@@ -148,7 +164,7 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
     server.listen(config.port, config.host, resolve)
   })
 
-  console.log(`[daemon] atlaslink online at http://${config.host}:${config.port} (v${version})`)
+  logger.info('daemon online', { host: config.host, port: config.port, version })
   return { server, sse, registry, queue }
 }
 
@@ -159,7 +175,7 @@ async function main(): Promise<void> {
   try {
     validateConfig(config.agenthood)
   } catch (err) {
-    console.error(friendlyKeyError(err))
+    logger.error(friendlyKeyError(err))
     process.exit(1)
   }
 
@@ -175,7 +191,7 @@ async function main(): Promise<void> {
   const { server, sse } = await listen(config)
 
   const shutdown = (signal: string): void => {
-    console.log(`\n[daemon] ${signal} received, shutting down`)
+    logger.info('shutdown signal', { signal })
     sse.shutdown()
     server.close(() => process.exit(0))
     setTimeout(() => process.exit(0), 3000).unref()
@@ -188,7 +204,7 @@ async function main(): Promise<void> {
 // when imported by tests.
 if (process.argv[1] && new URL(`file://${resolve(process.argv[1])}`).href === import.meta.url) {
   main().catch((err) => {
-    console.error(`[daemon] startup failed: ${err instanceof Error ? err.message : String(err)}`)
+    logger.error('startup failed', { error: err instanceof Error ? err.message : String(err) })
     process.exit(1)
   })
 }
