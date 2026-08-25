@@ -1,15 +1,21 @@
-import type { Session, SessionEvent } from './types'
-import { VersionConflictError } from './types'
+import type { Session, SessionEvent, SessionDelta } from './types'
+import { StreamIntegrityError, VersionConflictError } from './types'
 import type { SessionBackend } from './sessionBackend'
 
-export { VersionConflictError }
+export { StreamIntegrityError, VersionConflictError }
 
 export function rehydrate(events: SessionEvent[]): Session | null {
   if (events.length === 0) return null
 
   const first = events[0]
+  for (const e of events) {
+    if (e.sessionId !== first.sessionId || e.correlationId !== first.correlationId) {
+      throw new StreamIntegrityError(first.sessionId, e.sessionId, e.correlationId)
+    }
+  }
+
   const session: Session = {
-    id: first.sessionId,
+    sessionId: first.sessionId,
     correlationId: first.correlationId,
     status: 'queued',
     version: events.length,
@@ -76,7 +82,7 @@ export class SessionStore implements SessionBackend {
   async readModifyWrite(
     sessionId: string,
     expectedVersion: number,
-    mutator: (current: Session | null) => SessionEvent[]
+    mutator: (current: Session | null) => SessionDelta[]
   ): Promise<void> {
     const list = this.events.get(sessionId) ?? []
     const actual = this.versions.get(sessionId) ?? 0
@@ -85,12 +91,8 @@ export class SessionStore implements SessionBackend {
     }
 
     const current = list.length > 0 ? rehydrate(list) : null
-    const deltas = mutator(current)
-    for (const delta of deltas) {
-      const event: SessionEvent = { ...delta, sessionId }
-      list.push(event)
-      this.events.set(sessionId, list)
-      this.versions.set(sessionId, list.length)
+    for (const delta of mutator(current)) {
+      await this.append({ ...delta, sessionId })
     }
   }
 }

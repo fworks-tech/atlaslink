@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rehydrate, SessionStore, VersionConflictError } from './sessionStore'
+import { rehydrate, SessionStore, StreamIntegrityError, VersionConflictError } from './sessionStore'
 import type { SessionEvent } from './types'
 
 const created: SessionEvent = {
@@ -24,7 +24,7 @@ test('rehydrate rebuilds the current aggregate and bumps version per event', () 
   const s = rehydrate([created, running, done])
 
   assert.ok(s)
-  assert.equal(s.id, 'ses-1')
+  assert.equal(s.sessionId, 'ses-1')
   assert.equal(s.correlationId, 'cor-1')
   assert.equal(s.status, 'succeeded')
   assert.equal(s.version, 3)
@@ -36,6 +36,11 @@ test('rehydrate rebuilds the current aggregate and bumps version per event', () 
   assert.equal(s.createdAt, '2026-01-01T00:00:00Z')
   assert.equal(s.startedAt, '2026-01-01T00:00:01Z')
   assert.equal(s.finishedAt, '2026-01-01T00:00:02Z')
+})
+
+test('rehydrate throws StreamIntegrityError when the stream is inconsistent', () => {
+  const stray: SessionEvent = { type: 'session.running', sessionId: 'ses-2', correlationId: 'cor-1', at: '2026-01-01T00:00:01Z' }
+  assert.throws(() => rehydrate([created, stray]), (e) => e instanceof StreamIntegrityError)
 })
 
 test('SessionStore: append then get returns the rehydrated aggregate', async () => {
@@ -64,7 +69,7 @@ test('SessionStore: a stale optimistic write is rejected with VersionConflictErr
   // this writer still believes the version is 1 and tries to commit
   await assert.rejects(
     store.readModifyWrite('ses-1', 1, () => [
-      { type: 'session.cancelled', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:03Z' },
+      { type: 'session.cancelled', correlationId: 'cor-1', at: '2026-01-01T00:00:03Z' },
     ]),
     (e) => e instanceof VersionConflictError
   )
@@ -75,11 +80,33 @@ test('SessionStore: readModifyWrite commits the delta and bumps the version', as
   await store.append(created) // version -> 1
 
   await store.readModifyWrite('ses-1', 1, () => [
-    { type: 'session.cancelled', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:03Z' },
+    { type: 'session.cancelled', correlationId: 'cor-1', at: '2026-01-01T00:00:03Z' },
   ])
 
   const s = await store.get('ses-1')
   assert.ok(s)
   assert.equal(s.status, 'cancelled')
+  assert.equal(s.version, 2)
+})
+
+test('SessionStore: concurrent writers cannot both commit the same version', async () => {
+  const store = new SessionStore()
+  await store.append(created) // version -> 1
+
+  const results = await Promise.allSettled([
+    store.readModifyWrite('ses-1', 1, () => [
+      { type: 'session.running', correlationId: 'cor-1', at: '2026-01-01T00:00:01Z' },
+    ]),
+    store.readModifyWrite('ses-1', 1, () => [
+      { type: 'session.cancelled', correlationId: 'cor-1', at: '2026-01-01T00:00:02Z' },
+    ]),
+  ])
+
+  const rejected = results.filter((r) => r.status === 'rejected')
+  assert.equal(rejected.length, 1)
+  assert.ok((rejected[0] as PromiseRejectedResult).reason instanceof VersionConflictError)
+
+  const s = await store.get('ses-1')
+  assert.ok(s)
   assert.equal(s.version, 2)
 })

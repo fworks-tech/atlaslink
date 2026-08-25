@@ -18,8 +18,11 @@ export interface SessionEvent {
   durationMs?: number
 }
 
+/** What a readModifyWrite mutator may produce: a session event with the identity left to the store. */
+export type SessionDelta = Omit<SessionEvent, 'sessionId'>
+
 export interface Session {
-  id: string
+  sessionId: string
   correlationId: string
   status: SessionStatus
   version: number
@@ -41,5 +44,18 @@ export class VersionConflictError extends Error {
   ) {
     super(`version conflict for ${sessionId}: expected ${expected}, actual ${actual}`)
     this.name = 'VersionConflictError'
+  }
+}
+
+export class StreamIntegrityError extends Error {
+  constructor(
+    public readonly sessionId: string,
+    public readonly eventSessionId: string,
+    public readonly eventCorrelationId: string
+  ) {
+    super(
+      `stream integrity violation for ${sessionId}: event carries sessionId=${eventSessionId}, correlationId=${eventCorrelationId}`
+    )
+    this.name = 'StreamIntegrityError'
   }
 }
