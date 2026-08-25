@@ -1,5 +1,6 @@
 import { appendFileSync, writeFileSync, renameSync, readFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { log } from '../log'
 
 export const ROTATION_FILES = 3
 export const MAX_BYTES = 10 * 1024 * 1024
@@ -78,7 +79,7 @@ export class EventLogStore {
       this.#tailBytes += Buffer.byteLength(line, 'utf8')
     } catch {
       // swallow-write-failure: a slow/failed disk write never blocks the live stream
-      console.warn(`EventLogStore: append of eventId ${envelope.eventId} failed, swallowed`)
+      log.warn('append failed, swallowed', { eventId: envelope.eventId, dataDir: this.dataDir })
     }
   }
 
@@ -111,7 +112,7 @@ export class EventLogStore {
     } catch {
       // rotation must never break live streaming either; size state resets so a
       // persistent rename failure does not re-throw on every append
-      console.warn('EventLogStore: rotation failed, swallowed')
+      log.warn('rotation failed, swallowed', { dataDir: this.dataDir })
       this.#tailBytes = 0
     }
   }
