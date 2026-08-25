@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout atlaslink
+        uses: actions/checkout@v4
+        with:
+          path: atlaslink
+
+      - name: Checkout agenthood (sibling file dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: fworks-tech/agenthood
+          path: agenthood
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            agenthood/package-lock.json
+            atlaslink/package-lock.json
+
+      - name: Build agenthood
+        working-directory: agenthood
+        run: npm ci && npm run build
+
+      - name: Install atlaslink deps
+        working-directory: atlaslink
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: atlaslink
+        run: npm run typecheck
+
+      - name: Test
+        working-directory: atlaslink
+        run: npm test
