@@ -1,7 +1,7 @@
 # Atlaslink — Session Progress Checklist
 
 > Status snapshot of the atlaslink project.
-> Updated: 2026-08-21
+> Updated: 2026-08-23
 
 ## Legend
 
@@ -109,8 +109,13 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
 (ADR-002). `POST /runs` (M3 preview) delegates sessions through the session queue.
 
 ### M3 — Task API
-4. [ ] Add `POST /tasks` endpoint to delegate runs
+4. [~] Task API spec drafted — `docs/spec/m3-task-api.md`, `docs/tasks/m3-task-api.md`,
+       ADR-004 (session-aggregate durability via event-sourced NDJSON truth + DuckDB
+       materialization). Branch plan: docs → session-store → task-rest.
+5. [ ] Implement durable, event-sourced `SessionStore` (`feat/3-session-store`)
+6. [ ] Implement `POST/GET /tasks`, `GET /tasks/{id}`, cancel, per-session SSE
+       (`feat/3-task-rest`)
 
 ### M4 — Live Dashboard
-5. [ ] Add a live dashboard UI rendering society provenance
+7. [ ] Add a live dashboard UI rendering society provenance
        (ADR-002) with Atlas as the root node (ADR-003)
