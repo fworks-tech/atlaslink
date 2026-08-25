@@ -1,7 +1,7 @@
 # ADR-004: The Session is an Event-Sourced Aggregate, Materialized in DuckDB
 
 **Date:** 2026-08-23
-**Status:** Accepted — resolves the M3 session-store durability decision deferred in ADR-001
+**Status:** Accepted — resolves the M3 session-store durability decision deferred in ADR-001 (M3 MVP ships rebuild-on-read from NDJSON; the DuckDB backend is deferred to a later phase)
 **Issue:** M3 Task API
 
 ## Context
@@ -44,12 +44,15 @@ truth, and the Session is an aggregate **rehydrated** from those events.
    `Session` document: identity, interaction turns, tweaks, lifecycle, and (schema
    reserved in M3) the live diagram graph state.
 
-3. **DuckDB materializes the hot queryable Session store.** The NDJSON log is cold
-   truth; DuckDB (embedded `file:` database) is the hot, queryable materialization of
-   current Session aggregates, chat turns, lifecycle, and reserved diagram snapshots.
-   The two compose rather than duplicate: log = durability + provenance, DuckDB = live
-   readable state + SQL. `GET /tasks?status=failed`, joining sessions by member or
-   timeline, and dashboard queries are real SQL, not hand-rolled scans.
+3. **The Session is a rehydrated aggregate, read from the NDJSON log (rebuild-on-read)
+   in the M3 MVP.** The log is the source of truth; `SessionStore` rebuilds the current
+   aggregate from it on each read. A **DuckDB-backed `SessionBackend`** is the intended
+   later optimization that adds SQL queryability and a cached materialization; it is
+   deferred until an analytics/query need justifies the new dependency. Until then the
+   store stays zero-new-deps and hermetic. The two compose rather than duplicate: log =
+   durability + provenance, DuckDB (later) = live readable state + SQL. `GET /tasks?
+   status=failed` and dashboard queries become real SQL when DuckDB lands, not
+   hand-rolled scans.
 
 4. **Sessions are mutable, versioned aggregate documents.** A node gate flip or a new
    chat turn is a **read-modify-write** on the live aggregate, protected by optimistic
@@ -64,11 +67,13 @@ truth, and the Session is an aggregate **rehydrated** from those events.
    (the SaaS future). No config-gated SaaS/local fork in the product layer (a known
    Langflow scar).
 
-6. **The zero-new-deps policy is scoped out for this milestone.** Durability and
-   queryability were deferred *to* M3; realizing them here requires the `duckdb` npm
-   package. This ADR explicitly lifts the zero-new-deps invariant **for the session
-   store only**, for the duration of M3. `runTask.ts`, `taskRegistry.ts`, and the
-   event bridge remain dependency-lean.
+6. **The zero-new-deps policy is preserved for the M3 MVP; the `duckdb` lift is
+   deferred.** Durability and queryability were deferred *to* M3, and M3 achieves
+   durability via the existing NDJSON log (rebuild-on-read) without a new dependency.
+   The `duckdb` npm package is pulled in **only when the DuckDB `SessionBackend` is
+   built** (a later phase), not for the M3 MVP. This ADR scopes the zero-new-deps
+   lift **to that future backend only**, for the duration it is active.
+   `runTask.ts`, `taskRegistry.ts`, and the event bridge remain dependency-lean.
 
 ## Alternatives Considered
 

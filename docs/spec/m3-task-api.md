@@ -6,7 +6,7 @@
 
 Prepared from the M2 contract and the Agenthood Society planning sessions. The
 Session model reflects ADR-003 (Atlas holds the sky of sessions) and ADR-004 (the
-Session is an event-sourced aggregate materialized in DuckDB).
+Session is an event-sourced aggregate rehydrated from the NDJSON log (DuckDB deferred to a later backend, ADR-004).
 
 ---
 
@@ -36,7 +36,7 @@ M3 closes that gap with a durable Task API: `POST/GET /tasks`, `GET /tasks/{id}`
    `member`/`team` validate-and-passthrough until agenthood exposes node seams.
 6. **Read-only contract upheld** — `runTask.ts`/`taskRegistry.ts` untouched; execution
    never driven inline; all runs route through the `SessionQueue` (ADR-002).
-7. **Hermetic suite** — embedded DuckDB backend is local/offline; no LLM, no provider
+7. **Hermetic suite** — the store backend is local/offline (log-backed in M3; DuckDB later); no LLM, no provider
    key, no network (MotherDuck backend never runs in CI).
 8. **Optimistic versioning** — concurrent aggregate mutations cannot silently clobber
    each other.
@@ -63,8 +63,9 @@ A Session is a **live, authoritative work-document**, event-sourced per ADR-004:
 | `version` | concurrency | optimistic revision; increments on each aggregate mutation |
 
 **Not a log, not a terminal row.** The immutable event stream (NDJSON, ADR-001) is
-the source of truth; the Session is the aggregate **rehydrated** from it and materialized
-in embedded DuckDB for hot queryability (ADR-004).
+the source of truth; the Session is the aggregate **rehydrated** from it on each read
+(rebuild-on-read). DuckDB is a deferred read-optimization behind the same
+`SessionBackend` port (ADR-004).
 
 ## 3. API surface
 
@@ -77,7 +78,7 @@ Content-Type: application/json
 { "member": "the-architect", "prompt": "plan x", "tweaks": { "provider": "groq" } }
 
 → 201
-{ "ok": true, "session": { "id": "ses-…", "correlationId": "cor-…", "status": "queued", "tweaks": {…} } }
+{ "ok": true, "session": { "sessionId": "ses-…", "correlationId": "cor-…", "status": "queued", "tweaks": {…} } }
 ```
 
 - Validation errors → `400` (`member` and `prompt` required strings; `tweaks` validated shape).
@@ -86,10 +87,10 @@ Content-Type: application/json
 - `tweaks.provider` overrides the run's provider; `tweaks.member`/`tweaks.team` are
   validated and passed through on the aggregate (execution ceiling in §5).
 
-### `GET /tasks/{id}` — current aggregate
+### `GET /tasks/{sessionId}` — current aggregate
 
 ```
-GET /tasks/ses-… → 200 { "session": { id, correlationId, status, task, tweaks, createdAt,
+GET /tasks/ses-… → 200 { "session": { sessionId, correlationId, status, task, tweaks, createdAt,
                         startedAt?, finishedAt?, output?, error?, durationMs?, version } }
 
 GET /tasks/ses-unknown → 404 { "ok": false, "error": "unknown session" }
@@ -97,7 +98,7 @@ GET /tasks/ses-unknown → 404 { "ok": false, "error": "unknown session" }
 
 Returns the **current** materialized aggregate (may be in-flight), not a completed row.
 
-### `POST /tasks/{id}/cancel` — cancel a queued session
+### `POST /tasks/{sessionId}/cancel` — cancel a queued session
 
 ```
 POST /tasks/ses-…/cancel → 202 { "ok": true, "status": "cancelled" }
@@ -129,16 +130,17 @@ GET /tasks?status=failed&since=2026-01-01T00:00:00Z&limit=50&offset=0
 
 - **Scope & ordering:** returns sessions matching the optional `status` and `since`
   filters, ordered by `createdAt` **descending** (newest first). With no filters,
-  returns all sessions in the store.
+  returns the first page (default `limit`) of all sessions in the store.
 - **Pagination (bounded):** `limit` (default **50**, max **500**) and `offset`
-  (default **0**) are required query parameters for any non-empty store. Responses
-  echo `limit`/`offset` back. `total` is the count of sessions matching the filter
-  *before* pagination — not the page size — so clients can compute page count.
-  Out-of-range `offset`/`limit` (e.g. `limit > 500`, negative values) → `400`.
-- SQL filter/join via the DuckDB materialization (**no hand-rolled scan**). All
-  `status`/`since`/`limit`/`offset`/path parameters are bound as **query parameters**
-  — never string-concatenated into SQL. Injection-class bugs are prevented at the API
-  boundary, not retrofitted.
+  (default **0**) are optional query parameters; when omitted they take their
+  defaults. Responses echo `limit`/`offset` back. `total` is the count of sessions
+  matching the filter *before* pagination — not the page size — so clients can
+  compute page count. Out-of-range `offset`/`limit` (e.g. `limit > 500`, negative
+  values) → `400`.
+- Filtering/paging is applied by the `SessionBackend` over the rehydrated store
+  (**no hand-rolled client scan**). When the DuckDB backend lands, filters become
+  bound SQL parameters — never string-concatenated. Injection-class bugs are
+  prevented at the API boundary, not retrofitted.
 
 ### `GET /events/{sessionId}` — per-session SSE
 
@@ -157,20 +159,24 @@ GET /events/ses-…   Accept: text/event-stream
 RunEventBus ─► EventLogStore (NDJSON — immutable source of truth, ADR-001/002)
                     │  append (the commit / the delta)
                     ▼
-              SessionStore (DuckDB file:) ──► Session aggregate (rehydrated)
-                    │                            identity · interaction[] · tweaks
-                    │                            · diagram (reserved) · lifecycle · version
+              SessionStore (NDJSON-backed, rebuild-on-read) ──► Session aggregate
+                    │                                          identity · interaction[]
+                    │                                          · tweaks · diagram (reserved)
+                    │                                          · lifecycle · version
                     ▼
               REST surface (POST/GET/CANCEL + per-session SSE)
 ```
 
-- **NDJSON** = cold, immutable, causal log (durability + provenance). **DuckDB** = hot,
-  queryable materialization of current aggregates. They compose, they don't duplicate.
-- Written behind a `SessionBackend` port: **`DuckDbBackend` (embedded, file)** is the
-  only implementation in M3 (local, offline, hermetic). **MotherDuck backend** is
-  designed-as-a-port, built later.
+- **NDJSON** = cold, immutable, causal log (durability + provenance) and, in M3, the
+  hot read path too: `SessionStore` rehydrates the aggregate from it on each read
+  (rebuild-on-read). **DuckDB** is a deferred `SessionBackend` implementation that
+  would cache the materialized aggregate for SQL queryability; it does not change the
+  source of truth.
+- Written behind a `SessionBackend` port. The M3 MVP ships a **log-backed in-memory
+  `SessionStore`** (rebuild-on-read, zero new deps, hermetic). **`DuckDbBackend`**
+  (embedded, file) and **MotherDuck backend** are designed-as-a-port, built later.
 - Mutations are **read-modify-write** with optimistic `version` bumping; the event
-  append is the commit, so DuckDB and the log cannot drift.
+  append is the commit, so the store and the log cannot drift.
 
 ## 5. Tweaks — full Langflow envelope, honest execution ceiling
 
@@ -199,8 +205,9 @@ Resolved:
 - Cancellation — queued-only (202) in M3.
 
 Still open (tuning / dependency, no architectural impact):
-1. **DuckDB dependency token** — `duckdb` npm package is new. ADR-004 scopes the
-   zero-new-deps lift to the session store *for this milestone*; confirm acceptable.
+1. **DuckDB dependency token (deferred)** — the `duckdb` npm package is **not** pulled
+   into the M3 MVP; ADR-004 preserves zero-new-deps for M3 and scopes the lift to the
+   later DuckDB `SessionBackend` only. No new dependency to accept for M3.
 2. **MotherDuck backend** — designed-now, built-later (§4); confirm the port interface
    is enough for M3.
 3. **Aggregate rebuild cadence** — rebuild-on-open-and-on-read vs a continuously
@@ -239,7 +246,7 @@ default and the token gate above.
 ## 8. Next actions
 
 1. Land this spec (ADR-004 + `docs/spec/m3-task-api.md` + `docs/tasks/m3-task-api.md`).
-2. Start branch `feat/3-session-store`: `SessionBackend` port + `DuckDbBackend` +
+2. Start branch `feat/3-session-store`: `SessionBackend` port + log-backed rehydration +
    aggregate rehydration + optimistic versioning.
 3. Then `feat/3-task-rest`: REST handlers + per-session SSE + `tweaks` envelope + wiring.
 4. Update README/PROGRESS.
