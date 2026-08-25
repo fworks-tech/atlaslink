@@ -26,10 +26,11 @@ main → docs/3-m3-task-api → feat/3-session-store → feat/3-task-rest
 
 The durable, event-sourced session store behind a backend port.
 
-- New: `src/store/SessionStore.ts` + `.test.ts`
-  - `appendDelta(event)` as the commit; `rehydrate(correlationId)` → `Session` aggregate;
-    `readModifyWrite` with optimistic `version` bumping.
-- New: `src/store/backends/SessionBackend.ts` — the port interface.
+- New: `src/session/SessionStore.ts` + `.test.ts`
+  - `append(event)` as the commit; `rehydrate(sessionId)` → `Session` aggregate;
+    `readModifyWrite` with optimistic `version` bumping (mutator returns `SessionDelta[]`
+    — the store owns the `sessionId`).
+- New: `src/session/sessionBackend.ts` — the port interface.
 - Deferred (later branch): `src/store/backends/DuckDbBackend.ts` + `.test.ts` — embedded
   `file:` DuckDB (hermetic: `:memory:` / temp-file per test).
 - Reserve (not implemented): `src/store/backends/MotherDuckBackend.ts` — designed as a
@@ -38,7 +39,7 @@ The durable, event-sourced session store behind a backend port.
   `diagram` (reserved/null), `tweaks`, `nextStep`, `lifecycle`, `version`.
 - `src/tasks/taskRegistry.ts`, `src/daemon/runTask.ts` remain untouched.
 - Expected: ~12 new tests (append→rehydrate, crash-rehydrate, version conflicts,
-  backend round-trip); existing 74 stay green.
+  backend round-trip); existing 80 stay green.
 
 ## Branch 3 — `feat/3-task-rest`
 
@@ -65,4 +66,4 @@ The REST surface and per-session SSE over the store and the existing queue.
   all runs route through `SessionQueue` (ADR-002).
 - **Hermetic:** the M3 store backend is log-backed/local/offline; when DuckDB lands it
   is embedded/local and the MotherDuck backend never runs in CI.
-- Target total: ~74 existing + ~23 new → ~97 hermetic tests.
+- Target total: ~80 existing + ~23 new → ~103 hermetic tests.
