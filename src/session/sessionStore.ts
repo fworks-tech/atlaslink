@@ -1,5 +1,6 @@
 import type { Session, SessionEvent } from './types'
 import { VersionConflictError } from './types'
+import type { SessionBackend } from './sessionBackend'
 
 export { VersionConflictError }
 
@@ -55,7 +56,7 @@ export function rehydrate(events: SessionEvent[]): Session | null {
   return session
 }
 
-export class SessionStore {
+export class SessionStore implements SessionBackend {
   private readonly events = new Map<string, SessionEvent[]>()
   private readonly versions = new Map<string, number>()
 
@@ -72,10 +73,24 @@ export class SessionStore {
     return rehydrate(list)
   }
 
-  async save(session: Session, expectedVersion: number): Promise<void> {
-    const actual = this.versions.get(session.id) ?? 0
+  async readModifyWrite(
+    sessionId: string,
+    expectedVersion: number,
+    mutator: (current: Session | null) => SessionEvent[]
+  ): Promise<void> {
+    const list = this.events.get(sessionId) ?? []
+    const actual = this.versions.get(sessionId) ?? 0
     if (actual !== expectedVersion) {
-      throw new VersionConflictError(session.id, expectedVersion, actual)
+      throw new VersionConflictError(sessionId, expectedVersion, actual)
+    }
+
+    const current = list.length > 0 ? rehydrate(list) : null
+    const deltas = mutator(current)
+    for (const delta of deltas) {
+      const event: SessionEvent = { ...delta, sessionId }
+      list.push(event)
+      this.events.set(sessionId, list)
+      this.versions.set(sessionId, list.length)
     }
   }
 }
