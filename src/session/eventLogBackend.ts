@@ -9,11 +9,23 @@ interface Snapshot {
   logVersion: number
 }
 
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object') {
+    Object.freeze(value)
+    for (const key of Object.keys(value as Record<string, unknown>)) {
+      deepFreeze((value as Record<string, unknown>)[key])
+    }
+  }
+  return value
+}
+
 /**
  * SessionBackend over the shared NDJSON EventLogStore (ADR-004): session events
  * are persisted as bridge envelopes in the same log as the run stream, and each
- * read rebuilds the aggregate from the log. A snapshot cache keyed by the log
- * cursor serves repeated reads without touching disk until the next append.
+ * read rebuilds the aggregate from the log. A snapshot cache serves repeated
+ * reads without touching disk; the cache keyed by the log cursor is invalidated
+ * by any append, so it only helps quiescent streams — per-session invalidation
+ * is a DuckDB-era optimization once reads and writes coexist at scale.
  */
 export class EventLogBackend implements SessionBackend {
   readonly log: EventLogStore
@@ -23,6 +35,12 @@ export class EventLogBackend implements SessionBackend {
     this.log = log
   }
 
+  /**
+   * Resolves even when EventLogStore swallowed a disk-write failure (ADR-005:
+   * the live stream never blocks on disk). The version is derived from the log,
+   * so a failed commit never advances it — the next readModifyWrite carrying the
+   * old expectedVersion rejects, which is how the caller notices.
+   */
   append(event: SessionEvent): Promise<void> {
     this.log.append({ ...event, eventId: this.log.nextEventId, type: event.type })
     this.#snapshots.delete(event.sessionId)
@@ -41,7 +59,7 @@ export class EventLogBackend implements SessionBackend {
       this.#snapshots.delete(sessionId)
       return null
     }
-    this.#snapshots.set(sessionId, { session, logVersion: this.log.nextEventId })
+    this.#snapshots.set(sessionId, { session: deepFreeze(session), logVersion: this.log.nextEventId })
     return session
   }
 
