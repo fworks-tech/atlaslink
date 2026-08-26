@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EventLogStore, type BridgeEnvelope } from '../bridge/EventLogStore'
@@ -34,6 +34,13 @@ const cancelled = (at: string): { type: 'session.cancelled'; correlationId: stri
 function runEnvelope(eventId: number, executionId: string): BridgeEnvelope {
   return { eventId, type: 'run.started', executionId, correlationId: 'cor-9', timestamp: 't', task: 'p' }
 }
+
+/** Compact filler so the rotation test can size the cap against a measured line. */
+function smallRun(eventId: number): BridgeEnvelope {
+  return { eventId, type: 'run.started', executionId: `e-${eventId}`, timestamp: 't', task: 'p' }
+}
+
+const runLine = Buffer.byteLength(JSON.stringify(smallRun(0)) + '\n', 'utf8')
 
 async function openBackend() {
   const dir = mkdtempSync(join(tmpdir(), 'atlaslink-session-'))
@@ -178,13 +185,15 @@ test('EventLogBackend: the optimistic version crosses a reopen', async () => {
 test('EventLogBackend: a session event survives NDJSON rotation', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'atlaslink-session-'))
   try {
-    const store = await EventLogStore.open(dir, { maxBytes: 64 })
+    const store = await EventLogStore.open(dir, { maxBytes: runLine * 2 })
     const backend = new EventLogBackend(store)
-    store.append(runEnvelope(store.nextEventId, 'e-0'))
+    store.append(smallRun(store.nextEventId))
     await backend.append(created)
-    // two more rotation-triggering appends push the session line out of the tail
-    store.append(runEnvelope(store.nextEventId, 'e-1'))
-    store.append(runEnvelope(store.nextEventId, 'e-2'))
+    // enough run appends to rotate the session line out of the tail file
+    for (let i = 0; i < 4; i++) store.append(smallRun(store.nextEventId))
+
+    const tail = readFileSync(join(dir, 'events.ndjson'), 'utf8')
+    assert.ok(!tail.includes('session.created')) // the source line really rotated
 
     const s = await backend.get('ses-1')
     assert.ok(s)
@@ -219,6 +228,8 @@ test('EventLogBackend: the snapshot cache serves the same aggregate until an app
     const b = await backend.get('ses-1')
     assert.ok(a && b)
     assert.equal(a, b) // cached reference, no rehydration on the repeat read
+    assert.ok(Object.isFrozen(a)) // a caller cannot corrupt the shared snapshot
+    assert.ok(Object.isFrozen(a.task))
 
     await backend.append(running)
     const c = await backend.get('ses-1')
