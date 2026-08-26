@@ -26,7 +26,7 @@ main → docs/3-m3-task-api → feat/3-session-store → feat/3-task-rest
 
 The durable, event-sourced session store behind a backend port.
 
-- New: `src/session/SessionStore.ts` + `.test.ts`
+- New: `src/session/sessionStore.ts` + `.test.ts`
   - `append(event)` as the commit; `rehydrate(sessionId)` → `Session` aggregate;
     `readModifyWrite` with optimistic `version` bumping (mutator returns `SessionDelta[]`
     — the store owns the `sessionId`).
