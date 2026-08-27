@@ -38,8 +38,8 @@ M3 closes that gap with a durable Task API: `POST/GET /tasks`, `GET /tasks/{id}`
    `member`/`team` validate-and-passthrough until agenthood exposes node seams.
 6. **Read-only contract upheld** — `runTask.ts`/`taskRegistry.ts` untouched; execution
    never driven inline; all runs route through the `SessionQueue` (ADR-002).
-7. **Hermetic suite** — the store backend is local/offline (log-backed in M3; DuckDB later); no LLM, no provider
-   key, no network (MotherDuck backend never runs in CI).
+7. **Hermetic suite** — the store backend is local/offline (`pglite`, in-process, no
+   network); managed Postgres and any cloud backend never run in CI.
 8. **Optimistic versioning** — concurrent aggregate mutations cannot silently clobber
    each other.
 
@@ -71,10 +71,10 @@ A Session is a **live, authoritative work-document**, event-sourced per ADR-004:
 > `finishedAt`), and `output?`/`error?`/`durationMs?`. The richer `interaction[]`,
 > `diagram`, and `nextStep` fields are deferred design (M4) and are not yet in the type.
 
-**Not a log, not a terminal row.** The immutable event stream (NDJSON, ADR-001) is
-the source of truth; the Session is the aggregate **rehydrated** from it on each read
-(rebuild-on-read). DuckDB is a deferred read-optimization behind the same
-`SessionBackend` port (ADR-004).
+**Not a log, not a terminal row.** The immutable event record (postgres `session_events`
+rows; NDJSON for agent-run provenance, ADR-001) is the source of truth; the Session is
+the aggregate **rehydrated** from it on each read. Postgres is the materialization,
+behind the same `SessionBackend` port (ADR-004 model, ADR-006 storage direction).
 
 ## 3. API surface
 
@@ -277,6 +277,7 @@ default and the token gate above.
 - ADR-001 — event log retention via NDJSON (Atlaslink).
 - ADR-002 — read-only PROJECTION CONTRACT / live diagram of society provenance.
 - ADR-003 — Atlas holds the sky of sessions (Atlaslink).
-- ADR-004 — the Session is an event-sourced aggregate, materialized in DuckDB (new).
+- ADR-004 — the Session is an event-sourced aggregate; backend track superseded by ADR-006.
+- ADR-006 — Fastify HTTP layer + PostgreSQL primary store (this plan's direction).
 - [`docs/tasks/m3-task-api.md`](../tasks/m3-task-api.md) — M3 task breakdown.
 - Agenthood ADR-021 — read-only PROJECTION CONTRACT.
