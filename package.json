@@ -23,7 +23,8 @@
     "node": ">=22.14.0"
   },
   "dependencies": {
-    "agenthood": "file:../agenthood"
+    "agenthood": "file:../agenthood",
+    "fastify": "^5.12.1"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
