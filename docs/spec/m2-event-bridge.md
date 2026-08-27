@@ -26,7 +26,8 @@ Agenthood ADR-021).
    `tool.result`, `decision.recorded`, `provenance.recorded`, `run.finished`,
    `run.failed`.
 5. Serial queue discipline — one session runs at a time; concurrent enqueues serialize.
-6. Zero new deps — native `node:http` SSE only.
+6. Zero new deps — native `node:http` SSE only. *(Superseded by ADR-006 Decision 1:
+   the HTTP layer moves to Fastify; the SSE delivery semantics above remain the contract.)*
 7. Clean shutdown — active SSE connections receive a distinct end frame (SIGINT/SIGTERM).
 
 ### Ranked priorities
