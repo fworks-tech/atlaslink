@@ -72,14 +72,28 @@
 - [x] ADR-003 — `docs/adr/ADR-003-atlas-holds-the-sky-of-sessions.md`
       (Atlas as the root node of the M4 Live Dashboard)
 - [x] ADR-004 — `docs/adr/ADR-004-session-aggregate-durability.md`
-      (session as event-sourced aggregate; NDJSON rebuild-on-read in M3,
-      DuckDB backend deferred)
+      (session as event-sourced aggregate; the NDJSON/DuckDB backend track is
+      superseded by ADR-006)
 - [x] ADR-005 — `docs/adr/ADR-005-structured-json-logging.md`
       (structured stderr logger with explicit `correlationId` threading,
       explicit swallow boundary)
+- [x] ADR-006 — `docs/adr/ADR-006-fastify-http-and-postgres.md`
+      (Fastify HTTP layer; PostgreSQL primary store; sessions in Postgres event
+      tables behind `SessionBackend`; NDJSON demoted to agent-run provenance;
+      accounts + first-class tenancy; streaming/API split; reviewed-dependency
+      posture)
 - [x] `docs/sequence-diagrams-evidence.md` —
       delegation-chain evidence the M4 dashboard must render from
       `RunEventBus` events and `.agenthood/provenance/*.json`
+
+### Direction on `main` (ADR-006) — build order
+- [~] Fastify HTTP layer + Postgres primary store — ADR-006 Accepted; the framework
+      swap, `PostgresBackend`, and `pglite`-in-CI are the next work
+- [ ] Auth ADR — accounts, tenants, credential handling, tenant scoping at the
+      data-access boundary (gates account-facing routes; ADR-006 Decision 7)
+- [ ] Infra ADR — Docker packaging, Terraform, GitLab CI; stateless API deployable
+      serverless while the streaming daemon stays a containerized service
+- [ ] Test tooling — Jest (unit), Playwright (M4 E2E), K6 (API load)
 
 ## 6. Related Work in Agenthood
 
@@ -117,16 +131,21 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
 
 ### M3 — Task API
 4. [x] Task API spec + breakdown shipped — `docs/spec/m3-task-api.md`,
-       `docs/tasks/m3-task-api.md`, ADR-004 (session-aggregate durability via
-       event-sourced NDJSON truth + DuckDB materialization). Branch plan:
-       docs (shipped) → session-store (shipped) → task-rest (remaining).
+       `docs/tasks/m3-task-api.md`, ADR-004 (session-aggregate durability) amended by
+       ADR-006 (Postgres primary store + Fastify). Branch plan: docs (shipped) →
+       session-store (shipped) → framework/store swap (in progress) → task-rest.
 5. [x] Ship the durable, event-sourced `SessionStore` — in-memory store behind a
        `SessionBackend` port, hardened per post-merge review (issues #28–#36), plus the
        `EventLogStore`-backed `EventLogBackend` (ADR-004) with a frozen snapshot cache;
-       merged to main (PRs #27, #37, #38)
-6. [ ] Implement `POST/GET /tasks`, `GET /tasks/{id}`, cancel, per-session SSE
-       (`feat/3-task-rest`)
+       merged to main (PRs #27, #37, #38). Per ADR-006 the event-sourced model stays but
+       persists to Postgres event tables (`PostgresBackend`) with the NDJSON log demoted
+       to agent-run provenance.
+6. [ ] Rebuild the HTTP layer on Fastify (ADR-006 Decision 1), preserving the SSE
+       reconnection contract; add `PostgresBackend` in `pglite` for hermetic CI
+7. [ ] Implement `POST/GET /tasks`, `GET /tasks/{id}`, cancel, per-session SSE
+       (`feat/3-task-rest`) on Fastify, behind the auth ADR for account-facing routes
 
 ### M4 — Live Dashboard
-7. [ ] Add a live dashboard UI rendering society provenance
-       (ADR-002) with Atlas as the root node (ADR-003)
+7. [ ] Add a live dashboard UI (React) rendering society provenance
+       (ADR-002) with Atlas as the root node (ADR-003); microfrontend
+       decomposition once independently deplorable modules are real
