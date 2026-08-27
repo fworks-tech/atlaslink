@@ -1,12 +1,14 @@
 # M3 Task API — Plan (agenthood-ratified, draft)
 
-**Date:** 2026-08-23
+**Date:** 2026-08-23 (amended 2026-08-27 per ADR-006)
 **Status:** Proposed — draft for review
 **Issue:** #M3 (Task API)
 
 Prepared from the M2 contract and the Agenthood Society planning sessions. The
 Session model reflects ADR-003 (Atlas holds the sky of sessions) and ADR-004 (the
-Session is an event-sourced aggregate rehydrated from the NDJSON log (DuckDB deferred to a later backend, ADR-004).
+Session is an event-sourced aggregate); ADR-006 set the storage direction — Postgres as
+the primary store with sessions persisted to Postgres event tables (`pg`/`pglite`), not
+NDJSON rebuild-on-read.
 
 ---
 
@@ -54,7 +56,7 @@ A Session is a **live, authoritative work-document**, event-sourced per ADR-004:
 |-------|------|-------|
 | `sessionId` | identity | `ses-…`, durable, never renames |
 | `correlationId` | identity | joins events, traces, decisions, provenance |
-| `tenantId`/`projectId` | seam | `"default"` in M3; multi-tenancy = filter later, not migration |
+| `tenantId` | identity | **first-class in M3** — every account-scoped table carries `tenant_id`; authorization applied at the data-access boundary (ADR-006 Decision 7). The earlier "`\"default\"`, multi-tenancy = filter later" seam is retired. |
 | `interaction[]` | live | ordered Atlas↔user chat turns (prompts, replies) |
 | `diagram` | reserved | node/edge/gate snapshot — **schema reserved (null) until M4** |
 | `tweaks` | live | full per-run override envelope, round-trippable |
@@ -144,10 +146,10 @@ GET /tasks?status=failed&since=2026-01-01T00:00:00Z&limit=50&offset=0
   matching the filter *before* pagination — not the page size — so clients can
   compute page count. Out-of-range `offset`/`limit` (e.g. `limit > 500`, negative
   values) → `400`.
-- Filtering/paging is applied by the `SessionBackend` over the rehydrated store
-  (**no hand-rolled client scan**). When the DuckDB backend lands, filters become
-  bound SQL parameters — never string-concatenated. Injection-class bugs are
-  prevented at the API boundary, not retrofitted.
+- Filtering/paging is applied by the `SessionBackend` over the Postgres store
+  (**no hand-rolled client scan**). Filters become bound SQL parameters
+  (`WHERE tenant_id = $1 AND status = $2 …`) — never string-concatenated. Injection-class
+  bugs are prevented at the API boundary, not retrofitted.
 
 ### `GET /events/{sessionId}` — per-session SSE
 
@@ -160,30 +162,33 @@ GET /events/ses-…   Accept: text/event-stream
 - Implemented as a filtered view over the existing `EventBroadcaster`/`SseHandler`
   surface — no new wire protocol.
 
-## 4. Storage architecture (ADR-004)
+## 4. Storage architecture (ADR-004 + ADR-006)
 
 ```
-RunEventBus ─► EventLogStore (NDJSON — immutable source of truth, ADR-001/002)
+RunEventBus ─► EventLogStore (NDJSON — agent-run provenance, ADR-001/002)
+session events ─► PostgreSQL (primary store, ADR-006)
+                 session_events (tenant_id, session_id, version, event) ─▶ Session aggregate
+                 users / tenants / product tables
                     │  append (the commit / the delta)
-                    ▼
-              SessionStore (NDJSON-backed, rebuild-on-read) ──► Session aggregate
-                    │                                          identity · interaction[]
-                    │                                          · tweaks · diagram (reserved)
-                    │                                          · lifecycle · version
                     ▼
               REST surface (POST/GET/CANCEL + per-session SSE)
 ```
 
-- **NDJSON** = cold, immutable, causal log (durability + provenance) and, in M3, the
-  hot read path too: `SessionStore` rehydrates the aggregate from it on each read
-  (rebuild-on-read). **DuckDB** is a deferred `SessionBackend` implementation that
-  would cache the materialized aggregate for SQL queryability; it does not change the
-  source of truth.
-- Written behind a `SessionBackend` port. The M3 MVP ships a **log-backed in-memory
-  `SessionStore`** (rebuild-on-read, zero new deps, hermetic). **`DuckDbBackend`**
-  (embedded, file) and **MotherDuck backend** are designed-as-a-port, built later.
+- **PostgreSQL is the primary operational store** (ADR-006 Decision 4): users, tenants,
+  session events, and product tables. Development and hermetic tests run `pglite`
+  (in-process, no network); production connects to managed Postgres.
+- **Sessions are event-sourced against Postgres event tables** (ADR-006 Decision 5). The
+  ADR-004 model holds — event append is the commit, `version` is the optimistic CAS
+  token, rehydration is deterministic — but the stream lives in append-only rows keyed by
+  `tenant_id` + `session_id`, and rehydration is a SQL-filtered read, not an NDJSON scan.
+- Written behind a `SessionBackend` port. The M3 MVP ships `PostgresBackend` (§4) — the
+  planned `DuckDbBackend`/MotherDuck track and the `duckdb` dep token are revoked
+  (ADR-006 Decision 5).
+- The NDJSON **`EventLogStore` is demoted to agent-run provenance** (ADR-006 Decision 6):
+  an immutable audit record of `run.*` and bridge events, consumed by the M4 provenance
+  dashboard — no longer the source of truth for session data.
 - Mutations are **read-modify-write** with optimistic `version` bumping; the event
-  append is the commit, so the store and the log cannot drift.
+  append is the commit, so the store and the event stream cannot drift.
 
 ## 5. Tweaks — full Langflow envelope, honest execution ceiling
 
@@ -212,17 +217,22 @@ Resolved:
 - Cancellation — queued-only (202) in M3.
 
 Still open (tuning / dependency, no architectural impact):
-1. **DuckDB dependency token (deferred)** — the `duckdb` npm package is **not** pulled
-   into the M3 MVP; ADR-004 preserves zero-new-deps for M3 and scopes the lift to the
-   later DuckDB `SessionBackend` only. No new dependency to accept for M3.
-2. **MotherDuck backend** — designed-now, built-later (§4); confirm the port interface
-   is enough for M3.
-3. **Aggregate rebuild cadence** — rebuild-on-open-and-on-read vs a continuously
-   maintained materialization; M3 starts with rebuild-on-read (simplest, correct).
+1. **`pg`/`pglite` dependency token (accepted)** — ADR-006 Decision 9 records the
+   reviewed-dependency posture; `pg`+`pglite` are accepted with ADR-006. The planned
+   `duckdb` token is revoked.
+2. **`PostgresBackend` schema** — table shapes (`session_events`, `sessions` snapshot
+   view, tenants/users) and migration strategy are defined as the auth ADR + backend
+   branch land; `pglite` in CI runs the same migrations as managed Postgres.
+3. **Aggregate rebuild cadence** — rebuild-from-event-rows per read vs a maintained
+   `sessions` materialization; M3 starts with rebuild (simplest, correct), the
+   snapshot-view is the later optimization.
 4. **`GET /events/{sessionId}` filter** — by `correlationId` (present on run + session
    events) is sufficient; confirm no separate session-scoped event type is required.
 5. **Cancel of running** — deferred to M4 with agenthood-side change (§3), per ADR-002
    read-only contract.
+6. **Auth ADR pending** — account model, credential handling, and tenant-scoping
+   mechanics for §7 are scoped in ADR-006 Decision 7 and land in the auth ADR before
+   account-facing routes ship.
 
 ## 7. Security & trust boundary (auditor review)
 
@@ -234,15 +244,19 @@ not a later feature.
 - **Network binding:** M3 binds the server to **loopback only** (`127.0.0.1`) by
   default. Cross-host exposure requires an explicit, documented opt-in; it is not
   the default posture.
-- **Authentication:** M3 requires an **optional bearer token** on every mutating
-  and listing route (`POST /tasks`, `GET /tasks`, `POST /tasks/{id}/cancel`,
-  `GET /tasks/{id}`, `GET /events/{sessionId}`). When `ATLASLINK_API_TOKEN` is set,
-  requests without a valid `Authorization: Bearer …` header are rejected with
-  `401`. When unset, the server logs a single warning at startup that the API is
-  unauthenticated and must not be network-exposed.
-- **Authorization:** single-tenant in M3 (`tenantId = "default"`, §2), so ownership
-  checks are deferred to multi-tenancy work. The token above is an all-or-nothing
-  gate, not per-resource ACL.
+- **Authentication:** with accounts first-class (ADR-006 Decision 7), account-facing
+  routes ship with the auth ADR — login/session tokens, credential handling, and
+  tenant scoping at the data-access boundary. Until that work lands, the pre-auth
+  baseline holds: an **optional bearer token** on every mutating and listing route
+  (`POST /tasks`, `GET /tasks`, `POST /tasks/{id}/cancel`, `GET /tasks/{id}`,
+  `GET /events/{sessionId}`). When `ATLASLINK_API_TOKEN` is set, requests without a
+  valid `Authorization: Bearer …` header are rejected with `401`. When unset, the
+  server logs a single warning at startup that the API is unauthenticated and must
+  not be network-exposed.
+- **Authorization:** tenant-scoped by construction — every query carries `tenant_id`
+  and is enforced at the data-access boundary (ADR-006 Decision 7), with Postgres
+  row-level security applied where it pays. The pre-auth token above is an
+  all-or-nothing gate, not a substitute for per-tenant ACLs.
 - **Cost abuse:** because `POST /tasks` spends provider quota, the bearer token is
   the primary abuse control. Rate-limiting is out of scope for M3 but noted for M4.
 
