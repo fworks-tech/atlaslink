@@ -1,4 +1,4 @@
-import { EventLogStore, type BridgeEnvelope } from '../bridge/EventLogStore'
+import { EventLogStore } from '../bridge/EventLogStore'
 import { rehydrate } from './sessionStore'
 import type { SessionBackend } from './sessionBackend'
 import type { Session, SessionEvent, SessionDelta } from './types'
@@ -78,10 +78,6 @@ export class EventLogBackend implements SessionBackend {
     for (const delta of mutator(current)) {
       await this.append({ ...delta, sessionId })
     }
-  }
-
-  #envelope(event: SessionEvent): BridgeEnvelope {
-    return { ...event, eventId: this.log.nextEventId, type: event.type }
   }
 
   #sessionEvents(sessionId: string): SessionEvent[] {
