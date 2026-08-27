@@ -2,7 +2,7 @@
 
 **Source of truth:** [`docs/spec/m2-event-bridge.md`](../spec/m2-event-bridge.md)
 **Issue:** #4 (M2 Event Bridge)
-**Status:** Proposed — branch plan, not yet implemented
+**Status:** Shipped — all four implementation branches merged to main
 
 The M2 implementation is split into stacked, revert-safe branches. Each branch lands
 independently and keeps the full hermetic suite green (no LLM, no provider key). Each
@@ -36,7 +36,7 @@ main → docs/4-m2-event-bridge → feat/4-event-log-store → feat/4-event-broa
 
 ## Branch 4 — `feat/4-session-queue`
 
-- New: `src/bridge/sessionQueue.ts` + `.test.ts`
+- New: `src/bridge/SessionQueue.ts` + `.test.ts`
 - Serial FIFO worker with injected runner (hermetic)
 - Emits `session.queued/started/succeeded/failed`; terminal status read from the registry
 - `src/tasks/taskRegistry.ts`, `src/daemon/runTask.ts` remain untouched

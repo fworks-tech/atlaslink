@@ -62,6 +62,13 @@ A Session is a **live, authoritative work-document**, event-sourced per ADR-004:
 | `lifecycle` | state | queued / running / succeeded / failed + timestamps |
 | `version` | concurrency | optimistic revision; increments on each aggregate mutation |
 
+> **Shipped shape (Branch 2).** The implemented `Session` (`src/session/types.ts`) is
+> normalized from the `session.*` event stream and is leaner than the table above:
+> `sessionId`, `correlationId`, `status` (`queued|running|succeeded|failed|cancelled`),
+> `version`, `task { member, prompt }`, `tweaks?`, timestamps (`createdAt`/`startedAt`/
+> `finishedAt`), and `output?`/`error?`/`durationMs?`. The richer `interaction[]`,
+> `diagram`, and `nextStep` fields are deferred design (M4) and are not yet in the type.
+
 **Not a log, not a terminal row.** The immutable event stream (NDJSON, ADR-001) is
 the source of truth; the Session is the aggregate **rehydrated** from it on each read
 (rebuild-on-read). DuckDB is a deferred read-optimization behind the same
