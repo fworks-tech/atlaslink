@@ -60,12 +60,13 @@ truth, and the Session is an aggregate **rehydrated** from those events.
    state.
 
 5. **A session backend port isolates cloud from local.** The store is defined behind a
-   `SessionBackend` interface. M3 ships only the embedded `DuckDbBackend` (local,
-   offline, hermetic in CI). A **MotherDuck** remote backend is designed-as-a-port but
-   **built later** — a Session is a document/chat/state problem more than a warehouse
-   problem, so cloud earns its keep only when sessions must be shared collaboratively
-   (the SaaS future). No config-gated SaaS/local fork in the product layer (a known
-   Langflow scar).
+   `SessionBackend` interface. M3 ships only the NDJSON-backed `EventLogBackend` (local,
+   offline, hermetic in CI — the `FileRemote`-free path of Decision 3). A **DuckDbBackend**
+   is the later materialization step of Decision 3; a **MotherDuck** remote backend is
+   designed-as-a-port but built later — a Session is a document/chat/state problem more
+   than a warehouse problem, so cloud earns its keep only when sessions must be shared
+   collaboratively (the SaaS future). No config-gated SaaS/local fork in the product layer
+   (a known Langflow scar).
 
 6. **The zero-new-deps policy is preserved for the M3 MVP; the `duckdb` lift is
    deferred.** Durability and queryability were deferred *to* M3, and M3 achieves

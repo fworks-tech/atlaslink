@@ -1,7 +1,7 @@
 # M2 Event Bridge — Plan (agenthood-ratified)
 
 **Date:** 2026-08-22
-**Status:** Proposed — implemented by ADR-001 (Accepted) and the M2 implementation branches
+**Status:** Shipped — implemented by ADR-001 (Accepted) and the M2 implementation branches
 **Issue:** #4 (M2 Event Bridge)
 
 Ratified by an Agenthood Society planning session (the-strategist, the-architect,
@@ -109,7 +109,7 @@ main → docs/4-m2-event-bridge → feat/4-event-log-store → feat/4-event-broa
 | 1 | `docs/4-m2-event-bridge` | ADR-001 (Accepted), M2 spec, task breakdown | `docs/adr/ADR-001-event-log-retention.md`, `docs/spec/m2-event-bridge.md`, `docs/tasks/m2-event-bridge.md` | review |
 | 2 | `feat/4-event-log-store` | `EventLogStore`: open/append, replay (`readAfter`), `oldestId`, 10 MB × 3 rotation, corrupt-tail tolerance, swallow-write-failure | `src/bridge/EventLogStore.ts` + `.test.ts` | 7 tests |
 | 3 | `feat/4-event-broadcaster` | monotonic `eventId`, fan-out, per-client replay + `bridge.gap`, slow-client eviction, subscriber-error isolation | `src/bridge/EventBroadcaster.ts` + `.test.ts` | 6 tests |
-| 4 | `feat/4-session-queue` | serial FIFO worker (injected runner for hermeticity), `session.queued/started/succeeded/failed`, terminal-from-registry | `src/bridge/sessionQueue.ts` + `.test.ts` | 6 tests |
+| 4 | `feat/4-session-queue` | serial FIFO worker (injected runner for hermeticity), `session.queued/started/succeeded/failed`, terminal-from-registry | `src/bridge/SessionQueue.ts` + `.test.ts` | 6 tests |
 | 5 | `feat/4-sse-endpoint` | `GET /events` handler, wiring in `src/server.ts` (`listen()` opens store→broadcaster→queue), provisional `POST /runs`, README/PROGRESS | `src/bridge/sseEndpoint.ts` + `.test.ts`, `src/server.ts`, `src/server.test.ts` | 7+ tests + 1 E2E |
 
 **Untouched:** `src/daemon/runTask.ts`, `src/tasks/taskRegistry.ts`, `src/config.ts`,
@@ -123,7 +123,7 @@ Resolved (2026-08-22, explore agent, evidence in repo):
 
 1. **`POST /runs` in M2 — RESOLVED: SHIP it** (as labeled "M3 preview",
    `{member, prompt}` → `202 {session}`), routed THROUGH the branch-4
-   `sessionQueue` — never a direct `runSession` call. Justification: the driver
+   `SessionQueue` — never a direct `runSession` call. Justification: the driver
    path is proven by `runOnce`/`runSession` (`server.ts:34-52`,
    `runTask.ts:19-25`); `listen()` already owns a registry and receives the full
    config (`server.ts:55,96`); serial discipline (success criterion 5) requires
@@ -131,7 +131,7 @@ Resolved (2026-08-22, explore agent, evidence in repo):
    live/E2E trigger; M3 scope is protected by the "M3 preview" label and the
    absence of a data model.
 4. **`session.*` extension events — RESOLVED: SHIP them** (emitted by the
-   branch-4 `sessionQueue`, NOT from the registry — `taskRegistry.ts` and
+   branch-4 `SessionQueue`, NOT from the registry — `taskRegistry.ts` and
    `runTask.ts` remain untouched). Justification: the bus cannot represent
    `queued` or fail-before-any-event (proven by `runTask.test.ts:133-148`);
    `start` precedes subscribe so `session.started` can't be faithfully derived
@@ -158,7 +158,7 @@ Still open (tuning, no scope impact):
    record SSE, NDJSON, verbatim passthrough before any code.
 2. Start branch 2: `EventLogStore.open(dataDir)` + `append` with the fake-app/M1
    test pattern; expect 17 existing + 7 new green; no config changes.
-3. Branch 4 `sessionQueue` emits `session.queued/started/succeeded/failed`;
+3. Branch 4 `SessionQueue` emits `session.queued/started/succeeded/failed`;
    branch 5 handles `POST /runs` + `GET /events` + `src/server.test.ts`.
 
 ## References

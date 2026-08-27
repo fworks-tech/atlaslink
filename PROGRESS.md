@@ -1,7 +1,7 @@
 # Atlaslink — Session Progress Checklist
 
 > Status snapshot of the atlaslink project.
-> Updated: 2026-08-23
+> Updated: 2026-08-27
 
 ## Legend
 
@@ -57,8 +57,8 @@
 
 ## 5. Architecture Planning (from the-architect skill)
 
-- [ ] ADR-001: persistence layer for events (DEFERRED for later)
-      — options under consideration: PostgreSQL+Prisma, LanceDB, JSON+retention
+- [x] ADR-001: persistence layer for events — Accepted, resolves #5
+      (NDJSON event log with rotation and cursor restore; no new deps)
 - [ ] MCP support (DEFERRED — agenthood already has MCP via Portals)
 - [ ] Live web app architecture (SSE/WebSocket bridge from event feed to browser)
       — now governed by ADR-002 (M2/M4)
@@ -71,6 +71,12 @@
       (M4 foundation: live diagram of society provenance)
 - [x] ADR-003 — `docs/adr/ADR-003-atlas-holds-the-sky-of-sessions.md`
       (Atlas as the root node of the M4 Live Dashboard)
+- [x] ADR-004 — `docs/adr/ADR-004-session-aggregate-durability.md`
+      (session as event-sourced aggregate; NDJSON rebuild-on-read in M3,
+      DuckDB backend deferred)
+- [x] ADR-005 — `docs/adr/ADR-005-structured-json-logging.md`
+      (structured stderr logger with explicit `correlationId` threading,
+      explicit swallow boundary)
 - [x] `docs/sequence-diagrams-evidence.md` —
       delegation-chain evidence the M4 dashboard must render from
       `RunEventBus` events and `.agenthood/provenance/*.json`
@@ -89,7 +95,8 @@
        zero-build dev via `tsx`, `tsconfig.json` with `noEmit: true`.
        `src/server.ts`, `src/config.ts`, `src/daemon/contextFactory.ts`,
        `src/daemon/runTask.ts`, `src/tasks/taskRegistry.ts`.
-       16 hermetic tests on `feat/m1-daemon-core-typescript`.
+       16 hermetic tests on `feat/m1-daemon-core-typescript`;
+       the full suite now runs 93 tests across M1–M3.
        E2E verified with the real provider:
        `run.started → reasoning → tool.called/result → decision.recorded →
        provenance.recorded → run.finished`. Fixed a stale-shell-key shadowing
@@ -109,10 +116,14 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
 (ADR-002). `POST /runs` (M3 preview) delegates sessions through the session queue.
 
 ### M3 — Task API
-4. [~] Task API spec drafted — `docs/spec/m3-task-api.md`, `docs/tasks/m3-task-api.md`,
-       ADR-004 (session-aggregate durability via event-sourced NDJSON truth + DuckDB
-       materialization). Branch plan: docs → session-store → task-rest.
-5. [ ] Implement durable, event-sourced `SessionStore` (`feat/3-session-store`)
+4. [x] Task API spec + breakdown shipped — `docs/spec/m3-task-api.md`,
+       `docs/tasks/m3-task-api.md`, ADR-004 (session-aggregate durability via
+       event-sourced NDJSON truth + DuckDB materialization). Branch plan:
+       docs (shipped) → session-store (shipped) → task-rest (remaining).
+5. [x] Ship the durable, event-sourced `SessionStore` — in-memory store behind a
+       `SessionBackend` port, hardened per post-merge review (issues #28–#36), plus the
+       `EventLogStore`-backed `EventLogBackend` (ADR-004) with a frozen snapshot cache;
+       merged to main (PRs #27, #37, #38)
 6. [ ] Implement `POST/GET /tasks`, `GET /tasks/{id}`, cancel, per-session SSE
        (`feat/3-task-rest`)
 
