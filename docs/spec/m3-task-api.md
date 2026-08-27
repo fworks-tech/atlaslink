@@ -56,7 +56,7 @@ A Session is a **live, authoritative work-document**, event-sourced per ADR-004:
 |-------|------|-------|
 | `sessionId` | identity | `ses-…`, durable, never renames |
 | `correlationId` | identity | joins events, traces, decisions, provenance |
-| `tenantId` | identity | **first-class in M3** — every account-scoped table carries `tenant_id`; authorization applied at the data-access boundary (ADR-006 Decision 7). The earlier "`\"default\"`, multi-tenancy = filter later" seam is retired. |
+| `tenantId` | identity | **first-class target** (ADR-006 Decision 7) — every account-scoped table carries `tenant_id`; the tenant schema itself lands with the auth ADR, and the shipped `Session` type has no `tenantId` yet. The earlier "`\"default\"`, multi-tenancy = filter later" seam is retired. |
 | `interaction[]` | live | ordered Atlas↔user chat turns (prompts, replies) |
 | `diagram` | reserved | node/edge/gate snapshot — **schema reserved (null) until M4** |
 | `tweaks` | live | full per-run override envelope, round-trippable |

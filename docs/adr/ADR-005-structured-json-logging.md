@@ -68,6 +68,6 @@ on Node primitives alone.
 ## References
 
 - ADR-001 — event log retention via NDJSON (Atlaslink, Accepted).
-- ADR-004 — the Session is an event-sourced aggregate, materialized in DuckDB (Accepted); dependency policy.
+- ADR-004 — the Session is an event-sourced aggregate (backend track superseded by ADR-006); dependency policy now per ADR-006 Decision 9.
 - Issue #24 — observability tracking.
 - Auditor A09 — authentication failures must be logged (auth-failure logging lands in `feat/3-task-rest`, per spec §7).
