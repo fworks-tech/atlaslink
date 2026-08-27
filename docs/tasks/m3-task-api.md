@@ -73,7 +73,7 @@ are NOT in scope here.
   an `onResponse` hook; Fastify runs `logger: false`. pino backing for the facade
   (ADR-006 Decision 3) is deferred to a later chore — the contract and swallow boundary
   stand, which is what Decision 3 requires.
-- New dep: `fastify` ^5 (ADR-006 Decisions 1/9). Shipped: 93 → 94 tests.
+- New dep: `fastify` ^5 (ADR-006 Decisions 1/9). Shipped: 93 → 95 tests (error-envelope + malformed-JSON coverage).
 
 ## Branch 4 — `feat/6-postgres-backend`
 
@@ -129,4 +129,4 @@ The REST surface and per-session SSE over the store and the existing queue, on F
   and any cloud backend never run in CI.
 - **Tenancy:** `session_events` carries `tenant_id` at the data-access boundary
   (ADR-006 Decision 7); user/tenant schema lands with the auth ADR.
-- Target total: 93 → 94 (Fastify) → ~104 (Postgres) → ~114 hermetic tests with Branch 5.
+- Target total: 93 → 95 (Fastify) → 106 (Postgres) → ~114 hermetic tests with Branch 5.
