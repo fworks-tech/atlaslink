@@ -133,19 +133,20 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
 4. [x] Task API spec + breakdown shipped — `docs/spec/m3-task-api.md`,
        `docs/tasks/m3-task-api.md`, ADR-004 (session-aggregate durability) amended by
        ADR-006 (Postgres primary store + Fastify). Branch plan: docs (shipped) →
-       session-store (shipped) → framework/store swap (in progress) → task-rest.
+       session-store (shipped) → fastify-rebuild (in flight) → postgres-backend
+       (in progress) → task-rest.
 5. [x] Ship the durable, event-sourced `SessionStore` — in-memory store behind a
        `SessionBackend` port, hardened per post-merge review (issues #28–#36), plus the
        `EventLogStore`-backed `EventLogBackend` (ADR-004) with a frozen snapshot cache;
        merged to main (PRs #27, #37, #38).
 6. [ ] Rebuild the HTTP layer on Fastify (ADR-006 Decision 1), preserving the SSE
-       reconnection contract; add `PostgresBackend` in `pglite` for hermetic CI —
-       per ADR-006 the event-sourced model persists to Postgres event tables, with the
-       NDJSON log demoted to agent-run provenance
-7. [ ] Implement `POST/GET /tasks`, `GET /tasks/{id}`, cancel, per-session SSE
-       (`feat/3-task-rest`) on Fastify, behind the auth ADR for account-facing routes
+       reconnection contract — `feat/6-fastify-rebuild` (branch complete, pending
+       review/merge); the ADR-005 request envelope stays on the `src/log.ts` facade
+7. [ ] Add `PostgresBackend` over `pglite`/`pg` for hermetic CI (ADR-006 Decisions
+       4–5, 9) — `feat/6-postgres-backend` (in progress)
+8. [ ] Implement `POST/GET /tasks`, `GET /tasks/{id}`, cancel, per-session SSE
+       (`feat/3-task-rest`)
 
 ### M4 — Live Dashboard
-8. [ ] Add a live dashboard UI (React) rendering society provenance
-       (ADR-002) with Atlas as the root node (ADR-003); microfrontend
-       decomposition once independently deplorable modules are real
+9. [ ] Add a live dashboard UI rendering society provenance
+       (ADR-002) with Atlas as the root node (ADR-003)
