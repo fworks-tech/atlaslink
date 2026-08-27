@@ -220,12 +220,17 @@ Still open (tuning / dependency, no architectural impact):
 1. **`pg`/`pglite` dependency token (accepted)** — ADR-006 Decision 9 records the
    reviewed-dependency posture; `pg`+`pglite` are accepted with ADR-006. The planned
    `duckdb` token is revoked.
-2. **`PostgresBackend` schema** — table shapes (`session_events`, `sessions` snapshot
-   view, tenants/users) and migration strategy are defined as the auth ADR + backend
-   branch land; `pglite` in CI runs the same migrations as managed Postgres.
-3. **Aggregate rebuild cadence** — rebuild-from-event-rows per read vs a maintained
-   `sessions` materialization; M3 starts with rebuild (simplest, correct), the
-   snapshot-view is the later optimization.
+2. **`PostgresBackend` schema — resolved with the backend branch.** `session_events`
+   is keyed by `(tenant_id, session_id, seq)` with a `UNIQUE (tenant_id, session_id,
+   version)` CAS column, an index on `(tenant_id, correlation_id)`, and `tenant_id`
+   defaulting to `'default'` so the auth ADR is additive, not a rewrite. A hand-rolled
+   migration runner (applied-versions table, standard SQL, one transaction per
+   migration) runs the identical statements on `pglite` (hermetic CI) and managed
+   Postgres. The `sessions` snapshot view and tenants/users still land with the auth
+   ADR; M3 ships rebuild-on-read.
+3. **Aggregate rebuild cadence — resolved.** Rebuild-from-event-rows per read (shipped
+   in the backend branch); the maintained `sessions` materialization is the later
+   optimization for the auth ADR scale.
 4. **`GET /events/{sessionId}` filter** — by `correlationId` (present on run + session
    events) is sufficient; confirm no separate session-scoped event type is required.
 5. **Cancel of running** — deferred to M4 with agenthood-side change (§3), per ADR-002
