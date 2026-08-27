@@ -28,9 +28,9 @@ relational store.
      NDJSON file cannot express `WHERE tenant_id = ?` or join a session to its user.
    - The per-tenant "seam" the m3 spec reserved for later is now the primary access
      pattern, not a filter bolt-on.
-   - Optimistic `version` CAS and deterministic rehydration (ADR-004 Decision 4) are
-     worth keeping — they are the *correct concurrency model* — but they must run against
-     an indexable, queryable, concurrently-writable store.
+- Optimistic `version` CAS and deterministic rehydration (ADR-004 Decisions 2 and 4) are
+      worth keeping — they are the *correct concurrency model* — but they must run against
+      an indexable, queryable, concurrently-writable store.
 
 **Why Postgres.** Sessions and account data are an OLTP-shaped workload — many writers,
 point updates, optimistic versioning, joins across user/tenant/session — not DuckDB's
@@ -91,9 +91,9 @@ wrong shape.
    auth, webhook receivers, queries) is packaged to deploy as serverless functions
    (AWS Lambda + API Gateway); the long-running daemon (agent runs + SSE fan-out) stays a
    containerized service. Lambda's execution-time and connection model cannot serve
-   long-lived SSE streams; request/response surfaces are its natural fit. Cloud
-   integrations add laterlong-running workers (polling/scheduling) which are ordinary
-   services — deployed with the daemon, state in Postgres. Infrastructure (Terraform)
+long-lived SSE streams; request/response surfaces are its natural fit. Cloud
+    integrations add later long-running workers (polling/scheduling) which are ordinary
+    services — deployed with the daemon, state in Postgres. Infrastructure (Terraform)
    and packaging (Docker) are scoped to a following infra ADR.
 
 9. **Dependency posture: zero-new-deps becomes reviewed-dependencies.** Retiring the
@@ -151,8 +151,11 @@ wrong shape.
 - ADR-001 — event log retention via NDJSON: stands for agent-run provenance (Decision 6).
 - ADR-002 — read-only projection contract (unchanged).
 - ADR-003 — Atlas holds the sky of sessions (unchanged).
-- ADR-004 — session-aggregate durability: Decisions 1–2 and 4 stand; the DuckDB/NDJSON
-  backend track (Decisions 3, 5, 6) is superseded by Decisions 4–5 of this ADR.
+- ADR-004 — session-aggregate durability: Decisions 1–2 and 4 stand as the event-sourcing
+  model — with Decision 1's "NDJSON `EventLogStore` as the session durable record"
+  superseded **for session data** by Decisions 4–5 of this ADR (Postgres event tables),
+  the log retained for agent-run provenance. The DuckDB backend track (Decisions 3, 5, 6)
+  is superseded by Decisions 4–5 and 9 of this ADR.
 - ADR-005 — structured logging: contract stands; implementation may move to pino.
 - M2 spec success criterion 6 — superseded by Decision 1.
 - m3 spec §2 session model — `tenantId` seam retired by Decision 7.

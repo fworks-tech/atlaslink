@@ -137,15 +137,15 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
 5. [x] Ship the durable, event-sourced `SessionStore` — in-memory store behind a
        `SessionBackend` port, hardened per post-merge review (issues #28–#36), plus the
        `EventLogStore`-backed `EventLogBackend` (ADR-004) with a frozen snapshot cache;
-       merged to main (PRs #27, #37, #38). Per ADR-006 the event-sourced model stays but
-       persists to Postgres event tables (`PostgresBackend`) with the NDJSON log demoted
-       to agent-run provenance.
+       merged to main (PRs #27, #37, #38).
 6. [ ] Rebuild the HTTP layer on Fastify (ADR-006 Decision 1), preserving the SSE
-       reconnection contract; add `PostgresBackend` in `pglite` for hermetic CI
+       reconnection contract; add `PostgresBackend` in `pglite` for hermetic CI —
+       per ADR-006 the event-sourced model persists to Postgres event tables, with the
+       NDJSON log demoted to agent-run provenance
 7. [ ] Implement `POST/GET /tasks`, `GET /tasks/{id}`, cancel, per-session SSE
        (`feat/3-task-rest`) on Fastify, behind the auth ADR for account-facing routes
 
 ### M4 — Live Dashboard
-7. [ ] Add a live dashboard UI (React) rendering society provenance
+8. [ ] Add a live dashboard UI (React) rendering society provenance
        (ADR-002) with Atlas as the root node (ADR-003); microfrontend
        decomposition once independently deplorable modules are real
