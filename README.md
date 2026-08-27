@@ -30,6 +30,9 @@ Orchestrating multiple AI agents today means hand-written glue code, opaque exec
 
 The **M1 Daemon Core** is shipped and working: a long-running HTTP server that validates the LLM provider config up front, hosts an `ApplicationContext` per task, and subscribes to its `RunEventBus`. You can boot the daemon, hit `/health`, and run one-shot member tasks from the CLI.
 
+> **Architecture:** see [docs/architecture/README.md](docs/architecture/README.md) for
+> the whole-system map, the per-layer notes under `src/`, and the ADR index.
+
 This is **not yet** the Atlaslink UI — the live diagram-flow UI arrives with **M4 (Live Dashboard)**. The **Event Bridge (M2)** that feeds it is already shipped.
 
 ## Getting started
