@@ -5,7 +5,10 @@
 **Issue:** M3 Task API
 **Amended by:** ADR-006 (Decisions 4–5) — the NDJSON/DuckDB session-backend track is
 superseded; sessions persist to Postgres event tables behind the same `SessionBackend`
-port. Decisions 1–2 and 4 of this ADR stand unchanged.
+port, with the NDJSON log retained for agent-run provenance. Decision 1 stands for the
+event-sourcing model but its "NDJSON as the session durable record" role is superseded
+**for session data** by ADR-006 Decisions 4–5; Decisions 2 and 4 stand unchanged;
+Decisions 3, 5, 6 are superseded.
 
 ## Context
 
