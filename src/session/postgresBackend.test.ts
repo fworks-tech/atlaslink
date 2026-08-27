@@ -1,11 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { PGlite } from '@electric-sql/pglite'
-import { PgliteDb } from './db'
+import { PgliteDb, type Db } from './db'
 import { migrations, runMigrations } from './migrations'
 import { PostgresBackend } from './postgresBackend'
 import { createSessionBackend } from './backendFactory'
 import { SessionStore } from './sessionStore'
+import { VersionConflictError } from './types'
 import { backendContract } from './backendContract'
 import type { SessionEvent } from './types'
 
@@ -104,4 +105,29 @@ test('createSessionBackend defaults to the in-memory store without a database UR
     if (previous === undefined) delete process.env.ATLASLINK_DATABASE_URL
     else process.env.ATLASLINK_DATABASE_URL = previous
   }
+})
+
+test('a unique-violation on first write is surfaced as VersionConflictError', async () => {
+  const versionRows = [{ version: 2 }]
+  const stubDb: Db = {
+    query: async <TRow extends object>() => ({ rows: versionRows as unknown as TRow[] }),
+    exec: async () => {},
+    transaction: async () => {
+      throw Object.assign(new Error('duplicate key value violates unique constraint'), {
+        code: '23505',
+      })
+    },
+  }
+
+  await assert.rejects(
+    new PostgresBackend(stubDb).readModifyWrite('ses-1', 0, () => [
+      { type: 'session.running', correlationId: 'cor-1', at: '2026-01-01T00:00:01Z' },
+    ]),
+    (e: unknown) => {
+      assert.ok(e instanceof VersionConflictError)
+      assert.equal((e as VersionConflictError).expected, 0)
+      assert.equal((e as VersionConflictError).actual, 2)
+      return true
+    }
+  )
 })
