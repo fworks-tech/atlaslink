@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite'
-import { Client, type QueryResultRow } from 'pg'
+import { Pool, type QueryResultRow } from 'pg'
 
 /**
  * Minimal relational seam between the two Postgres drivers (ADR-006 Decision 9):
@@ -50,25 +50,21 @@ export class PgliteDb implements Db {
 }
 
 export class PgDb implements Db {
-  constructor(
-    private readonly client: Client,
-    private readonly connectionString: string
-  ) {}
+  constructor(private readonly pool: Pool) {}
 
   async query<TRow extends object>(
     sql: string,
     params: readonly unknown[] = []
   ): Promise<{ rows: TRow[] }> {
-    return this.client.query<TRow & QueryResultRow>(sql, params as unknown[])
+    return this.pool.query<TRow & QueryResultRow>(sql, params as unknown[])
   }
 
   async exec(sql: string): Promise<void> {
-    await this.client.query(sql)
+    await this.pool.query(sql)
   }
 
   async transaction<T>(fn: (tx: Db) => Promise<T>): Promise<T> {
-    const client = new Client({ connectionString: this.connectionString })
-    await client.connect()
+    const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
       const handle: Db = {
@@ -88,7 +84,7 @@ export class PgDb implements Db {
       await client.query('ROLLBACK')
       throw err
     } finally {
-      await client.end()
+      client.release()
     }
   }
 }

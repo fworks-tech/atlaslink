@@ -64,37 +64,52 @@ export class PostgresBackend implements SessionBackend {
     expectedVersion: number,
     mutator: (current: Session | null) => SessionDelta[]
   ): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      const { rows } = await tx.query<VersionRow>(
-        `SELECT version FROM session_events
-         WHERE tenant_id = $1 AND session_id = $2
-         ORDER BY version DESC LIMIT 1
-         FOR UPDATE`,
-        [this.tenantId, sessionId]
-      )
-      const actual = rows[0]?.version ?? 0
-      if (actual !== expectedVersion) {
-        throw new VersionConflictError(sessionId, expectedVersion, actual)
-      }
-
-      const { rows: eventRows } = await tx.query<EventRow>(
-        `SELECT event FROM session_events
-         WHERE tenant_id = $1 AND session_id = $2
-         ORDER BY version`,
-        [this.tenantId, sessionId]
-      )
-      const current = eventRows.length > 0 ? rehydrate(eventRows.map((r) => parseEvent(r.event))) : null
-
-      let version = actual
-      for (const delta of mutator(current)) {
-        version += 1
-        const event: SessionEvent = { ...delta, sessionId }
-        await tx.query(
-          `INSERT INTO session_events (tenant_id, session_id, version, correlation_id, at, event)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [this.tenantId, sessionId, version, event.correlationId, event.at, JSON.stringify(event)]
+    try {
+      await this.db.transaction(async (tx) => {
+        const { rows } = await tx.query<VersionRow>(
+          `SELECT version FROM session_events
+           WHERE tenant_id = $1 AND session_id = $2
+           ORDER BY version DESC LIMIT 1
+           FOR UPDATE`,
+          [this.tenantId, sessionId]
         )
+        const actual = rows[0]?.version ?? 0
+        if (actual !== expectedVersion) {
+          throw new VersionConflictError(sessionId, expectedVersion, actual)
+        }
+
+        const { rows: eventRows } = await tx.query<EventRow>(
+          `SELECT event FROM session_events
+           WHERE tenant_id = $1 AND session_id = $2
+           ORDER BY version`,
+          [this.tenantId, sessionId]
+        )
+        const current = eventRows.length > 0 ? rehydrate(eventRows.map((r) => parseEvent(r.event))) : null
+
+        let version = actual
+        for (const delta of mutator(current)) {
+          version += 1
+          const event: SessionEvent = { ...delta, sessionId }
+          await tx.query(
+            `INSERT INTO session_events (tenant_id, session_id, version, correlation_id, at, event)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [this.tenantId, sessionId, version, event.correlationId, event.at, JSON.stringify(event)]
+          )
+        }
+      })
+    } catch (err) {
+      // a brand-new session has no row to `FOR UPDATE`, so two first writers can
+      // both compute version 1 and collide on the UNIQUE constraint — surface the
+      // typed rejection the contract promises instead of a raw unique violation
+      if ((err as { code?: string }).code === '23505') {
+        const { rows } = await this.db.query<VersionRow>(
+          `SELECT COALESCE(MAX(version), 0) AS version FROM session_events
+           WHERE tenant_id = $1 AND session_id = $2`,
+          [this.tenantId, sessionId]
+        )
+        throw new VersionConflictError(sessionId, expectedVersion, rows[0]?.version ?? 0)
       }
-    })
+      throw err
+    }
   }
 }

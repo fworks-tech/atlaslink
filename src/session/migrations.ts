@@ -35,30 +35,37 @@ export const migrations: Migration[] = [
   },
 ]
 
+// Advisory lock key serializing the migrate loop across processes; two daemons
+// booting against a fresh database cannot both apply migration 1 (postgres
+// 23505 would crash the loser). pg_advisory_xact_lock releases at commit.
+const MIGRATION_LOCK_KEY = 715228429
+
 /**
- * Applies pending migrations in version order, each in its own transaction.
- * The runner table makes the migration set idempotent across restarts and lets
- * both drivers share one migration list.
+ * Applies pending migrations in version order inside one transaction guarded by
+ * an advisory xact lock. The runner table makes the set idempotent across
+ * restarts and lets both drivers share one migration list.
  */
 export async function runMigrations(db: Db): Promise<void> {
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      version INTEGER PRIMARY KEY,
-      name TEXT NOT NULL
-    )
-  `)
+  await db.transaction(async (tx) => {
+    await tx.query(`SELECT pg_advisory_xact_lock($1)`, [MIGRATION_LOCK_KEY])
 
-  const { rows } = await db.query<{ version: number }>(`SELECT version FROM schema_migrations`)
-  const applied = new Set(rows.map((r) => r.version))
+    await tx.exec(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL
+      )
+    `)
 
-  for (const migration of migrations) {
-    if (applied.has(migration.version)) continue
-    await db.transaction(async (tx) => {
+    const { rows } = await tx.query<{ version: number }>(`SELECT version FROM schema_migrations`)
+    const applied = new Set(rows.map((r) => r.version))
+
+    for (const migration of migrations) {
+      if (applied.has(migration.version)) continue
       await tx.exec(migration.up)
       await tx.query(`INSERT INTO schema_migrations (version, name) VALUES ($1, $2)`, [
         migration.version,
         migration.name,
       ])
-    })
-  }
+    }
+  })
 }
