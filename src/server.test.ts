@@ -36,7 +36,7 @@ async function startServer(dir: string): Promise<{ port: number; broadcaster: Ev
   const sse = new SseHandler(log, broadcaster)
   const registry = new TaskRegistry()
   const queue = new SessionQueue({ broadcaster, registry, runner: async () => {} })
-  const { server: httpServer } = createAppServer({ log, registry, queue, sse })
+  const { server: httpServer } = await createAppServer({ log, registry, queue, sse })
   await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
   const port = (httpServer.address() as AddressInfo).port
   return {
@@ -262,6 +262,24 @@ test('GET /events returns 404 JSON for unknown routes', async () => {
     const body = await collectStream(`http://127.0.0.1:${srv.port}/nope`, {}, 1200)
     assert.ok(body.includes('"error":"not found"'))
     await srv.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('createAppServer builds the HTTP layer on Fastify (ADR-006 Decision 1)', async () => {
+  const dir = tmpDataDir()
+  try {
+    const log = await EventLogStore.open(dir)
+    const broadcaster = new EventBroadcaster(log)
+    const sse = new SseHandler(log, broadcaster)
+    const registry = new TaskRegistry()
+    const queue = new SessionQueue({ broadcaster, registry, runner: async () => {} })
+    const { app, server } = await createAppServer({ log, registry, queue, sse })
+    assert.ok(app.version.startsWith('5.'), `expected Fastify 5, got ${app.version}`)
+    assert.equal(typeof app.inject, 'function')
+    assert.ok(typeof server === 'object' && server !== null)
+    sse.shutdown()
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
