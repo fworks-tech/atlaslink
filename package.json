@@ -23,11 +23,14 @@
     "node": ">=22.14.0"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "agenthood": "file:../agenthood",
-    "fastify": "^5.12.1"
+    "fastify": "^5.12.1",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
+    "@types/pg": "^8.23.1",
     "tsx": "^4.23.12",
     "typescript": "^5.9.3"
   }
