@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import Fastify, { type FastifyInstance } from 'fastify'
 import { loadDaemonConfig } from './config'
 import type { DaemonConfig } from './config'
 import { validateConfig, MissingApiKeyError } from './daemon/contextFactory'
@@ -67,68 +68,92 @@ async function runOnce({ config, member, task }: { config: LLMConfig; member: st
  * log. Does not listen; `listen()` manages the port. The returned broadcaster,
  * queue, and sse handler let run code (POST /runs) and the entrypoint (shutdown)
  * drive the live stream, and let tests inject fakes.
+ *
+ * The app runs on Fastify (ADR-006 Decision 1) with `logger: false`; the
+ * ADR-005 `request` envelope is emitted by an `onResponse` hook through the
+ * `src/log.ts` facade so the logged shape stays the shipped contract.
  */
-export function createAppServer(params: {
+export async function createAppServer(params: {
   log: EventLogStore
   registry: TaskRegistry
   queue: SessionQueue
   sse: SseHandler
   version?: string
-}): { server: Server; broadcaster: EventBroadcaster; sse: SseHandler; queue: SessionQueue } {
+}): Promise<{ server: Server; broadcaster: EventBroadcaster; sse: SseHandler; queue: SessionQueue; app: FastifyInstance }> {
   const { log, registry, queue, sse } = params
   const appVersion = params.version ?? version
 
-  const server = createServer((req, res) => {
-    const startedAt = Date.now()
-    if (!(req.method === 'GET' && req.url === '/events')) {
-      res.on('finish', () => {
-        logger.info('request', { method: req.method, url: req.url, status: res.statusCode, durationMs: Date.now() - startedAt })
-      })
-    }
-
-    // --- SSE endpoint: GET /events ---
-    if (req.method === 'GET' && req.url === '/events') {
-      sse.handle(req, res)
-      return
-    }
-
-    // --- Safety health ---
-    if (req.method === 'GET' && (req.url === '/health' || req.url === '/health/')) {
-      res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ ok: true, name: 'atlaslink', version: appVersion, uptime: process.uptime() }))
-      return
-    }
-
-    // --- POST /runs (M3 preview, spec §6): delegate a session to the queue ---
-    if (req.method === 'POST' && req.url === '/runs') {
-      let body = ''
-      req.on('data', (chunk) => (body += chunk))
-      req.on('end', () => {
-        try {
-          const parsed = JSON.parse(body) as { member?: unknown; prompt?: unknown }
-          if (typeof parsed.member !== 'string' || typeof parsed.prompt !== 'string') {
-            res.writeHead(400, { 'content-type': 'application/json' })
-            res.end(JSON.stringify({ ok: false, error: 'member and prompt are required strings' }))
-            return
-          }
-          const session = registry.create({ member: parsed.member, prompt: parsed.prompt })
-          queue.declareSession(session)
-          logger.info('session delegated', { sessionId: session.id, correlationId: session.correlationId, member: parsed.member })
-          res.writeHead(202, { 'content-type': 'application/json' })
-          res.end(JSON.stringify({ ok: true, session: { id: session.id, status: session.status } }))
-        } catch (err) {
-          res.writeHead(400, { 'content-type': 'application/json' })
-          res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }))
-        }
-      })
-      return
-    }
-
-    res.writeHead(404, { 'content-type': 'application/json' })
-    res.end(JSON.stringify({ ok: false, error: 'not found' }))
+  // Fastify's serverFactory lets the entrypoint (and tests) own the socket:
+  // `server.listen(port)` drives Fastify's router without app.listen().
+  let server: Server
+  const app = Fastify({
+    logger: false,
+    ignoreTrailingSlash: true,
+    serverFactory: (handler) => {
+      server = createServer((req, res) => handler(req, res))
+      return server
+    },
   })
 
-  return { server, broadcaster: sse.broadcaster, sse, queue }
+  app.addHook('onResponse', (request, reply, done) => {
+    // long-lived SSE streams do not emit a request envelope (same as pre-Fastify)
+    if (request.url !== '/events') {
+      logger.info('request', {
+        method: request.method,
+        url: request.url,
+        status: reply.statusCode,
+        durationMs: reply.elapsedTime,
+      })
+    }
+    done()
+  })
+
+  // --- Safety health ---
+  app.get('/health', async () => ({ ok: true, name: 'atlaslink', version: appVersion, uptime: process.uptime() }))
+
+  // --- POST /runs (M3 preview, spec §6): delegate a session to the queue ---
+  app.post(
+    '/runs',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['member', 'prompt'],
+          properties: {
+            member: { type: 'string' },
+            prompt: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { member, prompt } = request.body as { member: string; prompt: string }
+      const session = registry.create({ member, prompt })
+      queue.declareSession(session)
+      logger.info('session delegated', { sessionId: session.id, correlationId: session.correlationId, member })
+      return reply.code(202).send({ ok: true, session: { id: session.id, status: session.status } })
+    },
+  )
+
+  // --- SSE endpoint: GET /events ---
+  // Fastify cedes the socket (reply.hijack) and the existing SseHandler owns the
+  // stream — the reconnection contract (Last-Event-ID, ping, bridge.gap/shutdown)
+  // survives the framework swap untouched (ADR-006 Decision 2).
+  app.get('/events', (request, reply) => {
+    reply.hijack()
+    sse.handle(request.raw, reply.raw)
+  })
+
+  app.setNotFoundHandler((_request, reply) => {
+    reply.code(404).send({ ok: false, error: 'not found' })
+  })
+
+  // boot the lifecycle so the router, hooks, and 404 handler are live before the
+  // caller (or a test) attaches the socket with server.listen()
+  await app.ready()
+
+  return { server: server!, broadcaster: sse.broadcaster, sse, queue, app }
 }
 
 async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseHandler; registry: TaskRegistry; queue: SessionQueue }> {
@@ -160,7 +185,7 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
     },
   })
 
-  const { server } = createAppServer({ log, registry, queue, sse })
+  const { server } = await createAppServer({ log, registry, queue, sse })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(config.port, config.host, resolve)
