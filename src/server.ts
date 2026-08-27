@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyError, type FastifyInstance } from 'fastify'
 import { loadDaemonConfig } from './config'
 import type { DaemonConfig } from './config'
 import { validateConfig, MissingApiKeyError } from './daemon/contextFactory'
@@ -97,7 +97,7 @@ export async function createAppServer(params: {
 
   app.addHook('onResponse', (request, reply, done) => {
     // long-lived SSE streams do not emit a request envelope (same as pre-Fastify)
-    if (request.url !== '/events') {
+    if (request.routeOptions.url !== '/events') {
       logger.info('request', {
         method: request.method,
         url: request.url,
@@ -147,6 +147,14 @@ export async function createAppServer(params: {
 
   app.setNotFoundHandler((_request, reply) => {
     reply.code(404).send({ ok: false, error: 'not found' })
+  })
+
+  // Route/validation errors keep the { ok: false, error } envelope the pre-Fastify
+  // router returned; server internals never leak on 5xx (fail-closed).
+  app.setErrorHandler((error: FastifyError, request, reply) => {
+    const status = error.statusCode ?? 500
+    const message = status >= 500 ? 'internal error' : error.message
+    return reply.code(status).send({ ok: false, error: message })
   })
 
   // boot the lifecycle so the router, hooks, and 404 handler are live before the
