@@ -61,7 +61,7 @@ truth, and the Session is an aggregate **rehydrated** from those events.
 
 5. **A session backend port isolates cloud from local.** The store is defined behind a
    `SessionBackend` interface. M3 ships only the NDJSON-backed `EventLogBackend` (local,
-   offline, hermetic in CI — the `FileRemote`-free path of Decision 3). A **DuckDbBackend**
+   offline, hermetic in CI). A **DuckDbBackend**
    is the later materialization step of Decision 3; a **MotherDuck** remote backend is
    designed-as-a-port but built later — a Session is a document/chat/state problem more
    than a warehouse problem, so cloud earns its keep only when sessions must be shared

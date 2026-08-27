@@ -3,7 +3,8 @@
 **Source of truth:** [`docs/spec/m3-task-api.md`](../spec/m3-task-api.md)
 **Issue:** #M3 (Task API)
 **Status:** In progress — Branch 1 (docs) and Branch 2 (session store) shipped and
-merged to main (PRs #27/#37/#38); Branch 3 (`feat/3-task-rest`) remains.
+merged to main (Branch 1 as PR #23; Branch 2 as PRs #27/#37/#38); Branch 3
+(`feat/3-task-rest`) remains.
 
 The M3 implementation is split into stacked, revert-safe branches. Each branch lands
 independently and keeps the full hermetic suite green (no LLM, no provider key, no
@@ -71,5 +72,5 @@ The REST surface and per-session SSE over the store and the existing queue.
   all runs route through `SessionQueue` (ADR-002).
 - **Hermetic:** the M3 store backend is log-backed/local/offline; when DuckDB lands it
   is embedded/local and the MotherDuck backend never runs in CI.
-- Target total: ~74 pre-session + ~29 shipped new → 93 now; landing Branch 3 brings
+- Target total: ~74 pre-session + 19 session tests → 93 now; landing Branch 3 brings
   the suite to ~103 hermetic tests.
