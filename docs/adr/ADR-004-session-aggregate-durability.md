@@ -3,6 +3,9 @@
 **Date:** 2026-08-23
 **Status:** Accepted — resolves the M3 session-store durability decision deferred in ADR-001 (M3 MVP ships rebuild-on-read from NDJSON; the DuckDB backend is deferred to a later phase)
 **Issue:** M3 Task API
+**Amended by:** ADR-006 (Decisions 4–5) — the NDJSON/DuckDB session-backend track is
+superseded; sessions persist to Postgres event tables behind the same `SessionBackend`
+port. Decisions 1–2 and 4 of this ADR stand unchanged.
 
 ## Context
 

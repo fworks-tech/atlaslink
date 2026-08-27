@@ -4,6 +4,8 @@
 **Status:** Accepted
 **Resolves:** issue #5
 **Replaces:** the deferral debated during the M2 planning session
+**Amended by:** ADR-006 (Decision 6) — this log remains the agent-run provenance record;
+it is no longer the source of truth for session/account data (Postgres is).
 
 ## Context
 
