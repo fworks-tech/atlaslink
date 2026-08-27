@@ -115,8 +115,13 @@ test('GET /events does not emit a "request" log (long-lived SSE)', async () => {
     const info = mock.method(logger, 'info')
     const srv = await startServer(dir)
     await collectStream(`http://127.0.0.1:${srv.port}/events`, {}, 500)
+    // query strings and trailing slashes resolve to the same SSE route
+    await collectStream(`http://127.0.0.1:${srv.port}/events?token=x`, {}, 500)
     const sseReq = info.mock.calls.find(
-      (c) => c.arguments[0] === 'request' && (c.arguments[1] as Record<string, unknown>).url === '/events'
+      (c) =>
+        c.arguments[0] === 'request' &&
+        ((c.arguments[1] as Record<string, unknown>).url === '/events' ||
+          (c.arguments[1] as Record<string, unknown>).url === '/events?token=x')
     )
     assert.equal(sseReq, undefined, `expected no 'request' log for /events, got: ${JSON.stringify(sseReq)}`)
     info.mock.restore()
@@ -208,7 +213,7 @@ test('POST /runs declares a session and returns 202 with its id', async () => {
   }
 })
 
-test('POST /runs rejects non-string member or prompt', async () => {
+test('POST /runs rejects non-string member or prompt with the error envelope', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
@@ -223,6 +228,33 @@ test('POST /runs rejects non-string member or prompt', async () => {
       req.end()
     })
     assert.equal(res.status, 400)
+    const parsed = JSON.parse(res.body)
+    assert.equal(parsed.ok, false)
+    assert.equal(typeof parsed.error, 'string')
+    await srv.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('POST /runs rejects malformed JSON with the error envelope', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const res = await new Promise<{ status: number; body: string }>((resolve) => {
+      const req = request(`http://127.0.0.1:${srv.port}/runs`, { method: 'POST', headers: { 'content-type': 'application/json' } }, (r) => {
+        let body = ''
+        r.setEncoding('utf8')
+        r.on('data', (c: string) => (body += c))
+        r.on('end', () => resolve({ status: r.statusCode ?? 0, body }))
+      })
+      req.write('{"member": ')
+      req.end()
+    })
+    assert.equal(res.status, 400)
+    const parsed = JSON.parse(res.body)
+    assert.equal(parsed.ok, false)
+    assert.equal(typeof parsed.error, 'string')
     await srv.close()
   } finally {
     rmSync(dir, { recursive: true, force: true })
