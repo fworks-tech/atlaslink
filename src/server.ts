@@ -108,9 +108,8 @@ export async function createAppServer(params: {
     },
   })
 
-  // The rate limit is registered on the root before any route so its onRoute
-  // hook sees every route (gated scope included); /health opts out below. It
-  // bounds cost-bearing writes and auth brute-forcing at the source.
+  // Root-level rate limit registered before any route so its onRoute hook sees
+  // every route (gated scope included); /health opts out below.
   await app.register(rateLimit, {
     ...rateLimitOpts,
     errorResponseBuilder: () => ({ statusCode: 429, message: 'rate limit exceeded' }),
@@ -134,11 +133,9 @@ export async function createAppServer(params: {
   app.get('/health', { config: { rateLimit: false } }, async () => ({ ok: true, name: 'atlaslink', version: appVersion, uptime: process.uptime() }))
 
   // --- Account-facing surface (spec §3/§6/§7) ---
-  // /runs, the global event stream, and the task-rest routes share one security
-  // boundary: the pre-auth bearer gate (fail-closed on non-loopback binds), plus
-  // the root rate limit bounding cost-bearing writes and auth brute-forcing.
-  // /health is registered on the root app, outside the gated scope, so probes
-  // stay open (and it opts out of the rate limit).
+  // One security boundary for /runs, /events, and the task-rest routes: the
+  // pre-auth bearer gate (fail-closed on non-loopback binds) plus the root rate
+  // limit. /health stays on the root app, outside the gate, unthrottled.
   app.register(async (api) => {
     registerTokenGate(api, { bindHost: params.bindHost })
 

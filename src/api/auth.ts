@@ -39,8 +39,8 @@ export function registerTokenGate(app: FastifyInstance, opts?: { bindHost?: stri
       done()
       return
     }
-    // Security audit trail: every rejection is observable (rate-limited on the
-    // gated scope), never the header itself — the token must not reach the log.
+    // Security audit trail: every rejection is observable (rate-limited at the
+    // source), never the header itself — the token must not reach the log.
     log.warn('auth rejected', { url: request.url, ip: request.ip, status: 401 })
     reply.code(401).send({ ok: false, error: 'unauthorized' })
   })
