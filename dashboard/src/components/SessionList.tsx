@@ -10,19 +10,49 @@ function toDate(at?: string): number {
   return at !== undefined ? Date.parse(at) : NaN;
 }
 
+/** What each terminal/in-flight lifecycle event means, as data — not an if-chain. */
+const LIFECYCLE_TRANSITIONS: Record<string, (patch: Partial<Session>, event: BridgeEvent, current: Session) => void> = {
+  "session.running": (patch, event, current) => {
+    patch.status = "running";
+    patch.startedAt = typeof event.at === "string" ? event.at : current.startedAt;
+  },
+  "session.succeeded": (patch, event, current) => {
+    patch.status = "succeeded";
+    patch.finishedAt = typeof event.at === "string" ? event.at : current.finishedAt;
+    patch.durationMs = typeof event.durationMs === "number" ? event.durationMs : current.durationMs;
+    patch.output = typeof event.output === "string" ? event.output : current.output;
+  },
+  "session.failed": (patch, event, current) => {
+    patch.status = "failed";
+    patch.finishedAt = typeof event.at === "string" ? event.at : current.finishedAt;
+    patch.durationMs = typeof event.durationMs === "number" ? event.durationMs : current.durationMs;
+    patch.error = typeof event.error === "string" ? event.error : current.error;
+  },
+  "session.cancelled": (patch, event, current) => {
+    patch.status = "cancelled";
+    patch.finishedAt = typeof event.at === "string" ? event.at : current.finishedAt;
+  },
+};
+
+function formatDuration(session: Session): string {
+  if (session.durationMs !== undefined && session.status !== "running") {
+    return `${(session.durationMs / 1000).toFixed(1)}s`;
+  }
+  if (session.status === "running") return "live…";
+  return "—";
+}
+
 /** Overlay session.* lifecycle events onto the loaded list, in arrival order. */
-function withLiveUpdates(sessions: Session[], events: BridgeEvent[]): Session[] {
+export function withLiveUpdates(sessions: Session[], events: BridgeEvent[]): Session[] {
   const byId = new Map(sessions.map((s) => [s.sessionId, s]));
 
   for (const event of events) {
     const sessionId = event.sessionId;
     if (typeof sessionId !== "string") continue;
 
-    const current = byId.get(sessionId);
-    const patch: Partial<Session> = {};
-
+    // creation is not a patch — build the row when it first appears
     if (event.type === "session.created") {
-      if (current === undefined) {
+      if (!byId.has(sessionId)) {
         byId.set(sessionId, {
           sessionId,
           correlationId: typeof event.correlationId === "string" ? event.correlationId : "",
@@ -38,26 +68,12 @@ function withLiveUpdates(sessions: Session[], events: BridgeEvent[]): Session[] 
       continue;
     }
 
-    if (current === undefined) continue;
+    const current = byId.get(sessionId);
+    const transition = current === undefined ? undefined : LIFECYCLE_TRANSITIONS[event.type];
+    if (current === undefined || transition === undefined) continue;
 
-    if (event.type === "session.running") {
-      patch.status = "running";
-      patch.startedAt = typeof event.at === "string" ? event.at : current.startedAt;
-    } else if (event.type === "session.succeeded") {
-      patch.status = "succeeded";
-      patch.finishedAt = typeof event.at === "string" ? event.at : current.finishedAt;
-      patch.durationMs = typeof event.durationMs === "number" ? event.durationMs : current.durationMs;
-      patch.output = typeof event.output === "string" ? event.output : current.output;
-    } else if (event.type === "session.failed") {
-      patch.status = "failed";
-      patch.finishedAt = typeof event.at === "string" ? event.at : current.finishedAt;
-      patch.durationMs = typeof event.durationMs === "number" ? event.durationMs : current.durationMs;
-      patch.error = typeof event.error === "string" ? event.error : current.error;
-    } else if (event.type === "session.cancelled") {
-      patch.status = "cancelled";
-      patch.finishedAt = typeof event.at === "string" ? event.at : current.finishedAt;
-    }
-
+    const patch: Partial<Session> = {};
+    transition(patch, event, current);
     byId.set(sessionId, { ...current, ...patch });
   }
 
@@ -127,13 +143,7 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
               <td className="px-4 py-3 text-muted">
                 {session.createdAt ? new Date(session.createdAt).toLocaleTimeString() : "—"}
               </td>
-              <td className="px-4 py-3 text-muted">
-                {session.durationMs !== undefined && session.status !== "running"
-                  ? `${(session.durationMs / 1000).toFixed(1)}s`
-                  : session.status === "running"
-                    ? "live…"
-                    : "—"}
-              </td>
+              <td className="px-4 py-3 text-muted">{formatDuration(session)}</td>
             </tr>
           ))}
         </tbody>
