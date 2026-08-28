@@ -11,7 +11,8 @@ export interface Db {
     sql: string,
     params?: readonly unknown[]
   ): Promise<{ rows: TRow[] }>
-  exec(sql: string): Promise<void>
+  /** Raw DDL/multi-statement SQL only — no parameters, never user input. */
+  execRawDdl(sql: string): Promise<void>
   transaction<T>(fn: (tx: Db) => Promise<T>): Promise<T>
 }
 
@@ -26,7 +27,7 @@ export class PgliteDb implements Db {
     return { rows: res.rows as TRow[] }
   }
 
-  async exec(sql: string): Promise<void> {
+  async execRawDdl(sql: string): Promise<void> {
     await this.db.exec(sql)
   }
 
@@ -37,7 +38,7 @@ export class PgliteDb implements Db {
           const r = await tx.query(q, p as unknown[])
           return { rows: r.rows as TRow[] }
         },
-        exec: async (q: string) => {
+        execRawDdl: async (q: string) => {
           await tx.exec(q)
         },
         transaction: () => {
@@ -59,7 +60,7 @@ export class PgDb implements Db {
     return this.pool.query<TRow & QueryResultRow>(sql, params as unknown[])
   }
 
-  async exec(sql: string): Promise<void> {
+  async execRawDdl(sql: string): Promise<void> {
     await this.pool.query(sql)
   }
 
@@ -70,7 +71,7 @@ export class PgDb implements Db {
       const handle: Db = {
         query: async <TRow extends object>(q: string, p: readonly unknown[] = []) =>
           client.query<TRow & QueryResultRow>(q, p as unknown[]),
-        exec: async (q: string) => {
+        execRawDdl: async (q: string) => {
           await client.query(q)
         },
         transaction: () => {
