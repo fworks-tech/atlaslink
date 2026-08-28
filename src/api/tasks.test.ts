@@ -179,22 +179,19 @@ test('task-rest routes refuse a non-loopback bind without a token (fail-closed)'
   }
 })
 
-test('task-rest routes honor the pre-auth bearer token gate (spec §7)', async () => {
-  const previous = process.env.ATLASLINK_API_TOKEN
-  process.env.ATLASLINK_API_TOKEN = 'secret'
+test('the bearer token gate (spec §7) protects /runs, /events, and the task-rest routes', async () => {
   const dir = tmpDataDir()
   try {
-    const srv = await startServer(dir)
-    const denied = await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })
-    assert.equal(denied.status, 401)
+    const srv = await startServer(dir, { token: 'secret' })
 
-    const wrong = await jsonRequest(
-      srv.port,
-      'GET',
-      '/tasks',
-      undefined,
-      { authorization: 'Bearer nope' }
-    )
+    const deniedTasks = await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })
+    assert.equal(deniedTasks.status, 401)
+    const deniedRuns = await jsonRequest(srv.port, 'POST', '/runs', { member: 'm', prompt: 'p' })
+    assert.equal(deniedRuns.status, 401)
+    const deniedEvents = await jsonRequest(srv.port, 'GET', '/events')
+    assert.equal(deniedEvents.status, 401)
+
+    const wrong = await jsonRequest(srv.port, 'GET', '/tasks', undefined, { authorization: 'Bearer nope' })
     assert.equal(wrong.status, 401)
 
     const allowed = await jsonRequest(
@@ -205,14 +202,35 @@ test('task-rest routes honor the pre-auth bearer token gate (spec §7)', async (
       { authorization: 'Bearer secret' }
     )
     assert.equal(allowed.status, 201)
+    const allowedRuns = await jsonRequest(
+      srv.port,
+      'POST',
+      '/runs',
+      { member: 'm', prompt: 'p' },
+      { authorization: 'Bearer secret' }
+    )
+    assert.equal(allowedRuns.status, 202)
 
-    // the gate is scoped to task routes — /health stays open
+    // /health sits on the root app, outside the gated scope — probes stay open
     const health = await jsonRequest(srv.port, 'GET', '/health')
     assert.equal(health.status, 200)
     await srv.close()
   } finally {
-    if (previous === undefined) delete process.env.ATLASLINK_API_TOKEN
-    else process.env.ATLASLINK_API_TOKEN = previous
+    cleanup(dir)
+  }
+})
+
+test('the gated scope rate-limits the cost-bearing surface (429 after the cap)', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir, { rateLimit: { max: 2, timeWindow: '1 second' } })
+    await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })
+    await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })
+    const limited = await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })
+    assert.equal(limited.status, 429)
+    assert.equal(JSON.parse(limited.body).error, 'rate limit exceeded')
+    await srv.close()
+  } finally {
     cleanup(dir)
   }
 })
