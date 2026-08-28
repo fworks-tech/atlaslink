@@ -124,9 +124,9 @@ through that facade so the logged shape stays fixed. SSE streams never emit a
 
 | Branch/PR | What | Status |
 |-----------|------|--------|
-| `feat/6-fastify-rebuild` | HTTP layer on Fastify (SSE contract preserved) | PR open |
-| `feat/6-postgres-backend` | `PostgresBackend`, `Db` seam, migrations | PR open |
-| `feat/3-task-rest` | Task API + per-session SSE on Fastify, wired through the store | pending |
+| `feat/6-fastify-rebuild` | HTTP layer on Fastify (SSE contract preserved) | merged (#41) |
+| `feat/6-postgres-backend` | `PostgresBackend`, `Db` seam, migrations | merged (#42) |
+| `feat/3-task-rest` | Task API + per-session SSE on Fastify, wired through the store | in progress |
 | auth ADR + `feat/3-task-rest` auth | accounts/tenancy, token gate | pending |
 | infra ADR | serverless API / container daemon split, Terraform | pending |
 | M4 | live dashboard UI rendering society provenance | pending |

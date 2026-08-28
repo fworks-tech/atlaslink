@@ -34,8 +34,8 @@ M3 closes that gap with a durable Task API: `POST/GET /tasks`, `GET /tasks/{id}`
 4. **Per-session events** — `GET /events/{sessionId}` replays then live-tails that
    session's events (filtered by `correlationId`), distinct from the global `/events`.
 5. **Tweaks envelope** — `POST /tasks` carries `{provider?, member?, team?}` overrides;
-   the full envelope is stored and round-trippable on the aggregate. `provider` executes;
-   `member`/`team` validate-and-passthrough until agenthood exposes node seams.
+   the full envelope is stored and round-trippable on the aggregate. All three validate
+   and pass through in M3; provider execution lands with the auth ADR (§5).
 6. **Read-only contract upheld** — `runTask.ts`/`taskRegistry.ts` untouched; execution
    never driven inline; all runs route through the `SessionQueue` (ADR-002).
 7. **Hermetic suite** — the store backend is local/offline (`pglite`, in-process, no
@@ -93,8 +93,10 @@ Content-Type: application/json
 - Validation errors → `400` (`member` and `prompt` required strings; `tweaks` validated shape).
 - The session is written to the store (event append = commit), **then** `queue.declareSession(session)`
   (never a direct `runSession`).
-- `tweaks.provider` overrides the run's provider; `tweaks.member`/`tweaks.team` are
-  validated and passed through on the aggregate (execution ceiling in §5).
+- `tweaks.provider` is validated + passed through and stored on the aggregate; execution
+  honors the daemon's provider in M3 (override wiring is scoped to the auth ADR, see §5).
+  `tweaks.member`/`tweaks.team` are validated and passed through on the aggregate
+  (execution ceiling in §5).
 
 ### `GET /tasks/{sessionId}` — current aggregate
 
@@ -202,7 +204,7 @@ session events ─► PostgreSQL (primary store, ADR-006)
 
 | Key | M3 behavior |
 |-----|-------------|
-| `provider` | **Executes** — overrides the run provider via the config seam. |
+| `provider` | **Validated + passed through** on the aggregate and stored verbatim. Execution honoring the override is deferred: the run path always uses the daemon's provider (`runTask`/the queue runner are a cross-branch invariant). Wiring `tweaks.provider` into the run config is scoped to the auth ADR that also opens the per-account provider surface. |
 | `member` / `team` | **Validated + passed through** on the aggregate. Execution requires agenthood to expose per-member/per-orchestration seams — the graph model (M4) and agenthood-side changes land later. M3 ships the envelope honestly. |
 
 The full envelope is **stored and round-trippable** — never discarded, never mutated
@@ -213,7 +215,8 @@ into a saved template, never touches `runTask.ts`.
 Resolved:
 - Session as event-sourced aggregate — ADR-004 (ADR-004 accepted alongside this plan).
 - Per-session SSE in M3 — INCLUDED (`GET /events/{sessionId}`).
-- Tweaks — FULL envelope in M3 shape; provider executes, member/team passthrough (§5).
+- Tweaks — FULL envelope in M3 shape; provider validate-and-passthrough with execution
+  deferred to the auth ADR, member/team passthrough (§5).
 - Cancellation — queued-only (202) in M3.
 
 Still open (tuning / dependency, no architectural impact):

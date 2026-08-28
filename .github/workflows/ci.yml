@@ -45,3 +45,21 @@ jobs:
       - name: Test
         working-directory: atlaslink
         run: npm test
+
+  # Secret scanning (the-auditor convention). Empty GITLEAKS_LICENSE covers
+  # personal accounts; private org accounts need the free Starter license and
+  # set GITLEAKS_LICENSE (the action then fails with its own message).
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks scans PR diffs from the merge-base; a shallow clone leaves
+          # the base's parent unresolvable ("unknown revision to the range")
+          fetch-depth: 0
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE || '' }}

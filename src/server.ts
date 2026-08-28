@@ -12,6 +12,12 @@ import { EventLogStore } from './bridge/EventLogStore'
 import { EventBroadcaster } from './bridge/EventBroadcaster'
 import { SessionQueue } from './bridge/SessionQueue'
 import { SseHandler } from './bridge/sseEndpoint'
+import { createSessionBackend } from './session/backendFactory'
+import { SessionStore } from './session/sessionStore'
+import type { SessionBackend } from './session/sessionBackend'
+import type { SessionDelta } from './session/types'
+import { VersionConflictError } from './session/types'
+import { registerTaskRoutes } from './api/tasks'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
 
@@ -78,9 +84,12 @@ export async function createAppServer(params: {
   registry: TaskRegistry
   queue: SessionQueue
   sse: SseHandler
+  backend?: SessionBackend
+  bindHost?: string
   version?: string
 }): Promise<{ server: Server; broadcaster: EventBroadcaster; sse: SseHandler; queue: SessionQueue; app: FastifyInstance }> {
   const { log, registry, queue, sse } = params
+  const backend = params.backend ?? new SessionStore()
   const appVersion = params.version ?? version
 
   // Fastify's serverFactory lets the entrypoint (and tests) own the socket:
@@ -97,7 +106,8 @@ export async function createAppServer(params: {
 
   app.addHook('onResponse', (request, reply, done) => {
     // long-lived SSE streams do not emit a request envelope (same as pre-Fastify)
-    if (request.routeOptions.url !== '/events') {
+    const route = request.routeOptions.url
+    if (route !== '/events' && route !== '/events/:sessionId') {
       logger.info('request', {
         method: request.method,
         url: request.url,
@@ -149,6 +159,9 @@ export async function createAppServer(params: {
     reply.code(404).send({ ok: false, error: 'not found' })
   })
 
+  // --- M3 Task API (spec §3/§7): token-gated, store-backed, queue-driven ---
+  registerTaskRoutes(app, { backend, registry, queue, sse }, { bindHost: params.bindHost })
+
   // Route/validation errors keep the { ok: false, error } envelope the pre-Fastify
   // router returned; server internals never leak on 5xx (fail-closed).
   app.setErrorHandler((error: FastifyError, request, reply) => {
@@ -166,6 +179,7 @@ export async function createAppServer(params: {
 
 async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseHandler; registry: TaskRegistry; queue: SessionQueue }> {
   const registry = new TaskRegistry()
+  const backend = await createSessionBackend()
 
   const log = await EventLogStore.open(config.dataDir, { maxBytes: 10 * 1024 * 1024 })
   const broadcaster = new EventBroadcaster(log)
@@ -173,27 +187,50 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
 
   const queue = new SessionQueue({
     broadcaster,
-    registry,
-    runner: async (sessionId) => {
-      const session = registry.get(sessionId)!
-      try {
-        await runSession({
-          registry,
-          session,
-          config: config.agenthood,
-          onEvent: (event: RunEvent) => broadcaster.emit({ eventId: 0, ...event }),
-        })
-      } catch (err) {
-        logger.error('session run threw unexpectedly', {
-          sessionId,
-          correlationId: session.correlationId,
-          error: msg(err),
-        })
-      }
-    },
-  })
+     registry,
+     runner: async (sessionId) => {
+       const session = registry.get(sessionId)!
+       // Mirror lifecycle into the store so GET /tasks read the live aggregate.
+       // /runs-created sessions live only in the registry — the store stays the
+       // /tasks surface, so a missing aggregate is skipped, not invented. A
+       // cancelled aggregate is final: never overwrite it with the run outcome.
+       const mirror = async (delta: SessionDelta): Promise<void> => {
+         const current = await backend.get(sessionId)
+         if (!current || current.status === 'cancelled') return
+         try {
+           await backend.readModifyWrite(sessionId, current.version, () => [delta])
+         } catch (err) {
+           if (!(err instanceof VersionConflictError)) throw err
+           // a cancel landed between read and write — the aggregate moved on,
+           // and the store already reflects the terminal decision; mirror drops
+         }
+       }
+       const at = (): string => new Date().toISOString()
+       try {
+         await mirror({ type: 'session.running', correlationId: session.correlationId, at: at() })
+         await runSession({
+           registry,
+           session,
+           config: config.agenthood,
+           onEvent: (event: RunEvent) => broadcaster.emit({ eventId: 0, ...event }),
+         })
+       } catch (err) {
+         logger.error('session run threw unexpectedly', {
+           sessionId,
+           correlationId: session.correlationId,
+           error: msg(err),
+         })
+       }
+       const final = registry.get(sessionId)!
+       if (final.status === 'succeeded') {
+         await mirror({ type: 'session.succeeded', correlationId: final.correlationId, at: at(), output: final.output, durationMs: final.durationMs })
+       } else if (final.status === 'failed') {
+         await mirror({ type: 'session.failed', correlationId: final.correlationId, at: at(), error: final.error, durationMs: final.durationMs })
+       }
+     },
+   })
 
-  const { server } = await createAppServer({ log, registry, queue, sse })
+  const { server } = await createAppServer({ log, registry, queue, sse, backend, bindHost: config.host })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(config.port, config.host, resolve)

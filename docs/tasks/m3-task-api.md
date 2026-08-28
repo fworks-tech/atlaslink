@@ -2,10 +2,9 @@
 
 **Source of truth:** [`docs/spec/m3-task-api.md`](../spec/m3-task-api.md)
 **Issue:** #M3 (Task API)
-**Status:** In progress — Branch 1 (docs) and Branch 2 (session store) shipped and
-merged to main (Branch 1 as PR #23; Branch 2 as PRs #27/#37/#38); Branch 3
-(`feat/6-fastify-rebuild`, Fastify HTTP layer) lands in this PR; Branch 4
-(`feat/6-postgres-backend`) and Branch 5 (`feat/3-task-rest`) remain.
+**Status:** In progress — Branches 1–4 shipped and merged to main (Branch 1 as PR
+#23; Branch 2 as PRs #27/#37/#38; Branch 3 as PR #41; Branch 4 as PR #42). Branch 5
+(`feat/3-task-rest`) is in progress.
 
 The M3 implementation is split into stacked, revert-safe branches. Each branch lands
 independently and keeps the full hermetic suite green (no LLM, no provider key, no
@@ -97,23 +96,30 @@ The `PostgresBackend` behind the `SessionBackend` port — framework-independent
 - New deps: `@electric-sql/pglite`, `pg` (ADR-006 Decisions 4–5/9); the former
   `DuckDbBackend`/`MotherDuckBackend` plans are revoked.
 
-## Branch 5 — `feat/3-task-rest` (re-planned per ADR-006)
+## Branch 5 — `feat/3-task-rest` (shipping)
 
 The REST surface and per-session SSE over the store and the existing queue, on Fastify.
 
-- New: `src/api/tasks.ts` + `.test.ts` — Fastify plugins/routes for `POST/GET /tasks`,
-  `GET /tasks/{sessionId}`, `POST /tasks/{id}/cancel`, `GET /tasks` (list + SQL filter);
-  `tweaks` envelope validation + passthrough.
-- New/Modify: `src/server.ts` — routes wired through `SessionQueue` (`declareSession`),
-  never a direct `runSession`.
-- Modify: `src/api/events.ts` (or `src/bridge/sseEndpoint.ts`) + `.test.ts` —
-  `GET /events/{sessionId}` per-session replay-then-live filtered by `correlationId`;
-  the global `GET /events` reconnection contract survives the Fastify rewrite.
-- New (following the auth ADR): account/tenant layer — auth flows and tenant scoping
-  land before account-facing routes expose user data (m3 spec §7, ADR-006 Decision 7).
-- Modify: `src/server.test.ts` — E2E through the fake runner (existing pattern).
-- README / PROGRESS documentation update.
-- Expected: ~10 new tests + 1 E2E (+ auth coverage with the auth ADR).
+Shipped on this branch (see PR #44):
+- `src/api/tasks.ts` + `.test.ts` (in `src/server.test.ts`): `POST/GET /tasks`,
+  `GET /tasks/{sessionId}`, `POST /tasks/{id}/cancel`, `GET /tasks` (list with
+  backend-applied `status`/`since` filters and bounded pagination); `tweaks`
+  envelope validated + stored verbatim. `SessionBackend` gained `list()` for the
+  query surface (bound SQL on Postgres, scoped scan in-memory).
+- `src/api/auth.ts` — the spec §7 pre-auth bearer-token gate, scoped to the
+  task-rest plugin only (`/health`, `/runs`, global `/events` stay open).
+- `GET /events/{sessionId}` per-session replay-then-live — `SseHandler` gained a
+  correlationId projection (`handleForSession`), same wire contract.
+- Execution-model reconciliation: `TaskRegistry.create` takes an additive
+  `id`/`correlationId` override so the store aggregate and the queue-run registry
+  session share identity; the queue runner mirrors lifecycle into the store so
+  `/tasks` reads are live. `/runs`-created sessions stay registry-only.
+- E2E: +8 server tests → suite 118.
+
+Remaining with the auth ADR:
+- account/tenant layer — auth flows and tenant scoping land before account-facing
+  routes expose user data (m3 spec §7, ADR-006 Decision 7).
+- New (following the auth ADR): `src/api/events.ts` (or extend `tasks.ts`)
 
 ## Cross-branch invariants
 

@@ -91,6 +91,29 @@ test('sessions run strictly one at a time in FIFO order', async () => {
   }
 })
 
+test('a cancelled queued session is skipped, never started (spec §3)', async () => {
+  const dir = tmpDataDir()
+  try {
+    const store = await EventLogStore.open(dir)
+    const broadcaster = new EventBroadcaster(store)
+    const seen: BridgeEnvelope[] = []
+    broadcaster.subscribe((e) => seen.push(e), { replay: false })
+    const ran: string[] = []
+    const registry = makeRegistry({ s1: SessionStatus.CANCELLED, s2: SessionStatus.SUCCEEDED })
+    const queue = new SessionQueue({ broadcaster, registry, runner: async (id) => { ran.push(id) } })
+
+    queue.declareSession({ id: 's1', correlationId: 'c1', task: { member: 'm' } })
+    queue.declareSession({ id: 's2', correlationId: 'c2', task: { member: 'm' } })
+    await new Promise((r) => setTimeout(r, 50))
+
+    assert.deepEqual(ran, ['s2'])
+    assert.ok(seen.some((e) => e.type === 'session.queued' && e.sessionId === 's1'))
+    assert.ok(!seen.some((e) => e.type === 'session.started' && e.sessionId === 's1'))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('a failed session emits session.failed (terminal-from-registry)', async () => {
   const dir = tmpDataDir()
   try {
