@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { request } from 'node:http'
+import { request, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { EventLogStore, type BridgeEnvelope } from '../bridge/EventLogStore'
 import { EventBroadcaster } from '../bridge/EventBroadcaster'
@@ -36,16 +36,45 @@ export interface ServerHarness {
   close: () => Promise<void>
 }
 
-export async function startServer(dir: string): Promise<ServerHarness> {
-  const log = await EventLogStore.open(dir)
-  const broadcaster = new EventBroadcaster(log)
-  const sse = new SseHandler(log, broadcaster)
-  const registry = new TaskRegistry()
-  const queue = new SessionQueue({ broadcaster, registry, runner: async () => {} })
-  const backend = new SessionStore()
-  const { server: httpServer } = await createAppServer({ log, registry, queue, sse, backend })
-  await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
-  const port = (httpServer.address() as AddressInfo).port
+export interface HarnessOptions {
+  /** Bearer token to register on the gated scope (default: none → dev mode). */
+  token?: string
+  rateLimit?: { max: number; timeWindow: string }
+}
+
+export async function startServer(dir: string, opts: HarnessOptions = {}): Promise<ServerHarness> {
+  // The token gate reads the env at registration; snapshot/restore so a dev
+  // shell exporting ATLASLINK_API_TOKEN never leaks into the unauthenticated
+  // tests, and an opted-in test can pass its own token deterministically.
+  const previousToken = process.env.ATLASLINK_API_TOKEN
+  if (opts.token === undefined) delete process.env.ATLASLINK_API_TOKEN
+  else process.env.ATLASLINK_API_TOKEN = opts.token
+  let httpServer: Server
+  let broadcaster: EventBroadcaster
+  let sse: SseHandler
+  let backend: SessionStore
+  try {
+    const log = await EventLogStore.open(dir)
+    broadcaster = new EventBroadcaster(log)
+    sse = new SseHandler(log, broadcaster)
+    const registry = new TaskRegistry()
+    const queue = new SessionQueue({ broadcaster, registry, runner: async () => {} })
+    backend = new SessionStore()
+    const app = await createAppServer({
+      log,
+      registry,
+      queue,
+      sse,
+      backend,
+      ...(opts.rateLimit ? { rateLimit: opts.rateLimit } : {}),
+    })
+    httpServer = app.server
+    await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
+  } finally {
+    if (previousToken === undefined) delete process.env.ATLASLINK_API_TOKEN
+    else process.env.ATLASLINK_API_TOKEN = previousToken
+  }
+  const port = (httpServer!.address() as AddressInfo).port
   return {
     port,
     broadcaster,
@@ -53,8 +82,8 @@ export async function startServer(dir: string): Promise<ServerHarness> {
     backend,
     close: () =>
       new Promise<void>((resolve) => {
-        httpServer.closeAllConnections?.()
-        httpServer.close(() => resolve())
+        httpServer!.closeAllConnections?.()
+        httpServer!.close(() => resolve())
       }),
   }
 }

@@ -18,6 +18,8 @@ import type { SessionBackend } from './session/sessionBackend'
 import type { SessionDelta } from './session/types'
 import { VersionConflictError } from './session/types'
 import { registerTaskRoutes } from './api/tasks'
+import { registerTokenGate } from './api/auth'
+import rateLimit from '@fastify/rate-limit'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
 
@@ -87,10 +89,12 @@ export async function createAppServer(params: {
   backend?: SessionBackend
   bindHost?: string
   version?: string
+  rateLimit?: { max: number; timeWindow: string }
 }): Promise<{ server: Server; broadcaster: EventBroadcaster; sse: SseHandler; queue: SessionQueue; app: FastifyInstance }> {
   const { log, registry, queue, sse } = params
   const backend = params.backend ?? new SessionStore()
   const appVersion = params.version ?? version
+  const rateLimitOpts = params.rateLimit ?? { max: 100, timeWindow: '1 minute' }
 
   // Fastify's serverFactory lets the entrypoint (and tests) own the socket:
   // `server.listen(port)` drives Fastify's router without app.listen().
@@ -102,6 +106,13 @@ export async function createAppServer(params: {
       server = createServer((req, res) => handler(req, res))
       return server
     },
+  })
+
+  // Root-level rate limit registered before any route so its onRoute hook sees
+  // every route (gated scope included); /health opts out below.
+  await app.register(rateLimit, {
+    ...rateLimitOpts,
+    errorResponseBuilder: () => ({ statusCode: 429, message: 'rate limit exceeded' }),
   })
 
   app.addHook('onResponse', (request, reply, done) => {
@@ -119,48 +130,56 @@ export async function createAppServer(params: {
   })
 
   // --- Safety health ---
-  app.get('/health', async () => ({ ok: true, name: 'atlaslink', version: appVersion, uptime: process.uptime() }))
+  app.get('/health', { config: { rateLimit: false } }, async () => ({ ok: true, name: 'atlaslink', version: appVersion, uptime: process.uptime() }))
 
-  // --- POST /runs (M3 preview, spec §6): delegate a session to the queue ---
-  app.post(
-    '/runs',
-    {
-      schema: {
-        body: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['member', 'prompt'],
-          properties: {
-            member: { type: 'string' },
-            prompt: { type: 'string' },
+  // --- Account-facing surface (spec §3/§6/§7) ---
+  // One security boundary for /runs, /events, and the task-rest routes: the
+  // pre-auth bearer gate (fail-closed on non-loopback binds) plus the root rate
+  // limit. /health stays on the root app, outside the gate, unthrottled.
+  app.register(async (api) => {
+    registerTokenGate(api, { bindHost: params.bindHost })
+
+    // --- POST /runs (M3 preview, spec §6): delegate a session to the queue ---
+    api.post(
+      '/runs',
+      {
+        schema: {
+          body: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['member', 'prompt'],
+            properties: {
+              member: { type: 'string' },
+              prompt: { type: 'string' },
+            },
           },
         },
       },
-    },
-    async (request, reply) => {
-      const { member, prompt } = request.body as { member: string; prompt: string }
-      const session = registry.create({ member, prompt })
-      queue.declareSession(session)
-      logger.info('session delegated', { sessionId: session.id, correlationId: session.correlationId, member })
-      return reply.code(202).send({ ok: true, session: { id: session.id, status: session.status } })
-    },
-  )
+      async (request, reply) => {
+        const { member, prompt } = request.body as { member: string; prompt: string }
+        const session = registry.create({ member, prompt })
+        queue.declareSession(session)
+        logger.info('session delegated', { sessionId: session.id, correlationId: session.correlationId, member })
+        return reply.code(202).send({ ok: true, session: { id: session.id, status: session.status } })
+      },
+    )
 
-  // --- SSE endpoint: GET /events ---
-  // Fastify cedes the socket (reply.hijack) and the existing SseHandler owns the
-  // stream — the reconnection contract (Last-Event-ID, ping, bridge.gap/shutdown)
-  // survives the framework swap untouched (ADR-006 Decision 2).
-  app.get('/events', (request, reply) => {
-    reply.hijack()
-    sse.handle(request.raw, reply.raw)
+    // --- SSE endpoint: GET /events ---
+    // Fastify cedes the socket (reply.hijack) and the existing SseHandler owns the
+    // stream — the reconnection contract (Last-Event-ID, ping, bridge.gap/shutdown)
+    // survives the framework swap untouched (ADR-006 Decision 2).
+    api.get('/events', (request, reply) => {
+      reply.hijack()
+      sse.handle(request.raw, reply.raw)
+    })
+
+    // --- M3 Task API (spec §3/§7): token-gated, store-backed, queue-driven ---
+    registerTaskRoutes(api, { backend, registry, queue, sse })
   })
 
   app.setNotFoundHandler((_request, reply) => {
     reply.code(404).send({ ok: false, error: 'not found' })
   })
-
-  // --- M3 Task API (spec §3/§7): token-gated, store-backed, queue-driven ---
-  registerTaskRoutes(app, { backend, registry, queue, sse }, { bindHost: params.bindHost })
 
   // Route/validation errors keep the { ok: false, error } envelope the pre-Fastify
   // router returned; server internals never leak on 5xx (fail-closed).

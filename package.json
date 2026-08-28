@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
+    "@fastify/rate-limit": "^10.3.0",
     "agenthood": "file:../agenthood",
     "fastify": "^5.12.1",
     "pg": "^8.23.0"
