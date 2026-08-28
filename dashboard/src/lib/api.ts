@@ -11,7 +11,7 @@ export class ApiError extends Error {
 }
 
 // The browser stays same-origin: /api/* is served by the BFF route handler
-// (src/app/api/[...path]/route.ts) which forward to the daemon.
+// (src/app/api/[...path]/route.ts) which forwards to the daemon.
 const API_BASE = "/api";
 
 /**
