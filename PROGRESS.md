@@ -1,7 +1,7 @@
 # Atlaslink — Session Progress Checklist
 
 > Status snapshot of the atlaslink project.
-> Updated: 2026-08-27
+> Updated: 2026-08-28
 
 ## Legend
 
@@ -62,7 +62,7 @@
 - [ ] MCP support (DEFERRED — agenthood already has MCP via Portals)
 - [ ] Live web app architecture (SSE/WebSocket bridge from event feed to browser)
       — now governed by ADR-002 (M2/M4)
-- [ ] Task delegation API (`POST /tasks`) — M3 Task API
+- [x] Task delegation API (`POST /tasks`) — M3 Task API
 - [ ] Agenthood member run live-update dashboard — defined in ADR-002, Atlas as
       root node per ADR-003 (M4)
 
@@ -87,8 +87,8 @@
       `RunEventBus` events and `.agenthood/provenance/*.json`
 
 ### Direction on `main` (ADR-006) — build order
-- [~] Fastify HTTP layer + Postgres primary store — ADR-006 Accepted; the framework
-      swap, `PostgresBackend`, and `pglite`-in-CI are the next work
+- [x] Fastify HTTP layer + Postgres primary store — ADR-006 Accepted; framework
+      swap (PR #41), `PostgresBackend` (PR #42), and `pglite`-in-CI are on main
 - [ ] Auth ADR — accounts, tenants, credential handling, tenant scoping at the
       data-access boundary (gates account-facing routes; ADR-006 Decision 7)
 - [ ] Infra ADR — Docker packaging, Terraform, GitLab CI; stateless API deployable
@@ -134,7 +134,7 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
        `docs/tasks/m3-task-api.md`, ADR-004 (session-aggregate durability) amended by
        ADR-006 (Postgres primary store + Fastify). Branch plan:
        docs (shipped) → session-store (shipped) → fastify-rebuild (shipped) →
-       postgres-backend (shipped) → task-rest (in progress).
+       postgres-backend (shipped) → task-rest (shipped).
 5. [x] Ship the durable, event-sourced `SessionStore` — in-memory store behind a
        `SessionBackend` port, hardened per post-merge review (issues #28–#36), plus the
        `EventLogStore`-backed `EventLogBackend` (ADR-004) with a frozen snapshot cache;
@@ -144,8 +144,10 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
        ADR-005 request envelope stays on the `src/log.ts` facade. Suite: 95.
 7. [x] Add `PostgresBackend` over `pglite`/`pg` for hermetic CI (ADR-006 Decisions
        4–5, 9) — merged via `feat/6-postgres-backend` (PR #42). Suite: 108.
-8. [ ] Implement `POST/GET /tasks`, `GET /tasks/{id}`, cancel, per-session SSE
-       (`feat/3-task-rest`)
+8. [x] Implement `POST/GET /tasks`, `GET /tasks/{id}`, cancel, per-session SSE —
+       merged via `feat/3-task-rest` (PR #44); the OWASP security pass (PR #46)
+       gated `/runs` + `/events` behind the bearer token, added rate limiting,
+       auth-rejection logging, and the `execRawDdl` seam rename. Suite: 121.
 
 ### M4 — Live Dashboard
 9. [ ] Add a live dashboard UI rendering society provenance

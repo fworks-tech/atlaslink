@@ -2,9 +2,9 @@
 
 **Source of truth:** [`docs/spec/m3-task-api.md`](../spec/m3-task-api.md)
 **Issue:** #M3 (Task API)
-**Status:** In progress — Branches 1–4 shipped and merged to main (Branch 1 as PR
-#23; Branch 2 as PRs #27/#37/#38; Branch 3 as PR #41; Branch 4 as PR #42). Branch 5
-(`feat/3-task-rest`) is in progress.
+**Status:** Complete — all five branches shipped and merged to main (Branch 1 as
+PR #23; Branch 2 as PRs #27/#37/#38; Branch 3 as PR #41; Branch 4 as PR #42; Branch
+5 as PR #44, with the OWASP security pass in PR #46).
 
 The M3 implementation is split into stacked, revert-safe branches. Each branch lands
 independently and keeps the full hermetic suite green (no LLM, no provider key, no
@@ -96,7 +96,7 @@ The `PostgresBackend` behind the `SessionBackend` port — framework-independent
 - New deps: `@electric-sql/pglite`, `pg` (ADR-006 Decisions 4–5/9); the former
   `DuckDbBackend`/`MotherDuckBackend` plans are revoked.
 
-## Branch 5 — `feat/3-task-rest` (shipping)
+## Branch 5 — `feat/3-task-rest` (shipped)
 
 The REST surface and per-session SSE over the store and the existing queue, on Fastify.
 
@@ -106,19 +106,23 @@ Shipped on this branch (see PR #44):
   backend-applied `status`/`since` filters and bounded pagination); `tweaks`
   envelope validated + stored verbatim. `SessionBackend` gained `list()` for the
   query surface (bound SQL on Postgres, scoped scan in-memory).
-- `src/api/auth.ts` — the spec §7 pre-auth bearer-token gate, scoped to the
-  task-rest plugin only (`/health`, `/runs`, global `/events` stay open).
+- `src/api/auth.ts` — the spec §7 pre-auth bearer-token gate. PR #46 extended it
+  over `/runs` and the global `/events` stream (the whole account-facing surface),
+  added `@fastify/rate-limit`, auth-rejection logging, and fail-closed boot on
+  non-loopback binds; `/health` stays open for probes.
 - `GET /events/{sessionId}` per-session replay-then-live — `SseHandler` gained a
   correlationId projection (`handleForSession`), same wire contract.
 - Execution-model reconciliation: `TaskRegistry.create` takes an additive
   `id`/`correlationId` override so the store aggregate and the queue-run registry
   session share identity; the queue runner mirrors lifecycle into the store so
   `/tasks` reads are live. `/runs`-created sessions stay registry-only.
-- E2E: +8 server tests → suite 118.
+- E2E: task-rest suite shipped with PR #44; the security pass (PR #46) extended the
+  gate test to `/runs` + `/events` and added the rate-limit cap test → suite 121.
 
 Remaining with the auth ADR:
 - account/tenant layer — auth flows and tenant scoping land before account-facing
-  routes expose user data (m3 spec §7, ADR-006 Decision 7).
+  routes expose user data (m3 spec §7, ADR-006 Decision 7). The pre-auth token gate
+  shipped in PR #46; accounts/tenancy is the next step.
 - New (following the auth ADR): `src/api/events.ts` (or extend `tasks.ts`)
 
 ## Cross-branch invariants
@@ -135,4 +139,4 @@ Remaining with the auth ADR:
   and any cloud backend never run in CI.
 - **Tenancy:** `session_events` carries `tenant_id` at the data-access boundary
   (ADR-006 Decision 7); user/tenant schema lands with the auth ADR.
-- Target total: 93 → 95 (Fastify) → 106 (Postgres) → ~114 hermetic tests with Branch 5.
+- Target total: 93 → 95 (Fastify) → 106 (Postgres) → ~114 with Branch 5; shipped at 121.
