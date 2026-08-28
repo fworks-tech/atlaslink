@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type { SessionBackend, SessionFilter } from '../session/sessionBackend'
 import type { Session as AggregateSession, SessionEvent } from '../session/types'
+import { VersionConflictError } from '../session/types'
 import type { SessionQueue } from '../bridge/SessionQueue'
 import type { SseHandler } from '../bridge/sseEndpoint'
 import type { TaskRegistry } from '../tasks/taskRegistry'
@@ -109,6 +110,9 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       },
       async (request, reply) => {
         const q = request.query
+        if (q.since !== undefined && Number.isNaN(Date.parse(q.since))) {
+          return reply.code(400).send({ ok: false, error: 'since must be an ISO-8601 date-time' })
+        }
         const filter: SessionFilter = {
           status: (q.status as SessionFilter['status']) ?? undefined,
           since: q.since ?? undefined,
@@ -134,20 +138,38 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
 
     scope.post<{ Params: { sessionId: string } }>('/tasks/:sessionId/cancel', async (request, reply) => {
       const sessionId = request.params.sessionId
-      const current = await deps.backend.get(sessionId)
-      if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
-      if ((TERMINAL_STATUSES as readonly string[]).includes(current.status)) {
-        return reply.code(409).send({ ok: false, error: 'session already terminated' })
+
+      // Re-evaluate against a fresh aggregate until the state is stable: a
+      // VersionConflictError means the lifecycle moved between our read and
+      // write (the queue started the run) — resolve rather than 500.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const current = await deps.backend.get(sessionId)
+        if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
+        if ((TERMINAL_STATUSES as readonly string[]).includes(current.status)) {
+          return reply.code(409).send({ ok: false, error: 'session already terminated' })
+        }
+        if (current.status === 'running') {
+          // M3 best-effort contract (spec §3): acknowledge now, cancel lands with the runtime
+          return reply.code(202).send({ ok: true, status: 'running', cancel: 'best-effort', session: sessionToWire(current) })
+        }
+        try {
+          await deps.backend.readModifyWrite(sessionId, current.version, () => [
+            { type: 'session.cancelled', correlationId: current.correlationId, at: new Date().toISOString() },
+          ])
+          // dequeue from execution so the pump never runs a cancelled session
+          try {
+            deps.registry.cancel(sessionId)
+          } catch {
+            // the registry entry may already be gone or terminal — the store commit is the truth
+          }
+          const after = await deps.backend.get(sessionId)
+          return reply.code(202).send({ ok: true, status: 'cancelled', session: sessionToWire(after!) })
+        } catch (err) {
+          if (err instanceof VersionConflictError) continue
+          throw err
+        }
       }
-      if (current.status === 'running') {
-        // M3 best-effort contract (spec §3): acknowledge now, cancel lands with the runtime
-        return reply.code(202).send({ ok: true, session: sessionToWire(current), cancel: 'best-effort' })
-      }
-      await deps.backend.readModifyWrite(sessionId, current.version, () => [
-        { type: 'session.cancelled', correlationId: current.correlationId, at: new Date().toISOString() },
-      ])
-      const after = await deps.backend.get(sessionId)
-      return reply.code(202).send({ ok: true, session: sessionToWire(after!) })
+      return reply.code(409).send({ ok: false, error: 'session state changed' })
     })
 
     // Per-session SSE (spec §3/§4): replay-then-live for one session's events,

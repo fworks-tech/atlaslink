@@ -4,6 +4,21 @@ import type { SessionBackend, SessionFilter, SessionList } from './sessionBacken
 import type { Session, SessionEvent, SessionDelta } from './types'
 import { VersionConflictError } from './types'
 
+/** The store vocabulary. The queue broadcasts `session.queued`/`session.started`
+ * into the same log; only the five aggregate event types count as store events,
+ * or list/get would inflate version with the bridge narration. */
+const STORE_EVENT_TYPES = new Set([
+  'session.created',
+  'session.running',
+  'session.succeeded',
+  'session.failed',
+  'session.cancelled',
+])
+
+function isStoreSessionEvent(type: unknown): type is string {
+  return typeof type === 'string' && STORE_EVENT_TYPES.has(type)
+}
+
 interface Snapshot {
   session: Session
   logVersion: number
@@ -83,11 +98,7 @@ export class EventLogBackend implements SessionBackend {
   async list(filter: SessionFilter): Promise<SessionList> {
     const bySession = new Map<string, SessionEvent[]>()
     for (const { envelope } of this.log.replay(-1)) {
-      if (
-        typeof envelope.type === 'string' &&
-        envelope.type.startsWith('session.') &&
-        typeof envelope.sessionId === 'string'
-      ) {
+      if (isStoreSessionEvent(envelope.type) && typeof envelope.sessionId === 'string') {
         const events = bySession.get(envelope.sessionId) ?? []
         events.push(envelope as unknown as SessionEvent)
         bySession.set(envelope.sessionId, events)
@@ -102,11 +113,7 @@ export class EventLogBackend implements SessionBackend {
   #sessionEvents(sessionId: string): SessionEvent[] {
     const events: SessionEvent[] = []
     for (const { envelope } of this.log.replay(-1)) {
-      if (
-        typeof envelope.type === 'string' &&
-        envelope.type.startsWith('session.') &&
-        envelope.sessionId === sessionId
-      ) {
+      if (isStoreSessionEvent(envelope.type) && envelope.sessionId === sessionId) {
         events.push(envelope as unknown as SessionEvent)
       }
     }
