@@ -1,0 +1,11 @@
+# Zero-setup mode: serve the daemon on :80 without TLS. The Vercel dashboard BFF
+# fetches this server-side, so no browser mixed-content is involved.
+:80 {
+	reverse_proxy backend:3000
+}
+
+# TLS upgrade path (requires a DNS A record for the host -> the VM's public IP,
+# plus TCP 443 open in the VCN security list):
+#   api.atlas.flabs.tech {
+#   	reverse_proxy backend:3000
+#   }

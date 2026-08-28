@@ -1,0 +1,11 @@
+node_modules
+dashboard/node_modules
+dashboard/.next
+.git
+data
+*.log
+.env
+.env.*
+!.env.example
+.agenthood/*
+!.agenthood/config.json

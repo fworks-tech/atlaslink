@@ -10,6 +10,7 @@ export interface DaemonConfig {
   host: string
   port: number
   dataDir: string
+  corsOrigins: string[]
   agenthood: LLMConfig
 }
 
@@ -54,11 +55,18 @@ export async function loadDaemonConfig(): Promise<DaemonConfig> {
   const host = process.env.ATLASLINK_HOST ?? DEFAULT_HOST
   const port = Number(process.env.ATLASLINK_PORT ?? DEFAULT_PORT)
   const dataDir = resolve(process.cwd(), 'data')
+  const corsOrigins = (
+    process.env.ATLASLINK_CORS_ORIGINS ??
+    'http://localhost:3001,https://atlas.flabs.tech'
+  )
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0)
 
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`invalid ATLASLINK_PORT "${process.env.ATLASLINK_PORT}"`)
   }
 
   const agenthood = await loadAgenthoodConfig()
-  return { host, port, dataDir, agenthood }
+  return { host, port, dataDir, corsOrigins, agenthood }
 }

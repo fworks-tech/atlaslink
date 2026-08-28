@@ -1,13 +1,15 @@
 import type { NextConfig } from "next";
 
-const API_PROXY_TARGET = process.env.ATLASLINK_API_URL ?? "http://127.0.0.1:3000";
-
+// The /api/* surface is handled by src/app/api/[...path]/route.ts — a proxy to
+// the Fastify daemon that injects the gate token server-side. (next.config
+// rewrites cannot set request headers, so the BFF route handler owns auth in
+// both dev and production.)
 const nextConfig: NextConfig = {
-  // The Fastify daemon owns /tasks, /events, /runs, /health on its own port.
-  // The browser only ever talks same-origin to Next.js, so there is no CORS
-  // surface and the backend stays loopback-bound (ADR-006, auth gate fail-closed).
-  async rewrites() {
-    return [{ source: "/api/:path*", destination: `${API_PROXY_TARGET}/:path*` }];
+  // Turbopack's workspace-root auto-detection picks the repo root (it wins the
+  // multi-lockfile heuristic), which breaks module resolution for this app's
+  // routes. Pin the dashboard as the project root.
+  turbopack: {
+    root: __dirname,
   },
 };
 

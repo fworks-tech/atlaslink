@@ -1,0 +1,31 @@
+services:
+  # The Fastify daemon (docker/Dockerfile). /app/data persists the NDJSON event
+  # log; the daemon's own ATLASLINK_HOST=0.0.0.0 already comes from the image.
+  backend:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - "3000"
+    volumes:
+      - atlaslink-data:/app/data
+
+  # Gateway so the backend never listens directly on the internet (only Caddy
+  # fronts it). Port 80 first; the Caddyfile documents the TLS upgrade path.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/oracle/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  atlaslink-data:
+  caddy-data:
+  caddy-config:

@@ -234,3 +234,48 @@ test('the gated scope rate-limits the cost-bearing surface (429 after the cap)',
     cleanup(dir)
   }
 })
+
+test('CORS allows only the configured origins and preflight does not need a token', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir, { token: 'secret' })
+
+    // an allowlisted origin gets the CORS header on real (non-preflight) responses
+    const ok = await jsonRequest(srv.port, 'GET', '/health', undefined, {
+      origin: 'http://localhost:3001',
+    })
+    assert.equal(ok.status, 200)
+    assert.equal(ok.headers['access-control-allow-origin'], 'http://localhost:3001')
+
+    // an unknown origin is refused CORS access (no allow header) — but the API
+    // itself still answers, so a non-browser caller is never blocked
+    const unknown = await jsonRequest(
+      srv.port,
+      'POST',
+      '/tasks',
+      { member: 'm', prompt: 'p' },
+      { origin: 'https://evil.example', authorization: 'Bearer secret' }
+    )
+    assert.equal(unknown.status, 201)
+    assert.equal(unknown.headers['access-control-allow-origin'], undefined)
+
+    // a credentialed preflight short-circuits before the bearer gate
+    const preflight = await jsonRequest(srv.port, 'OPTIONS', '/tasks', undefined, {
+      origin: 'http://localhost:3001',
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'authorization',
+    })
+    assert.equal(preflight.status, 204)
+    assert.equal(preflight.headers['access-control-allow-origin'], 'http://localhost:3001')
+
+    // the gated surface still enforces the token for real requests without one
+    const denied = await jsonRequest(srv.port, 'GET', '/tasks', undefined, {
+      origin: 'http://localhost:3001',
+    })
+    assert.equal(denied.status, 401)
+
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
