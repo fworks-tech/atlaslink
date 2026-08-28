@@ -109,15 +109,15 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps, opts?: 
         },
       },
       async (request, reply) => {
-        const q = request.query
-        if (q.since !== undefined && Number.isNaN(Date.parse(q.since))) {
+        const query = request.query
+        if (query.since !== undefined && Number.isNaN(Date.parse(query.since))) {
           return reply.code(400).send({ ok: false, error: 'since must be an ISO-8601 date-time' })
         }
         const filter: SessionFilter = {
-          status: (q.status as SessionFilter['status']) ?? undefined,
-          since: q.since ?? undefined,
-          limit: q.limit ?? 50,
-          offset: q.offset ?? 0,
+          status: (query.status as SessionFilter['status']) ?? undefined,
+          since: query.since ?? undefined,
+          limit: query.limit ?? 50,
+          offset: query.offset ?? 0,
         }
         const { sessions, total } = await deps.backend.list(filter)
         return reply.send({
