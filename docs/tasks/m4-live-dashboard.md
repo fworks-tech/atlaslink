@@ -3,7 +3,9 @@
 **Source of truth:** `docs/architecture/README.md` (roadmap), ADR-002 (live
 projection of society provenance), ADR-003 (Atlas as root node).
 **Issue:** #7 (feat(dashboard): add live member run-update UI)
-**Status:** In progress — Branch 1 (scaffold) in flight.
+**Status:** In progress — Branches 1–4 merged (scaffold, api client, session
+list, society diagram), member nodes + live pulse landed via PR #53.
+Branch 6 (drill-down) next.
 
 M4 renders the live society diagram: **Atlas** (root node) holds a growing "sky
 of sessions"; each session is a delegation graph whose nodes are Agenthood
