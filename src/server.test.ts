@@ -1,72 +1,14 @@
 import { test, mock } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { request } from 'node:http'
-import type { AddressInfo } from 'node:net'
-import { EventLogStore, type BridgeEnvelope } from './bridge/EventLogStore'
+import { EventLogStore } from './bridge/EventLogStore'
 import { EventBroadcaster } from './bridge/EventBroadcaster'
 import { SessionQueue } from './bridge/SessionQueue'
 import { SseHandler, formatSse } from './bridge/sseEndpoint'
 import { createAppServer } from './server'
 import { TaskRegistry } from './tasks/taskRegistry'
 import { log as logger } from './log'
-
-function tmpDataDir(): string {
-  return mkdtempSync(join(tmpdir(), 'atlaslink-sse-'))
-}
-
-function runEnv(eventId: number, overrides: Record<string, unknown> = {}): BridgeEnvelope {
-  return {
-    eventId,
-    type: 'run.started',
-    executionId: 'e-1',
-    member: 'the-architect',
-    correlationId: 'cor-1',
-    timestamp: '2026-08-22T00:00:00.000Z',
-    task: 'plan the M2 bridge',
-    ...overrides,
-  }
-}
-
-async function startServer(dir: string): Promise<{ port: number; broadcaster: EventBroadcaster; sse: SseHandler; close: () => Promise<void> }> {
-  const log = await EventLogStore.open(dir)
-  const broadcaster = new EventBroadcaster(log)
-  const sse = new SseHandler(log, broadcaster)
-  const registry = new TaskRegistry()
-  const queue = new SessionQueue({ broadcaster, registry, runner: async () => {} })
-  const { server: httpServer } = await createAppServer({ log, registry, queue, sse })
-  await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
-  const port = (httpServer.address() as AddressInfo).port
-  return {
-    port,
-    broadcaster,
-    sse,
-    close: () =>
-      new Promise<void>((resolve) => {
-        httpServer.closeAllConnections?.()
-        httpServer.close(() => resolve())
-      }),
-  }
-}
-
-/** Connect and collect SSE data for a moment, then destroy the connection. */
-function collectStream(url: string, headers: Record<string, string>, collectMs: number): Promise<string> {
-  return new Promise((resolve) => {
-    let data = ''
-    const req = request(url, { headers }, (res) => {
-      res.setEncoding('utf8')
-      res.on('data', (chunk: string) => (data += chunk))
-    })
-    req.on('error', () => resolve(data))
-    req.end()
-    setTimeout(() => {
-      req.destroy()
-      resolve(data)
-    }, collectMs)
-  })
-}
+import { tmpDataDir, runEnv, startServer, collectStream, cleanup } from './test/serverHarness'
 
 test('formatSse emits id/event/data framing per spec §4 with newline terminator', () => {
   const frame = formatSse(runEnv(12, { type: 'tool.called', step: 1, name: 'read_file', args: {} }))
@@ -84,7 +26,7 @@ test('GET /health returns ok status', async () => {
     assert.ok(body.includes('"ok":true'))
     await srv.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    cleanup(dir)
   }
 })
 
@@ -105,7 +47,7 @@ test('every request emits a structured "request" log line', async () => {
     info.mock.restore()
     await srv.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    cleanup(dir)
   }
 })
 
@@ -127,7 +69,7 @@ test('GET /events does not emit a "request" log (long-lived SSE)', async () => {
     info.mock.restore()
     await srv.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    cleanup(dir)
   }
 })
 
@@ -147,7 +89,7 @@ test('GET /events with Last-Event-ID replays events after that id', async () => 
     assert.ok(!body.includes('id: 0'))
     await srv.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    cleanup(dir)
   }
 })
 
@@ -165,7 +107,7 @@ test('GET /events with no Last-Event-ID is live-tail only (no replay)', async ()
     assert.ok(!body.includes('id: 0'))
     await srv.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    cleanup(dir)
   }
 })
 
@@ -185,7 +127,7 @@ test('GET /events with a stale Last-Event-ID emits bridge.gap, never silence', a
     assert.match(body, /"oldest":3/)
     await srv.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    cleanup(dir)
   }
 })
 
@@ -209,7 +151,7 @@ test('POST /runs declares a session and returns 202 with its id', async () => {
     assert.ok(parsed.session.id.startsWith('ses-'))
     await srv.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    cleanup(dir)
   }
 })
 
@@ -233,7 +175,7 @@ test('POST /runs rejects non-string member or prompt with the error envelope', a
     assert.equal(typeof parsed.error, 'string')
     await srv.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    cleanup(dir)
   }
 })
 
@@ -257,7 +199,7 @@ test('POST /runs rejects malformed JSON with the error envelope', async () => {
     assert.equal(typeof parsed.error, 'string')
     await srv.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    cleanup(dir)
   }
 })
 
@@ -283,7 +225,7 @@ test('GET /events streams newly emitted events live while connected', async () =
     await new Promise((r) => setTimeout(r, 50))
     await srv.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    cleanup(dir)
   }
 })
 
@@ -295,7 +237,7 @@ test('GET /events returns 404 JSON for unknown routes', async () => {
     assert.ok(body.includes('"error":"not found"'))
     await srv.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    cleanup(dir)
   }
 })
 
@@ -313,6 +255,6 @@ test('createAppServer builds the HTTP layer on Fastify (ADR-006 Decision 1)', as
     assert.ok(typeof server === 'object' && server !== null)
     sse.shutdown()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    cleanup(dir)
   }
 })

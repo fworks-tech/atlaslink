@@ -51,7 +51,8 @@ export class SessionQueue {
       while (this.queue.length > 0) {
         const sessionId = this.queue.shift()!
         const started = this.registry.get(sessionId)
-        if (!started) continue
+        // a cancelled queued session is skipped, never run (spec §3 guarantee)
+        if (!started || started.status === SessionStatus.CANCELLED) continue
         this.#emit('session.started', sessionId, started, SessionStatus.RUNNING)
         await this.runner(sessionId)
         const final = this.registry.get(sessionId)
