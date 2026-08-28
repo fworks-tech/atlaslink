@@ -45,3 +45,19 @@ jobs:
       - name: Test
         working-directory: atlaslink
         run: npm test
+
+  # Secret scanning (the-auditor convention). Personal GitHub accounts need no
+  # license (empty GITLEAKS_LICENSE works); org accounts need the free Starter
+  # license. On a private org repo without a license the job is skipped rather
+  # than failed — set GITLEAKS_LICENSE to start scanning.
+  gitleaks:
+    if: github.event.repository.private != true || secrets.GITLEAKS_LICENSE != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Secret scanning (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE || '' }}
