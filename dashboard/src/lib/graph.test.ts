@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { MarkerType } from "@xyflow/react";
 import { buildSocietyGraph } from "@/lib/graph";
 import type { Session, BridgeEvent } from "@/lib/types";
 
@@ -80,13 +81,13 @@ describe("buildSocietyGraph", () => {
         id: "handoff-ses-1-0",
         source: "ses-1",
         target: "ses-1::the-mediator",
-        markerEnd: expect.objectContaining({ type: expect.any(String) }),
+        markerEnd: { type: MarkerType.ArrowClosed },
       },
       {
         id: "handoff-ses-1-1",
         source: "ses-1::the-mediator",
         target: "ses-1::the-debugger",
-        markerEnd: expect.objectContaining({ type: expect.any(String) }),
+        markerEnd: { type: MarkerType.ArrowClosed },
       },
     ]);
   });
@@ -99,6 +100,15 @@ describe("buildSocietyGraph", () => {
     const graph = buildSocietyGraph([session("ses-1", "cor-1")], events);
     const members = memberNodesOf(graph);
     expect(members.map((m) => m.active)).toEqual([false, true]);
+  });
+
+  it("marks the sole member of a single-member running session as active", () => {
+    const graph = buildSocietyGraph([session("ses-1", "cor-1")], [
+      event({ eventId: 1, member: "the-mediator" }),
+    ]);
+    const members = memberNodesOf(graph);
+    expect(members).toHaveLength(1);
+    expect(members[0].active).toBe(true);
   });
 
   it("marks no member active on a finished session", () => {
