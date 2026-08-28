@@ -35,9 +35,9 @@ export function sessionToWire(s: AggregateSession): AggregateSession {
  * encapsulated so the pre-auth token gate (spec §7) applies only to these
  * routes — never /health, /runs, or the global /events stream.
  */
-export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
+export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps, opts?: { bindHost?: string }): void {
   app.register(async (scope) => {
-    registerTokenGate(scope)
+    registerTokenGate(scope, { bindHost: opts?.bindHost })
 
     scope.post<{ Body: PostBody }>(
       '/tasks',
