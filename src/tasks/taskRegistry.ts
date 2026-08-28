@@ -6,6 +6,7 @@ export const SessionStatus = Object.freeze({
   RUNNING: 'running',
   SUCCEEDED: 'succeeded',
   FAILED: 'failed',
+  CANCELLED: 'cancelled',
 } as const)
 
 export type SessionStatusType = (typeof SessionStatus)[keyof typeof SessionStatus]
@@ -75,6 +76,20 @@ export class TaskRegistry {
     TaskRegistry.#assert(session.status, 'start')
     session.status = SessionStatus.RUNNING
     session.startedAt = new Date().toISOString()
+    return session
+  }
+
+  /**
+   * Cancel a queued session so the pump skips it. Only legal from QUEUED; a
+   * running/terminal session is untouched (the queue calls this only after the
+   * store commit succeeded, which the pump drains before starting).
+   */
+  cancel(id: string): Session {
+    const session = this.#sessions.get(id)
+    if (!session) throw new Error(`unknown session "${id}"`)
+    TaskRegistry.#assert(session.status, 'cancel')
+    session.status = SessionStatus.CANCELLED
+    session.finishedAt = new Date().toISOString()
     return session
   }
 

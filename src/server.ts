@@ -16,6 +16,7 @@ import { createSessionBackend } from './session/backendFactory'
 import { SessionStore } from './session/sessionStore'
 import type { SessionBackend } from './session/sessionBackend'
 import type { SessionDelta } from './session/types'
+import { VersionConflictError } from './session/types'
 import { registerTaskRoutes } from './api/tasks'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
@@ -104,7 +105,8 @@ export async function createAppServer(params: {
 
   app.addHook('onResponse', (request, reply, done) => {
     // long-lived SSE streams do not emit a request envelope (same as pre-Fastify)
-    if (request.routeOptions.url !== '/events') {
+    const route = request.routeOptions.url
+    if (route !== '/events' && route !== '/events/:sessionId') {
       logger.info('request', {
         method: request.method,
         url: request.url,
@@ -189,11 +191,18 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
        const session = registry.get(sessionId)!
        // Mirror lifecycle into the store so GET /tasks read the live aggregate.
        // /runs-created sessions live only in the registry — the store stays the
-       // /tasks surface, so a missing aggregate is skipped, not invented.
+       // /tasks surface, so a missing aggregate is skipped, not invented. A
+       // cancelled aggregate is final: never overwrite it with the run outcome.
        const mirror = async (delta: SessionDelta): Promise<void> => {
          const current = await backend.get(sessionId)
-         if (!current) return
-         await backend.readModifyWrite(sessionId, current.version, () => [delta])
+         if (!current || current.status === 'cancelled') return
+         try {
+           await backend.readModifyWrite(sessionId, current.version, () => [delta])
+         } catch (err) {
+           if (!(err instanceof VersionConflictError)) throw err
+           // a cancel landed between read and write — the aggregate moved on,
+           // and the store already reflects the terminal decision; mirror drops
+         }
        }
        const at = (): string => new Date().toISOString()
        try {

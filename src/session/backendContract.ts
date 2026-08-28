@@ -121,6 +121,13 @@ export async function backendContract(name: string, create: () => Promise<Sessio
         ['ses-b']
       )
 
+      // 'queued' maps to the session.created event on every backend
+      const queued = await store.list({ status: 'queued', limit: 50, offset: 0 })
+      assert.deepEqual(
+        queued.sessions.map((s) => s.sessionId),
+        ['ses-a']
+      )
+
       const since = await store.list({ since: '2026-01-02T00:00:00Z', limit: 50, offset: 0 })
       assert.deepEqual(
         since.sessions.map((s) => s.sessionId),

@@ -446,7 +446,9 @@ test('cancel moves a queued session to cancelled (202); a terminal session confl
 
     const cancelled = await jsonRequest(srv.port, 'POST', `/tasks/${id}/cancel`)
     assert.equal(cancelled.status, 202)
-    assert.equal(JSON.parse(cancelled.body).session.status, 'cancelled')
+    const cancelledBody = JSON.parse(cancelled.body)
+    assert.equal(cancelledBody.status, 'cancelled')
+    assert.equal(cancelledBody.session.status, 'cancelled')
 
     const again = await jsonRequest(srv.port, 'POST', `/tasks/${id}/cancel`)
     assert.equal(again.status, 409)
@@ -467,6 +469,7 @@ test('cancel of a running session is acknowledged as best-effort', async () => {
     const res = await jsonRequest(srv.port, 'POST', `/tasks/${id}/cancel`)
     assert.equal(res.status, 202)
     const parsed = JSON.parse(res.body)
+    assert.equal(parsed.status, 'running')
     assert.equal(parsed.session.status, 'running')
     assert.equal(parsed.cancel, 'best-effort')
     await srv.close()

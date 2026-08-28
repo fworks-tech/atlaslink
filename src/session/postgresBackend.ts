@@ -132,7 +132,9 @@ export class PostgresBackend implements SessionBackend {
         WHERE tenant_id = $1
       )`
     const match = ` WHERE rn = 1
-      AND ($2::text IS NULL OR last_type = 'session.' || $2)
+      AND ($2::text IS NULL
+           OR last_type = 'session.' || $2
+           OR ($2 = 'queued' AND last_type = 'session.created'))
       AND ($3::text IS NULL OR created_at >= $3)`
     const status = filter.status ?? null
     const since = filter.since ?? null
