@@ -49,6 +49,19 @@ export class SseHandler {
   }
 
   handle(req: IncomingMessage, res: ServerResponse): void {
+    this.#handle(req, res)
+  }
+
+  /**
+   * Per-session variant (spec §3): replay-then-live limited to one session's
+   * events by `correlationId`. Uses the same wire contract — Last-Event-ID
+   * resume, ping, gap, shutdown — filtered at the projection boundary.
+   */
+  handleForSession(req: IncomingMessage, res: ServerResponse, correlationId: string): void {
+    this.#handle(req, res, (envelope) => envelope.correlationId === correlationId)
+  }
+
+  #handle(req: IncomingMessage, res: ServerResponse, filter?: (envelope: BridgeEnvelope) => boolean): void {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache',
@@ -72,13 +85,17 @@ export class SseHandler {
         })
       } else {
         for (const stored of this.log.replay(lastId)) {
+          if (filter !== undefined && !filter(stored.envelope)) continue
           this.#frame(res, stored.envelope)
         }
       }
     }
 
     const unsubscribe = this.broadcaster.subscribe(
-      (envelope) => this.#frame(res, envelope),
+      (envelope) => {
+        if (filter !== undefined && !filter(envelope)) return
+        this.#frame(res, envelope)
+      },
       { replay: false },
     )
 
