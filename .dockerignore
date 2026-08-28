@@ -3,8 +3,9 @@ dashboard/node_modules
 dashboard/.next
 .git
 data
-.agenthood
 *.log
 .env
 .env.*
 !.env.example
+.agenthood/*
+!.agenthood/config.json
