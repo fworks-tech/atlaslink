@@ -145,6 +145,9 @@ vite.config.ts.timestamp-*
 # Atlaslink runtime data (event log, session store)
 data/
 
+# Vercel CLI link metadata
+.vercel
+
 # Agenthood runtime artifacts
 .agenthood/alerts/
 .agenthood/memory/
@@ -158,3 +161,4 @@ data/
 .agenthood/society-graph.json
 .agenthood/preferences.json
 !.agenthood/config.json
+.env*

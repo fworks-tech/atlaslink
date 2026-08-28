@@ -14,15 +14,14 @@ export class ApiError extends Error {
 const API_BASE = "/api";
 
 /**
- * Minimal typed fetch wrapper for the daemon surface. Attaches the bearer
- * token only when the gate is armed (dev convenience — never a production
- * secret), parses the { ok, error } envelope, and folds HTTP errors into
- * ApiError so callers can branch on status.
+ * Minimal typed fetch wrapper for the daemon surface. The browser only ever
+ * talks same-origin to /api/* — src/app/api/[...path]/route.ts forwards to the
+ * daemon and injects the gate token server-side, so no secret touches the
+ * client bundle. Errors are folded into ApiError so callers can branch on
+ * status.
  */
 export async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  const token = process.env.NEXT_PUBLIC_ATLASLINK_API_TOKEN;
-  if (token) headers.set("Authorization", `Bearer ${token}`);
   if (init?.body) headers.set("Content-Type", "application/json");
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });

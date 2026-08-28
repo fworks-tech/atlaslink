@@ -20,6 +20,7 @@ import { VersionConflictError } from './session/types'
 import { registerTaskRoutes } from './api/tasks'
 import { registerTokenGate } from './api/auth'
 import rateLimit from '@fastify/rate-limit'
+import cors from '@fastify/cors'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
 
@@ -90,11 +91,16 @@ export async function createAppServer(params: {
   bindHost?: string
   version?: string
   rateLimit?: { max: number; timeWindow: string }
+  corsOrigins?: string[]
 }): Promise<{ server: Server; broadcaster: EventBroadcaster; sse: SseHandler; queue: SessionQueue; app: FastifyInstance }> {
   const { log, registry, queue, sse } = params
   const backend = params.backend ?? new SessionStore()
   const appVersion = params.version ?? version
   const rateLimitOpts = params.rateLimit ?? { max: 100, timeWindow: '1 minute' }
+  // Explicit allowlist, never a wildcard: the browser must only ever read this
+  // API from the dashboard origin (dev + production). Server-to-server callers
+  // carry no Origin header and are unaffected.
+  const corsOrigins = params.corsOrigins ?? ['http://localhost:3001', 'https://atlas.flabs.tech']
 
   // Fastify's serverFactory lets the entrypoint (and tests) own the socket:
   // `server.listen(port)` drives Fastify's router without app.listen().
@@ -114,6 +120,10 @@ export async function createAppServer(params: {
     ...rateLimitOpts,
     errorResponseBuilder: () => ({ statusCode: 429, message: 'rate limit exceeded' }),
   })
+
+  // CORS at the root so preflight short-circuits before the gated scope's auth
+  // gate (OPTIONS never needs a bearer token). Allowlist only.
+  await app.register(cors, { origin: corsOrigins })
 
   app.addHook('onResponse', (request, reply, done) => {
     // long-lived SSE streams do not emit a request envelope (same as pre-Fastify)
@@ -249,7 +259,15 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
      },
    })
 
-  const { server } = await createAppServer({ log, registry, queue, sse, backend, bindHost: config.host })
+  const { server } = await createAppServer({
+    log,
+    registry,
+    queue,
+    sse,
+    backend,
+    bindHost: config.host,
+    corsOrigins: config.corsOrigins,
+  })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(config.port, config.host, resolve)

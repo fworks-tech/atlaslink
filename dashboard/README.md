@@ -16,10 +16,15 @@ npm start
 cd dashboard && npm run dev
 ```
 
-Open http://localhost:3001. The dashboard proxies `/api/*` → the daemon
-(`next.config.ts` rewrites), so the browser stays same-origin and the backend
-needs no CORS surface. `ATLASLINK_API_URL` overrides the daemon origin; the
-loopback default is unauthenticated per the auth gate contract (`src/api/auth.ts`).
+Open http://localhost:3001. The browser stays same-origin: every `/api/*`
+request is handled by `src/app/api/[...path]/route.ts`, a small BFF proxy that
+forwards to the daemon and injects the gate token **server-side** (so no secret
+ever ships in the client bundle; `next.config.ts` rewrites cannot set request
+headers, hence the route handler). SSE streams back through it verbatim.
+
+`ATLASLINK_API_URL` and `ATLASLINK_API_TOKEN` configure the proxy (see
+`.env.example`). The loopback default is unauthenticated per the auth gate
+contract (`src/api/auth.ts`).
 
 ## Scripts
 
