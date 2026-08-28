@@ -2,10 +2,9 @@
 
 **Source of truth:** [`docs/spec/m3-task-api.md`](../spec/m3-task-api.md)
 **Issue:** #M3 (Task API)
-**Status:** In progress — Branch 1 (docs) and Branch 2 (session store) shipped and
-merged to main (Branch 1 as PR #23; Branch 2 as PRs #27/#37/#38); Branch 3
-(`feat/6-fastify-rebuild`, Fastify HTTP layer) lands in this PR; Branch 4
-(`feat/6-postgres-backend`) and Branch 5 (`feat/3-task-rest`) remain.
+**Status:** In progress — Branches 1–4 shipped and merged to main (Branch 1 as PR
+#23; Branch 2 as PRs #27/#37/#38; Branch 3 as PR #41; Branch 4 as PR #42). Branch 5
+(`feat/3-task-rest`) is in progress.
 
 The M3 implementation is split into stacked, revert-safe branches. Each branch lands
 independently and keeps the full hermetic suite green (no LLM, no provider key, no
