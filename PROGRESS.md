@@ -132,18 +132,18 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
 ### M3 — Task API
 4. [x] Task API spec + breakdown shipped — `docs/spec/m3-task-api.md`,
        `docs/tasks/m3-task-api.md`, ADR-004 (session-aggregate durability) amended by
-       ADR-006 (Postgres primary store + Fastify). Branch plan: docs (shipped) →
-       session-store (shipped) → fastify-rebuild (in flight) → postgres-backend
-       (in progress) → task-rest.
+       ADR-006 (Postgres primary store + Fastify). Branch plan:
+       docs (shipped) → session-store (shipped) → fastify-rebuild (shipped) →
+       postgres-backend (shipped) → task-rest (in progress).
 5. [x] Ship the durable, event-sourced `SessionStore` — in-memory store behind a
        `SessionBackend` port, hardened per post-merge review (issues #28–#36), plus the
        `EventLogStore`-backed `EventLogBackend` (ADR-004) with a frozen snapshot cache;
        merged to main (PRs #27, #37, #38).
-6. [ ] Rebuild the HTTP layer on Fastify (ADR-006 Decision 1), preserving the SSE
-       reconnection contract — `feat/6-fastify-rebuild` (branch complete, pending
-       review/merge); the ADR-005 request envelope stays on the `src/log.ts` facade
-7. [ ] Add `PostgresBackend` over `pglite`/`pg` for hermetic CI (ADR-006 Decisions
-       4–5, 9) — `feat/6-postgres-backend` (in progress)
+6. [x] Rebuild the HTTP layer on Fastify (ADR-006 Decision 1), preserving the SSE
+       reconnection contract — merged via `feat/6-fastify-rebuild` (PR #41); the
+       ADR-005 request envelope stays on the `src/log.ts` facade. Suite: 95.
+7. [x] Add `PostgresBackend` over `pglite`/`pg` for hermetic CI (ADR-006 Decisions
+       4–5, 9) — merged via `feat/6-postgres-backend` (PR #42). Suite: 108.
 8. [ ] Implement `POST/GET /tasks`, `GET /tasks/{id}`, cancel, per-session SSE
        (`feat/3-task-rest`)
 
