@@ -28,7 +28,13 @@ export class TaskRegistry {
     }
   }
 
-  create(params: { member: string; prompt: string; provider?: string }): Session {
+  create(params: {
+    member: string
+    prompt: string
+    provider?: string
+    id?: string
+    correlationId?: string
+  }): Session {
     if (!params.member || typeof params.member !== 'string') {
       throw new Error('member is required')
     }
@@ -36,8 +42,8 @@ export class TaskRegistry {
       throw new Error('prompt is required')
     }
     const session: Session = {
-      id: `ses-${randomUUID()}`,
-      correlationId: `cor-${randomUUID()}`,
+      id: params.id ?? `ses-${randomUUID()}`,
+      correlationId: params.correlationId ?? `cor-${randomUUID()}`,
       status: SessionStatus.QUEUED,
       task: { member: params.member, prompt: params.prompt, ...(params.provider ? { provider: params.provider } : {}) },
       createdAt: new Date().toISOString(),
