@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import { ConnectionStatus } from "@/components/ConnectionStatus";
 
 export const metadata: Metadata = {
   title: "Atlaslink — Live Dashboard",
@@ -30,7 +31,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               </Link>
             </nav>
             <div className="border-t border-white/5 px-5 py-4 font-mono text-xs text-muted">
-              api · 127.0.0.1:3000
+              <ConnectionStatus />
             </div>
           </aside>
           <main className="ml-60 flex-1">{children}</main>
