@@ -69,6 +69,10 @@ jobs:
         working-directory: dashboard
         run: npm run typecheck
 
+      - name: Unit tests
+        working-directory: dashboard
+        run: npm test
+
       - name: Lint
         working-directory: dashboard
         run: npm run lint
