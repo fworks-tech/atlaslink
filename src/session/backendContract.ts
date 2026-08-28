@@ -86,5 +86,50 @@ export async function backendContract(name: string, create: () => Promise<Sessio
       assert.ok(s)
       assert.equal(s.version, 2)
     })
+
+    await test('list filters by status and since, newest-first, with total before pagination', async () => {
+      const store = await create()
+      await store.append({
+        ...created,
+        sessionId: 'ses-a',
+        correlationId: 'cor-a',
+        at: '2026-01-01T00:00:00Z',
+      })
+      await store.append({
+        ...created,
+        sessionId: 'ses-b',
+        correlationId: 'cor-b',
+        at: '2026-01-02T00:00:00Z',
+      })
+      await store.append({
+        type: 'session.running',
+        sessionId: 'ses-b',
+        correlationId: 'cor-b',
+        at: '2026-01-02T00:00:01Z',
+      })
+
+      const all = await store.list({ limit: 50, offset: 0 })
+      assert.equal(all.total, 2)
+      assert.deepEqual(
+        all.sessions.map((s) => s.sessionId),
+        ['ses-b', 'ses-a']
+      )
+
+      const running = await store.list({ status: 'running', limit: 50, offset: 0 })
+      assert.deepEqual(
+        running.sessions.map((s) => s.sessionId),
+        ['ses-b']
+      )
+
+      const since = await store.list({ since: '2026-01-02T00:00:00Z', limit: 50, offset: 0 })
+      assert.deepEqual(
+        since.sessions.map((s) => s.sessionId),
+        ['ses-b']
+      )
+
+      const paged = await store.list({ limit: 1, offset: 0 })
+      assert.equal(paged.sessions.length, 1)
+      assert.equal(paged.total, 2)
+    })
   })
 }

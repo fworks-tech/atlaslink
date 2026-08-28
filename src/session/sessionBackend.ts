@@ -1,4 +1,22 @@
-import type { Session, SessionEvent, SessionDelta } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionStatus } from './types'
+
+/**
+ * Query surface for the task-rest list endpoint. Filters are applied by the
+ * backend (bound SQL on Postgres, scoped scan in-memory) — never assembled by
+ * callers. `since` compares against the session's `createdAt` (the first
+ * `session.created` event's `at`); ordering is `createdAt` descending.
+ */
+export interface SessionFilter {
+  status?: SessionStatus
+  since?: string
+  limit: number
+  offset: number
+}
+
+export interface SessionList {
+  sessions: Session[]
+  total: number
+}
 
 /**
  * Implementations must keep the version check and the event commit atomic —
@@ -14,4 +32,5 @@ export interface SessionBackend {
     expectedVersion: number,
     mutator: (current: Session | null) => SessionDelta[]
   ): Promise<void>
+  list(filter: SessionFilter): Promise<SessionList>
 }

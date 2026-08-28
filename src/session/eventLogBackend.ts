@@ -1,6 +1,6 @@
 import { EventLogStore } from '../bridge/EventLogStore'
-import { rehydrate } from './sessionStore'
-import type { SessionBackend } from './sessionBackend'
+import { rehydrate, filterSessions } from './sessionStore'
+import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
 import type { Session, SessionEvent, SessionDelta } from './types'
 import { VersionConflictError } from './types'
 
@@ -78,6 +78,25 @@ export class EventLogBackend implements SessionBackend {
     for (const delta of mutator(current)) {
       await this.append({ ...delta, sessionId })
     }
+  }
+
+  async list(filter: SessionFilter): Promise<SessionList> {
+    const bySession = new Map<string, SessionEvent[]>()
+    for (const { envelope } of this.log.replay(-1)) {
+      if (
+        typeof envelope.type === 'string' &&
+        envelope.type.startsWith('session.') &&
+        typeof envelope.sessionId === 'string'
+      ) {
+        const events = bySession.get(envelope.sessionId) ?? []
+        events.push(envelope as unknown as SessionEvent)
+        bySession.set(envelope.sessionId, events)
+      }
+    }
+    const sessions = [...bySession.values()]
+      .map((events) => rehydrate(events))
+      .filter((s): s is Session => s !== null)
+    return filterSessions(sessions, filter)
   }
 
   #sessionEvents(sessionId: string): SessionEvent[] {

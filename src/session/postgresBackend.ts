@@ -1,11 +1,12 @@
 import type { Session, SessionEvent, SessionDelta } from './types'
 import { VersionConflictError } from './types'
 import { rehydrate } from './sessionStore'
-import type { SessionBackend } from './sessionBackend'
+import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
 import type { Db } from './db'
 import { DEFAULT_TENANT_ID } from './migrations'
 
 interface EventRow {
+  sessionId?: string
   event: string | SessionEvent
 }
 
@@ -111,5 +112,64 @@ export class PostgresBackend implements SessionBackend {
       }
       throw err
     }
+  }
+
+  /**
+   * List applies the filters in SQL (bound parameters only — the task-rest
+   * route never concatenates), then rehydrates the matching sessions from their
+   * event rows. The latest event per session decides the status filter; the
+   * first event's `at` decides the `since` filter; ordering is newest-first.
+   */
+  async list(filter: SessionFilter): Promise<SessionList> {
+    const rankedCte = `
+      WITH ranked AS (
+        SELECT tenant_id, session_id, (event->>'type')::text AS last_type,
+          (SELECT (e2.event->>'at') FROM session_events e2
+            WHERE e2.tenant_id = se.tenant_id AND e2.session_id = se.session_id
+            ORDER BY e2.version ASC LIMIT 1) AS created_at,
+          ROW_NUMBER() OVER (PARTITION BY tenant_id, session_id ORDER BY version DESC) AS rn
+        FROM session_events se
+        WHERE tenant_id = $1
+      )`
+    const match = ` WHERE rn = 1
+      AND ($2::text IS NULL OR last_type = 'session.' || $2)
+      AND ($3::text IS NULL OR created_at >= $3)`
+    const status = filter.status ?? null
+    const since = filter.since ?? null
+
+    const [countRes, pageRes] = await Promise.all([
+      this.db.query<{ total: number }>(
+        `${rankedCte} SELECT count(*)::int AS total FROM ranked${match}`,
+        [this.tenantId, status, since]
+      ),
+      this.db.query<{ sessionId: string }>(
+        `${rankedCte} SELECT session_id AS "sessionId" FROM ranked${match} ORDER BY created_at DESC LIMIT $4 OFFSET $5`,
+        [this.tenantId, status, since, filter.limit, filter.offset]
+      ),
+    ])
+
+    const ids = pageRes.rows.map((r) => r.sessionId)
+    const total = countRes.rows[0]?.total ?? 0
+    if (ids.length === 0) return { sessions: [], total }
+
+    const { rows } = await this.db.query<EventRow>(
+      `SELECT session_id AS "sessionId", event FROM session_events
+       WHERE tenant_id = $1 AND session_id = ANY($2::text[])
+       ORDER BY session_id, version`,
+      [this.tenantId, ids]
+    )
+    const bySession = new Map<string, SessionEvent[]>()
+    for (const row of rows) {
+      if (row.sessionId === undefined) continue
+      const events = bySession.get(row.sessionId) ?? []
+      events.push(parseEvent(row.event))
+      bySession.set(row.sessionId, events)
+    }
+    const sessions = [...bySession.values()]
+      .map((events) => rehydrate(events))
+      .filter((s): s is Session => s !== null)
+      // the event fetch is ordered by session_id, so re-apply the page order here
+      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+    return { sessions, total }
   }
 }
