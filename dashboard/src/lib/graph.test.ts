@@ -13,6 +13,27 @@ function session(id: string, correlation: string, status: Session["status"] = "r
   };
 }
 
+function event(over: Partial<BridgeEvent> = {}): BridgeEvent {
+  return {
+    eventId: 1,
+    type: "run.started",
+    correlationId: "cor-1",
+    member: "the-mediator",
+    at: "2026-08-28T12:00:00.000Z",
+    ...over,
+  } as BridgeEvent;
+}
+
+function memberNodesOf(graph: ReturnType<typeof buildSocietyGraph>): { id: string; active: boolean; member: string }[] {
+  return graph.nodes
+    .filter((n) => n.type === "member")
+    .map((n) => ({
+      id: n.id,
+      active: (n.data as { active: boolean }).active,
+      member: (n.data as { member: string }).member,
+    }));
+}
+
 describe("buildSocietyGraph", () => {
   it("returns just the Atlas node (with no edges) when there are no sessions", () => {
     const graph = buildSocietyGraph([], []);
@@ -29,13 +50,13 @@ describe("buildSocietyGraph", () => {
     expect((sessionNode?.data as { session: Session }).session.status).toBe("running");
   });
 
-  it("extracts the member chain in first-seen, deduplicated order", () => {
+  it("extracts the delegation chain in first-seen, deduplicated order", () => {
     const events: BridgeEvent[] = [
-      { eventId: 1, type: "run.started", correlationId: "cor-1", member: "the-mediator" },
-      { eventId: 2, type: "reasoning", correlationId: "cor-1", member: "the-debugger" },
-      { eventId: 3, type: "run.started", correlationId: "cor-1", member: "the-debugger" },
-      { eventId: 4, type: "tool.called", correlationId: "cor-1", member: "the-builder" },
-    ] as BridgeEvent[];
+      event({ eventId: 1, member: "the-mediator" }),
+      event({ eventId: 2, type: "reasoning", member: "the-debugger" }),
+      event({ eventId: 3, type: "run.started", member: "the-debugger" }),
+      event({ eventId: 4, type: "tool.called", member: "the-builder" }),
+    ];
     const graph = buildSocietyGraph([session("ses-1", "cor-1")], events);
     const sessionNode = graph.nodes.find((n) => n.id === "ses-1");
     expect((sessionNode?.data as { members: string[] }).members).toEqual([
@@ -45,19 +66,65 @@ describe("buildSocietyGraph", () => {
     ]);
   });
 
+  it("renders one member node per chain member with hand-off edges", () => {
+    const events = [
+      event({ eventId: 1, member: "the-mediator" }),
+      event({ eventId: 2, member: "the-debugger" }),
+    ];
+    const graph = buildSocietyGraph([session("ses-1", "cor-1")], events);
+    const members = memberNodesOf(graph);
+    expect(members.map((m) => m.member)).toEqual(["the-mediator", "the-debugger"]);
+    expect(graph.edges).toEqual([
+      { id: "atlas-ses-1", source: "atlas", target: "ses-1" },
+      {
+        id: "handoff-ses-1-0",
+        source: "ses-1",
+        target: "ses-1::the-mediator",
+        markerEnd: expect.objectContaining({ type: expect.any(String) }),
+      },
+      {
+        id: "handoff-ses-1-1",
+        source: "ses-1::the-mediator",
+        target: "ses-1::the-debugger",
+        markerEnd: expect.objectContaining({ type: expect.any(String) }),
+      },
+    ]);
+  });
+
+  it("marks only the last member active while the session runs", () => {
+    const events = [
+      event({ eventId: 1, member: "the-mediator" }),
+      event({ eventId: 2, member: "the-debugger" }),
+    ];
+    const graph = buildSocietyGraph([session("ses-1", "cor-1")], events);
+    const members = memberNodesOf(graph);
+    expect(members.map((m) => m.active)).toEqual([false, true]);
+  });
+
+  it("marks no member active on a finished session", () => {
+    const events = [
+      event({ eventId: 1, member: "the-mediator" }),
+      event({ eventId: 2, member: "the-debugger" }),
+    ];
+    const graph = buildSocietyGraph([session("ses-1", "cor-1", "succeeded")], events);
+    const members = memberNodesOf(graph);
+    expect(members.every((m) => m.active === false)).toBe(true);
+  });
+
   it("ignores events from other correlations", () => {
     const events = [
-      { eventId: 1, type: "run.started", correlationId: "cor-other", member: "the-librarian" },
-    ] as BridgeEvent[];
+      event({ eventId: 1, correlationId: "cor-other", member: "the-librarian" }),
+    ];
     const graph = buildSocietyGraph([session("ses-1", "cor-1")], events);
     const sessionNode = graph.nodes.find((n) => n.id === "ses-1");
     expect((sessionNode?.data as { members: string[] }).members).toEqual([]);
+    expect(memberNodesOf(graph)).toHaveLength(0);
   });
 
-  it("assigns finite positions and lays the tree top-down (Atlas above sessions)", () => {
+  it("assigns finite positions and lays the tree top-down (Atlas above all)", () => {
     const graph = buildSocietyGraph(
-      [session("ses-1", "cor-1"), session("ses-2", "cor-2")],
-      [],
+      [session("ses-1", "cor-1", "succeeded"), session("ses-2", "cor-2", "succeeded")],
+      [event({ eventId: 1, member: "the-mediator" })],
     );
     for (const node of graph.nodes) {
       expect(Number.isFinite(node.position.x)).toBe(true);

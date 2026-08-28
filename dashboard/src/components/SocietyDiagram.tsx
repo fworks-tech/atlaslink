@@ -15,8 +15,9 @@ import { useEvents } from "@/hooks/useEvents";
 import { buildSocietyGraph } from "@/lib/graph";
 import { AtlasNode } from "@/components/AtlasNode";
 import { SessionNode } from "@/components/SessionNode";
+import { MemberNode } from "@/components/MemberNode";
 
-const nodeTypes = { atlas: AtlasNode, session: SessionNode };
+const nodeTypes = { atlas: AtlasNode, session: SessionNode, member: MemberNode };
 
 export function SocietyDiagram() {
   const { sessions, loading } = useSessions();

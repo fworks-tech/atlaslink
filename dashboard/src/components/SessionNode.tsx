@@ -22,18 +22,11 @@ export function SessionNode({ data }: NodeProps<SessionGraphNode>) {
         {session.sessionId.slice(0, 14)}…
       </div>
       {members.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1 border-t border-white/5 pt-2">
-          {members.map((member) => (
-            <span
-              key={member}
-              className="rounded bg-raised px-1.5 py-0.5 text-[10px] text-accent"
-            >
-              {member.replace(/^the-/, "")}
-            </span>
-          ))}
+        <div className="mt-1 font-mono text-[10px] text-accent">
+          ↓ delegated × {members.length}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} className="!opacity-0" />
+      <Handle type="source" position={Position.Bottom} className="!bg-accent/60" />
     </div>
   );
 }
