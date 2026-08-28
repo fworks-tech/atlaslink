@@ -4,7 +4,9 @@ WORKDIR /app
 
 # --- agenthood sibling (the package.json declares a `file:../agenthood` dep) ---
 # Mirrors CI (which checks both repos out as siblings and builds agenthood
-# first). agenthood is public on GitHub and also published to npm.
+# first). agenthood is public on GitHub and also published to npm. Must stay at
+# /agenthood: npm links file:../agenthood as ../agenthood from /app, so the
+# image must match the sibling layout the symlink expects.
 FROM base AS agenthood-src
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates python3 make g++ \
@@ -26,8 +28,12 @@ FROM base AS runtime
 ENV ATLASLINK_HOST=0.0.0.0 \
     NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=agenthood-src /agenthood ./agenthood
+# agenthood must be at /agenthood (absolute) — the node_modules symlink created
+# by npm for file:../agenthood resolves there, not under /app
+COPY --from=agenthood-src /agenthood /agenthood
 COPY src ./src
 COPY tsconfig.json ./
+# the agenthood config (provider + defaults) the daemon loads from cwd
+COPY .agenthood/config.json ./.agenthood/config.json
 EXPOSE 3000
 CMD ["node", "--import", "tsx", "src/server.ts"]
