@@ -49,7 +49,7 @@ export async function runMigrations(db: Db): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.query(`SELECT pg_advisory_xact_lock($1)`, [MIGRATION_LOCK_KEY])
 
-    await tx.exec(`
+    await tx.execRawDdl(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         version INTEGER PRIMARY KEY,
         name TEXT NOT NULL
@@ -61,7 +61,7 @@ export async function runMigrations(db: Db): Promise<void> {
 
     for (const migration of migrations) {
       if (applied.has(migration.version)) continue
-      await tx.exec(migration.up)
+      await tx.execRawDdl(migration.up)
       await tx.query(`INSERT INTO schema_migrations (version, name) VALUES ($1, $2)`, [
         migration.version,
         migration.name,
