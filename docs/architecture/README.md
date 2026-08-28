@@ -11,8 +11,8 @@ ADR-005 (structured logging), ADR-006 (Fastify + Postgres direction).
 
 Atlaslink is a product-oriented multi-agent orchestrator built on Agenthood (the
 agent-team runtime). It runs a daemon that executes agent runs, bridges the
-resulting events to browsers over SSE, and — on the M3 roadmap — exposes a
-programmatic Task API over the same event-sourced sessions.
+resulting events to browsers over SSE, and exposes a programmatic Task API over
+the same event-sourced sessions.
 
 ## Layers
 
@@ -36,13 +36,13 @@ programmatic Task API over the same event-sourced sessions.
             │  agent-run provenance feed; SSE replay source  │
             └───────────────────────────────────────────────┘
 
-   M3 session layer (ADR-004/006) — not yet wired into the HTTP server:
+   M3 session layer (ADR-004/006) — wired into the HTTP server:
             ┌───────────────────────────────────────────────┐
             │  session/  SessionBackend port                │
             │   ├─ SessionStore (in-memory, shipped)        │
             │   ├─ EventLogBackend (NDJSON, shipped)        │
             │   └─ PostgresBackend (Postgres event tables,  │
-            │      pending feat/6-postgres-backend)         │
+            │      shipped)                                 │
             │  Db seam (pglite in CI / pg in prod)          │
             └───────────────────────────────────────────────┘
 ```
@@ -87,17 +87,19 @@ The chain is `RunEventBus → session worker → EventBroadcaster → EventLogSt
 A `Session` is an event-sourced aggregate (ADR-004): `session.*` events are the
 commit, `version` is the optimistic CAS token, and rehydration is deterministic.
 The `SessionBackend` port (`src/session/sessionBackend.ts`) is implemented by the
-in-memory `SessionStore`, the NDJSON `EventLogBackend`, and — pending
-`feat/6-postgres-backend` — the `PostgresBackend` over event tables. All backends
+in-memory `SessionStore`, the NDJSON `EventLogBackend`, and the `PostgresBackend`
+over event tables. All backends
 bind to the same behavioral contract (`backendContract`), so a swap cannot silently
 change observable semantics.
 
-**M3 direction (ADR-006):** the HTTP layer moves to Fastify and Postgres becomes the
-primary store. The NDJSON log is demoted to agent-run provenance; sessions persist
-to Postgres event tables keyed by `tenant_id` + `session_id` (tenancy is additive —
+**M3 shipped (ADR-006):** the HTTP layer runs on Fastify and Postgres is the primary
+store. The NDJSON log is demoted to agent-run provenance; sessions persist to
+Postgres event tables keyed by `tenant_id` + `session_id` (tenancy is additive —
 `schema_migrations` and a `Db` seam run identical SQL on `pglite` in CI and managed
-Postgres in production). The task-rest branch then lands `POST/GET /tasks`,
-`GET /tasks/{id}`, cancel, and per-session SSE on top.
+Postgres in production). The task-rest surface — `POST/GET /tasks`,
+`GET /tasks/{id}`, cancel, and per-session SSE — sits behind a pre-auth bearer
+gate with rate limiting, auth-rejection logging, and fail-closed boot on
+non-loopback binds (PRs #44, #46).
 
 ## Logging (ADR-005)
 
@@ -126,8 +128,9 @@ through that facade so the logged shape stays fixed. SSE streams never emit a
 |-----------|------|--------|
 | `feat/6-fastify-rebuild` | HTTP layer on Fastify (SSE contract preserved) | merged (#41) |
 | `feat/6-postgres-backend` | `PostgresBackend`, `Db` seam, migrations | merged (#42) |
-| `feat/3-task-rest` | Task API + per-session SSE on Fastify, wired through the store | in progress |
-| auth ADR + `feat/3-task-rest` auth | accounts/tenancy, token gate | pending |
+| `feat/3-task-rest` | Task API + per-session SSE on Fastify, wired through the store | merged (#44) |
+| `feat/45-security-audit` | bearer gate over /runs + /events, rate limiting, auth-rejection logging, `execRawDdl` | merged (#46) |
+| auth ADR | accounts/tenancy at the data-access boundary | pending |
 | infra ADR | serverless API / container daemon split, Terraform | pending |
 | M4 | live dashboard UI rendering society provenance | pending |
 
