@@ -46,6 +46,33 @@ jobs:
         working-directory: atlaslink
         run: npm test
 
+  # Dashboard (M4) quality gates. The dashboard is a separate package with its
+  # own lockfile; lint + typecheck are the per-branch gates the milestone
+  # breakdown (docs/tasks/m4-live-dashboard.md) commits to.
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dashboard deps
+        working-directory: dashboard
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: dashboard
+        run: npm run typecheck
+
+      - name: Lint
+        working-directory: dashboard
+        run: npm run lint
+
   # Secret scanning (the-auditor convention). Empty GITLEAKS_LICENSE covers
   # personal accounts; private org accounts need the free Starter license and
   # set GITLEAKS_LICENSE (the action then fails with its own message).
