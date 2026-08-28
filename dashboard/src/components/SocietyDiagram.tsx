@@ -29,13 +29,15 @@ export function SocietyDiagram() {
   const [nodes, setNodes, onNodesChange] = useNodesState(nextNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(nextEdges);
 
-  // The projection wins for *new* nodes (dagre places them); existing nodes keep
-  // the position the user dragged them to. Edges are derived, so fully replaced.
+  // The projection wins for data (a session's status/members move on); the
+  // user wins for position — existing nodes keep where they were dragged.
+  // Edges are derived, so fully replaced.
   useEffect(() => {
     setNodes((current) => {
       const byId = new Map(current.map((n) => [n.id, n]));
       for (const next of nextNodes) {
-        if (!byId.has(next.id)) byId.set(next.id, next);
+        const existing = byId.get(next.id);
+        byId.set(next.id, existing ? { ...next, position: existing.position } : next);
       }
       return [...byId.values()];
     });
