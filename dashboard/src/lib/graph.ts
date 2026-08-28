@@ -15,7 +15,10 @@ export interface MemberNodeData {
   member: string;
   sessionId: string;
   correlationId: string;
-  /** True while the member holds the podium of a running session (ADR-003). */
+  /**
+   * Heuristic: the last distinct member to enter a running session's chain is
+   * assumed to hold the podium (ADR-003) until the bridge emits a holder event.
+   */
   active: boolean;
   [key: string]: unknown;
 }
@@ -51,10 +54,12 @@ export function buildSocietyGraph(sessions: Session[], events: BridgeEvent[]): S
   graph.setGraph({ rankdir: "TB", nodesep: 48, ranksep: 72 });
 
   graph.setNode("atlas", { width: ATLAS_WIDTH, height: ATLAS_HEIGHT });
+  const chains = new Map<string, string[]>();
   for (const session of live) {
+    const chain = membersFor(session.correlationId, events);
+    chains.set(session.sessionId, chain);
     graph.setNode(session.sessionId, { width: SESSION_WIDTH, height: SESSION_HEIGHT });
     graph.setEdge("atlas", session.sessionId);
-    const chain = membersFor(session.correlationId, events);
     for (let i = 0; i < chain.length; i++) {
       graph.setNode(memberId(session.sessionId, chain[i]), {
         width: MEMBER_WIDTH,
@@ -86,11 +91,11 @@ export function buildSocietyGraph(sessions: Session[], events: BridgeEvent[]): S
       id: session.sessionId,
       type: "session",
       position: { x: placed.x - SESSION_WIDTH / 2, y: placed.y - SESSION_HEIGHT / 2 },
-      data: { session, members: membersFor(session.correlationId, events) },
+      data: { session, members: chains.get(session.sessionId)! },
     });
     edges.push({ id: `atlas-${session.sessionId}`, source: "atlas", target: session.sessionId });
 
-    const chain = membersFor(session.correlationId, events);
+    const chain = chains.get(session.sessionId)!;
     for (let i = 0; i < chain.length; i++) {
       const memberPlacement = graph.node(memberId(session.sessionId, chain[i]));
       nodes.push({
