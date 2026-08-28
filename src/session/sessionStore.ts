@@ -1,8 +1,24 @@
 import type { Session, SessionEvent, SessionDelta } from './types'
 import { StreamIntegrityError, VersionConflictError } from './types'
-import type { SessionBackend } from './sessionBackend'
+import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
 
 export { StreamIntegrityError, VersionConflictError }
+
+/**
+ * Shared list filter for every backend: status and `since` (createdAt) match,
+ * newest-first, with `total` counted before pagination. Keeps the task-rest
+ * list endpoint semantics identical regardless of the backend underneath.
+ */
+export function filterSessions(sessions: Session[], filter: SessionFilter): SessionList {
+  const matched = sessions
+    .filter((s) => filter.status === undefined || s.status === filter.status)
+    .filter((s) => filter.since === undefined || (s.createdAt !== undefined && s.createdAt >= filter.since))
+    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+  return {
+    sessions: matched.slice(filter.offset, filter.offset + filter.limit),
+    total: matched.length,
+  }
+}
 
 export function rehydrate(events: SessionEvent[]): Session | null {
   if (events.length === 0) return null
@@ -77,6 +93,15 @@ export class SessionStore implements SessionBackend {
     const list = this.events.get(sessionId)
     if (!list || list.length === 0) return null
     return rehydrate(list)
+  }
+
+  async list(filter: SessionFilter): Promise<SessionList> {
+    const sessions: Session[] = []
+    for (const events of this.events.values()) {
+      const session = rehydrate(events)
+      if (session !== null) sessions.push(session)
+    }
+    return filterSessions(sessions, filter)
   }
 
   async readModifyWrite(
