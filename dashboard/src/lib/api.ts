@@ -1,4 +1,4 @@
-import type { TaskListResponse } from "./types";
+import type { Session, TaskListResponse } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -10,7 +10,8 @@ export class ApiError extends Error {
   }
 }
 
-/** The Next.js rewrite proxies /api/* to the daemon; the browser stays same-origin. */
+// The browser stays same-origin: /api/* is served by the BFF route handler
+// (src/app/api/[...path]/route.ts) which forward to the daemon.
 const API_BASE = "/api";
 
 /**
@@ -40,4 +41,19 @@ export async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T>
 
 export function getTasks(limit = 50, offset = 0): Promise<TaskListResponse> {
   return fetchJSON<TaskListResponse>(`/tasks?limit=${limit}&offset=${offset}`);
+}
+
+export interface CreateTaskInput {
+  member: string;
+  prompt: string;
+  tweaks?: Record<string, unknown>;
+}
+
+export interface CreateTaskResponse {
+  ok: boolean;
+  session: Session;
+}
+
+export function createTask(input: CreateTaskInput): Promise<CreateTaskResponse> {
+  return fetchJSON<CreateTaskResponse>("/tasks", { method: "POST", body: JSON.stringify(input) });
 }
