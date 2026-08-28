@@ -85,6 +85,7 @@ export async function createAppServer(params: {
   queue: SessionQueue
   sse: SseHandler
   backend?: SessionBackend
+  bindHost?: string
   version?: string
 }): Promise<{ server: Server; broadcaster: EventBroadcaster; sse: SseHandler; queue: SessionQueue; app: FastifyInstance }> {
   const { log, registry, queue, sse } = params
@@ -159,7 +160,7 @@ export async function createAppServer(params: {
   })
 
   // --- M3 Task API (spec §3/§7): token-gated, store-backed, queue-driven ---
-  registerTaskRoutes(app, { backend, registry, queue, sse })
+  registerTaskRoutes(app, { backend, registry, queue, sse }, { bindHost: params.bindHost })
 
   // Route/validation errors keep the { ok: false, error } envelope the pre-Fastify
   // router returned; server internals never leak on 5xx (fail-closed).
@@ -229,7 +230,7 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
      },
    })
 
-  const { server } = await createAppServer({ log, registry, queue, sse, backend })
+  const { server } = await createAppServer({ log, registry, queue, sse, backend, bindHost: config.host })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(config.port, config.host, resolve)

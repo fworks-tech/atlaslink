@@ -9,16 +9,26 @@ function safeEqual(a: string, b: string): boolean {
   return left.length === right.length && timingSafeEqual(left, right)
 }
 
+/** Hostnames that are loopback-equivalent; anything else is a cross-host bind. */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
+
 /**
  * Pre-auth baseline for the account-facing surface (m3 spec §7, ADR-006
  * Decision 7). When `ATLASLINK_API_TOKEN` is set, every task-rest route and the
  * per-session event stream require `Authorization: Bearer <token>`; otherwise
- * they are 401. When unset the API is unauthenticated — logged once at boot so
- * the operator knows not to expose it cross-host (loopback remains the default).
+ * they are 401. When unset the API is unauthenticated — refusenik for a
+ * non-loopback bind (a cost-bearing surface must not go live unauthenticated,
+ * fail-closed), else logged once at boot so the operator knows the boundary.
  */
-export function registerTokenGate(app: FastifyInstance): void {
+export function registerTokenGate(app: FastifyInstance, opts?: { bindHost?: string }): void {
   const token = process.env.ATLASLINK_API_TOKEN
+  const bindHost = opts?.bindHost
   if (!token) {
+    if (bindHost !== undefined && !LOOPBACK_HOSTS.has(bindHost.toLowerCase())) {
+      throw new Error(
+        `refusing to start: ATLASLINK_API_TOKEN must be set when binding ${bindHost} (the M3 task API would be unauthenticated and cost-bearing)`
+      )
+    }
     log.warn('API is unauthenticated: ATLASLINK_API_TOKEN is unset; do not expose this host beyond loopback')
     return
   }

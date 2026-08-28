@@ -501,6 +501,28 @@ test('GET /events/{id} replays and live-tails only that session\'s events', asyn
   }
 })
 
+test('task-rest routes refuse a non-loopback bind without a token (fail-closed)', async () => {
+  const previous = process.env.ATLASLINK_API_TOKEN
+  delete process.env.ATLASLINK_API_TOKEN
+  const dir = tmpDataDir()
+  try {
+    const log = await EventLogStore.open(dir)
+    const broadcaster = new EventBroadcaster(log)
+    const sse = new SseHandler(log, broadcaster)
+    const registry = new TaskRegistry()
+    const queue = new SessionQueue({ broadcaster, registry, runner: async () => {} })
+    const backend = new SessionStore()
+    await assert.rejects(
+      () => createAppServer({ log, registry, queue, sse, backend, bindHost: '0.0.0.0' }),
+      /ATLASLINK_API_TOKEN must be set/
+    )
+  } finally {
+    if (previous === undefined) delete process.env.ATLASLINK_API_TOKEN
+    else process.env.ATLASLINK_API_TOKEN = previous
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('task-rest routes honor the pre-auth bearer token gate (spec §7)', async () => {
   const previous = process.env.ATLASLINK_API_TOKEN
   process.env.ATLASLINK_API_TOKEN = 'secret'
