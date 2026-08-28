@@ -111,7 +111,7 @@ test('a unique-violation on first write is surfaced as VersionConflictError', as
   const versionRows = [{ version: 2 }]
   const stubDb: Db = {
     query: async <TRow extends object>() => ({ rows: versionRows as unknown as TRow[] }),
-    exec: async () => {},
+    execRawDdl: async () => {},
     transaction: async () => {
       throw Object.assign(new Error('duplicate key value violates unique constraint'), {
         code: '23505',
