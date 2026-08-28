@@ -95,7 +95,7 @@ export function jsonRequest(
   path: string,
   body?: unknown,
   headers: Record<string, string> = {}
-): Promise<{ status: number; body: string }> {
+): Promise<{ status: number; body: string; headers: Record<string, string | string[] | undefined> }> {
   return new Promise((resolve) => {
     const req = request(
       `http://127.0.0.1:${port}${path}`,
@@ -107,7 +107,7 @@ export function jsonRequest(
         let data = ''
         r.setEncoding('utf8')
         r.on('data', (c: string) => (data += c))
-        r.on('end', () => resolve({ status: r.statusCode ?? 0, body: data }))
+        r.on('end', () => resolve({ status: r.statusCode ?? 0, body: data, headers: r.headers }))
       }
     )
     if (body !== undefined) req.write(JSON.stringify(body))
