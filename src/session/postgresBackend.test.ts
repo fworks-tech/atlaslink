@@ -48,7 +48,7 @@ test('migrations apply once and are idempotent on a fresh database', async () =>
   const { rows: tables } = await adapter.query<{ name: string }>(
     `SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name`
   )
-  assert.deepEqual(tables.map((t) => t.name), ['schema_migrations', 'session_events'])
+  assert.deepEqual(tables.map((t) => t.name), ['projects', 'schema_migrations', 'session_events', 'sessions'])
 })
 
 test('session events persist across backend instances (durability over the same database)', async () => {

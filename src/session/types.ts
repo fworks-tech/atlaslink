@@ -10,6 +10,7 @@ export interface SessionEvent {
   sessionId: string
   correlationId: string
   at: string
+  projectId?: string
   member?: string
   prompt?: string
   tweaks?: Record<string, unknown>
@@ -29,11 +30,18 @@ export interface Session {
   createdAt?: string
   startedAt?: string
   finishedAt?: string
+  projectId?: string
   task: { member: string; prompt: string }
   tweaks?: Record<string, unknown>
   output?: string
   error?: string
   durationMs?: number
+}
+
+export interface Project {
+  id: string
+  name: string
+  createdAt: string
 }
 
 export class VersionConflictError extends Error {

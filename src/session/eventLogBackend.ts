@@ -2,7 +2,7 @@ import { EventLogStore } from '../bridge/EventLogStore'
 import { rehydrate, filterSessions } from './sessionStore'
 import { deepFreeze } from './deepFreeze'
 import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
-import type { Session, SessionEvent, SessionDelta, SessionSnapshot } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project } from './types'
 import { VersionConflictError } from './types'
 
 /** The store vocabulary. The queue broadcasts `session.queued`/`session.started`
@@ -31,6 +31,8 @@ export class EventLogBackend implements SessionBackend {
   readonly log: EventLogStore
   #snapshots = new Map<string, SessionSnapshot>()
   #versions = new Map<string, number>()
+  /** In-memory projects — lost on restart; PostgresBackend is durable. */
+  #projects = new Map<string, Project>()
 
   constructor(log: EventLogStore) {
     this.log = log
@@ -106,6 +108,22 @@ export class EventLogBackend implements SessionBackend {
       .map((events) => rehydrate(events))
       .filter((s): s is Session => s !== null)
     return filterSessions(sessions, filter)
+  }
+
+  async listProjects(): Promise<Project[]> {
+    return [...this.#projects.values()].sort(
+      (a, b) => b.createdAt.localeCompare(a.createdAt)
+    )
+  }
+
+  async getProject(id: string): Promise<Project | null> {
+    return this.#projects.get(id) ?? null
+  }
+
+  async createProject(id: string, name: string): Promise<Project> {
+    const project: Project = { id, name, createdAt: new Date().toISOString() }
+    this.#projects.set(id, project)
+    return project
   }
 
   #sessionEvents(sessionId: string): SessionEvent[] {

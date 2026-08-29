@@ -101,6 +101,29 @@ Postgres in production). The task-rest surface — `POST/GET /tasks`,
 gate with rate limiting, auth-rejection logging, and fail-closed boot on
 non-loopback binds (PRs #44, #46).
 
+## The projects layer (M4)
+
+Projects are workspace containers for sessions. The projects layer adds:
+
+- **`projects` table** — stores project metadata (`id`, `name`, `created_at`) per
+  tenant. CRUD via `POST/GET /projects`, `GET /projects/:projectId` (token-gated).
+- **`sessions` directory table** — a maintained projection upserted transactionally
+  on each `session.created` event with `projectId`. Provides fast project-scoped
+  listing without scanning the `session_events` table.
+- **`projectId` on `SessionEvent`** — optional field that rides on the event. When
+  present, the `PostgresBackend` maintains the directory projection on append.
+- **`SessionFilter.projectId`** — when provided, the backend uses the `sessions`
+  directory for O(1) project lookups instead of rehydrating all events.
+- **`GET /projects/:projectId/events`** — project-scoped SSE: replays and tails
+  events for all sessions belonging to a project, filtered by correlation ID set.
+- **`POST /tasks` accepts `projectId`** — sessions can be created within a project.
+- **`GET /tasks?projectId=...`** — project-scoped session listing with existing
+  status/since/limit/offset filters.
+
+The `SessionBackend` port is extended with `listProjects()`, `getProject()`, and
+`createProject()`. All three backends implement these methods (in-memory for
+`SessionStore` and `EventLogBackend`; Postgres-backed for `PostgresBackend`).
+
 ## Logging (ADR-005)
 
 One JSON object per line, level via `ATLASLINK_LOG_LEVEL`, `correlationId` threaded
@@ -132,7 +155,8 @@ through that facade so the logged shape stays fixed. SSE streams never emit a
 | `feat/45-security-audit` | bearer gate over /runs + /events, rate limiting, auth-rejection logging, `execRawDdl` | merged (#46) |
 | auth ADR | accounts/tenancy at the data-access boundary | pending |
 | infra ADR | serverless API / container daemon split, Terraform | pending |
-| M4 | live dashboard UI rendering society provenance | pending |
+| `feat/projects-backend` | projects table, sessions directory, project CRUD, project-scoped SSE | open (#58) |
+| M4 | live dashboard UI rendering society provenance | in progress |
 
 See [`docs/spec/m3-task-api.md`](../spec/m3-task-api.md) for the M3 plan and
 [`PROGRESS.md`](../../PROGRESS.md) for shipped state.

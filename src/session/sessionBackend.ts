@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta, SessionStatus } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionStatus, Project } from './types'
 
 /**
  * Query surface for the task-rest list endpoint. Filters are applied by the
@@ -7,6 +7,7 @@ import type { Session, SessionEvent, SessionDelta, SessionStatus } from './types
  * `session.created` event's `at`); ordering is `createdAt` descending.
  */
 export interface SessionFilter {
+  projectId?: string
   status?: SessionStatus
   since?: string
   limit: number
@@ -33,4 +34,7 @@ export interface SessionBackend {
     mutator: (current: Session | null) => SessionDelta[]
   ): Promise<void>
   list(filter: SessionFilter): Promise<SessionList>
+  listProjects(): Promise<Project[]>
+  getProject(id: string): Promise<Project | null>
+  createProject(id: string, name: string): Promise<Project>
 }

@@ -235,6 +235,72 @@ test('the gated scope rate-limits the cost-bearing surface (429 after the cap)',
   }
 })
 
+test('POST /tasks with projectId creates a session in that project', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    // Create a project first
+    const projRes = await jsonRequest(srv.port, 'POST', '/projects', { name: 'test-project' })
+    const project = JSON.parse(projRes.body).project
+
+    const res = await jsonRequest(srv.port, 'POST', '/tasks', {
+      member: 'the-scribe',
+      prompt: 'describe the diff',
+      projectId: project.id,
+    })
+    assert.equal(res.status, 201)
+    const parsed = JSON.parse(res.body)
+    assert.equal(parsed.ok, true)
+    assert.equal(parsed.session.projectId, project.id)
+
+    // Verify the session appears in the project's task list
+    const listRes = await jsonRequest(srv.port, 'GET', `/tasks?projectId=${project.id}`)
+    const list = JSON.parse(listRes.body)
+    assert.equal(list.total, 1)
+    assert.equal(list.sessions[0].projectId, project.id)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /projects creates a project and GET /projects lists it', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const res = await jsonRequest(srv.port, 'POST', '/projects', { name: 'my-project' })
+    assert.equal(res.status, 201)
+    const parsed = JSON.parse(res.body)
+    assert.equal(parsed.ok, true)
+    assert.ok(parsed.project.id.startsWith('proj-'))
+    assert.equal(parsed.project.name, 'my-project')
+
+    const list = JSON.parse((await jsonRequest(srv.port, 'GET', '/projects')).body)
+    assert.equal(list.projects.length, 1)
+    assert.equal(list.projects[0].name, 'my-project')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('GET /projects/:id returns a project; unknown ids 404', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/projects', { name: 'p' })).body)
+    const res = await jsonRequest(srv.port, 'GET', `/projects/${created.project.id}`)
+    assert.equal(res.status, 200)
+    assert.equal(JSON.parse(res.body).project.name, 'p')
+
+    const missing = await jsonRequest(srv.port, 'GET', '/projects/proj-nope')
+    assert.equal(missing.status, 404)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
 test('CORS allows only the configured origins and preflight does not need a token', async () => {
   const dir = tmpDataDir()
   try {

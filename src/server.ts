@@ -18,6 +18,7 @@ import type { SessionBackend } from './session/sessionBackend'
 import type { SessionDelta } from './session/types'
 import { VersionConflictError } from './session/types'
 import { registerTaskRoutes } from './api/tasks'
+import { registerProjectRoutes } from './api/projects'
 import { registerTokenGate } from './api/auth'
 import rateLimit from '@fastify/rate-limit'
 import cors from '@fastify/cors'
@@ -148,6 +149,9 @@ export async function createAppServer(params: {
   // limit. /health stays on the root app, outside the gate, unthrottled.
   app.register(async (api) => {
     registerTokenGate(api, { bindHost: params.bindHost })
+
+    // --- M4 Project API: project-scoped session workspace ---
+    registerProjectRoutes(api, { backend })
 
     // --- POST /runs (M3 preview, spec §6): delegate a session to the queue ---
     api.post(

@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta, SessionSnapshot } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project } from './types'
 import { StreamIntegrityError, VersionConflictError } from './types'
 import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
 import { deepFreeze } from './deepFreeze'
@@ -12,6 +12,7 @@ export { StreamIntegrityError, VersionConflictError }
  */
 export function filterSessions(sessions: Session[], filter: SessionFilter): SessionList {
   const matched = sessions
+    .filter((s) => filter.projectId === undefined || s.projectId === filter.projectId)
     .filter((s) => filter.status === undefined || s.status === filter.status)
     .filter((s) => filter.since === undefined || (s.createdAt !== undefined && s.createdAt >= filter.since))
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
@@ -36,6 +37,7 @@ export function rehydrate(events: SessionEvent[]): Session | null {
     correlationId: first.correlationId,
     status: 'queued',
     version: events.length,
+    projectId: first.projectId,
     task: { member: first.member ?? '', prompt: first.prompt ?? '' },
   }
 
@@ -50,6 +52,7 @@ export function rehydrate(events: SessionEvent[]): Session | null {
         if (e.member !== undefined) session.task.member = e.member
         if (e.prompt !== undefined) session.task.prompt = e.prompt
         if (e.tweaks !== undefined) session.tweaks = e.tweaks
+        if (e.projectId !== undefined) session.projectId = e.projectId
         break
       case 'session.running':
         startedAt = e.at
@@ -83,6 +86,7 @@ export class SessionStore implements SessionBackend {
   private readonly events = new Map<string, SessionEvent[]>()
   private readonly versions = new Map<string, number>()
   #snapshots = new Map<string, SessionSnapshot>()
+  #projects = new Map<string, Project>()
 
   async append(event: SessionEvent): Promise<void> {
     const list = this.events.get(event.sessionId) ?? []
@@ -134,5 +138,21 @@ export class SessionStore implements SessionBackend {
     for (const delta of mutator(current)) {
       await this.append({ ...delta, sessionId })
     }
+  }
+
+  async listProjects(): Promise<Project[]> {
+    return [...this.#projects.values()].sort(
+      (a, b) => b.createdAt.localeCompare(a.createdAt)
+    )
+  }
+
+  async getProject(id: string): Promise<Project | null> {
+    return this.#projects.get(id) ?? null
+  }
+
+  async createProject(id: string, name: string): Promise<Project> {
+    const project: Project = { id, name, createdAt: new Date().toISOString() }
+    this.#projects.set(id, project)
+    return project
   }
 }
