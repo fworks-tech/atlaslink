@@ -1,4 +1,4 @@
-import type { Session, TaskListResponse } from "./types";
+import type { Session, TaskListResponse, Project, ProjectListResponse } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -56,4 +56,21 @@ export interface CreateTaskResponse {
 
 export function createTask(input: CreateTaskInput): Promise<CreateTaskResponse> {
   return fetchJSON<CreateTaskResponse>("/tasks", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function listProjects(): Promise<ProjectListResponse> {
+  return fetchJSON<ProjectListResponse>("/projects");
+}
+
+export interface CreateProjectInput {
+  name: string;
+}
+
+export interface CreateProjectResponse {
+  ok: boolean;
+  project: Project;
+}
+
+export function createProject(input: CreateProjectInput): Promise<CreateProjectResponse> {
+  return fetchJSON<CreateProjectResponse>("/projects", { method: "POST", body: JSON.stringify(input) });
 }
