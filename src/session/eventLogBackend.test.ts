@@ -241,3 +241,22 @@ test('EventLogBackend: the snapshot cache serves the same aggregate until an app
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('EventLogBackend: appending to a different session does not invalidate the cache', async () => {
+  const { dir, backend } = await openBackend()
+  try {
+    await backend.append(created)
+
+    const a = await backend.get('ses-1')
+    assert.ok(a)
+
+    // append to a completely different session
+    await backend.append({ type: 'session.created', sessionId: 'ses-other', correlationId: 'cor-2', at: '2026-01-01T00:00:00Z', member: 'x', prompt: 'y' })
+
+    const b = await backend.get('ses-1')
+    assert.ok(b)
+    assert.equal(a, b) // still cached — the append was for ses-other
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

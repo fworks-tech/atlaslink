@@ -1,6 +1,7 @@
 import type { Session, SessionEvent, SessionDelta } from './types'
 import { VersionConflictError } from './types'
 import { rehydrate } from './sessionStore'
+import { deepFreeze } from './deepFreeze'
 import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
 import type { Db } from './db'
 import { DEFAULT_TENANT_ID } from './migrations'
@@ -18,6 +19,11 @@ function parseEvent(raw: string | SessionEvent): SessionEvent {
   return typeof raw === 'string' ? (JSON.parse(raw) as SessionEvent) : raw
 }
 
+interface Snapshot {
+  session: Session
+  version: number
+}
+
 /**
  * The `SessionBackend` over Postgres event tables (ADR-006 Decisions 4–5).
  * Event append is the commit; `version` is the optimistic CAS token held inside
@@ -26,6 +32,8 @@ function parseEvent(raw: string | SessionEvent): SessionEvent {
  * the auth ADR's tenant scoping is additive, not a schema rewrite.
  */
 export class PostgresBackend implements SessionBackend {
+  #snapshots = new Map<string, Snapshot>()
+
   constructor(
     private readonly db: Db,
     private readonly tenantId: string = DEFAULT_TENANT_ID
@@ -47,6 +55,7 @@ export class PostgresBackend implements SessionBackend {
         [this.tenantId, event.sessionId, next, event.correlationId, event.at, JSON.stringify(event)]
       )
     })
+    this.#snapshots.delete(event.sessionId)
   }
 
   async get(sessionId: string): Promise<Session | null> {
@@ -57,7 +66,16 @@ export class PostgresBackend implements SessionBackend {
       [this.tenantId, sessionId]
     )
     if (rows.length === 0) return null
-    return rehydrate(rows.map((r) => parseEvent(r.event)))
+
+    const currentVersion = rows.length
+    const cached = this.#snapshots.get(sessionId)
+    if (cached !== undefined && cached.version === currentVersion) {
+      return cached.session
+    }
+
+    const session = rehydrate(rows.map((r) => parseEvent(r.event)))
+    this.#snapshots.set(sessionId, { session: deepFreeze(session), version: currentVersion })
+    return session
   }
 
   async readModifyWrite(

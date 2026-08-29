@@ -138,5 +138,23 @@ export async function backendContract(name: string, create: () => Promise<Sessio
       assert.equal(paged.sessions.length, 1)
       assert.equal(paged.total, 2)
     })
+
+    await test('the snapshot cache serves the same frozen reference until an append invalidates it', async () => {
+      const store = await create()
+      await store.append(created)
+
+      const a = await store.get('ses-1')
+      const b = await store.get('ses-1')
+      assert.ok(a && b)
+      assert.equal(a, b) // cached reference
+      assert.ok(Object.isFrozen(a))
+
+      await store.append({ type: 'session.running', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:01Z' })
+      const c = await store.get('ses-1')
+      assert.ok(c)
+      assert.notEqual(a, c) // invalidated by the append
+      assert.equal(c.status, 'running')
+      assert.equal(c.version, 2)
+    })
   })
 }

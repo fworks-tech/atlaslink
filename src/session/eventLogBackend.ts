@@ -1,5 +1,6 @@
 import { EventLogStore } from '../bridge/EventLogStore'
 import { rehydrate, filterSessions } from './sessionStore'
+import { deepFreeze } from './deepFreeze'
 import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
 import type { Session, SessionEvent, SessionDelta } from './types'
 import { VersionConflictError } from './types'
@@ -21,26 +22,15 @@ function isStoreSessionEvent(type: unknown): type is string {
 
 interface Snapshot {
   session: Session
-  logVersion: number
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value && typeof value === 'object') {
-    Object.freeze(value)
-    for (const key of Object.keys(value as Record<string, unknown>)) {
-      deepFreeze((value as Record<string, unknown>)[key])
-    }
-  }
-  return value
+  version: number
 }
 
 /**
  * SessionBackend over the shared NDJSON EventLogStore (ADR-004): session events
  * are persisted as bridge envelopes in the same log as the run stream, and each
  * read rebuilds the aggregate from the log. A snapshot cache serves repeated
- * reads without touching disk; the cache keyed by the log cursor is invalidated
- * by any append, so it only helps quiescent streams — per-session invalidation
- * is a DuckDB-era optimization once reads and writes coexist at scale.
+ * reads without touching disk; the cache is keyed per-session and invalidated on
+ * each append to that session — only quiescent streams benefit.
  */
 export class EventLogBackend implements SessionBackend {
   readonly log: EventLogStore
@@ -63,18 +53,20 @@ export class EventLogBackend implements SessionBackend {
   }
 
   async get(sessionId: string): Promise<Session | null> {
+    const events = this.#sessionEvents(sessionId)
+    const currentVersion = events.length
+
     const cached = this.#snapshots.get(sessionId)
-    if (cached !== undefined && cached.logVersion === this.log.nextEventId) {
+    if (cached !== undefined && cached.version === currentVersion) {
       return cached.session
     }
 
-    const events = this.#sessionEvents(sessionId)
     const session = events.length > 0 ? rehydrate(events) : null
     if (session === null) {
       this.#snapshots.delete(sessionId)
       return null
     }
-    this.#snapshots.set(sessionId, { session: deepFreeze(session), logVersion: this.log.nextEventId })
+    this.#snapshots.set(sessionId, { session: deepFreeze(session), version: currentVersion })
     return session
   }
 
