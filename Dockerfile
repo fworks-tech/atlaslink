@@ -27,11 +27,13 @@ RUN npm ci
 FROM base AS runtime
 ENV ATLASLINK_HOST=0.0.0.0 \
     NODE_ENV=production
+# package.json is read at startup for the version banner (src/server.ts)
 COPY --from=deps /app/node_modules ./node_modules
 # agenthood must be at /agenthood (absolute) — the node_modules symlink created
 # by npm for file:../agenthood resolves there, not under /app
 COPY --from=agenthood-src /agenthood /agenthood
 COPY src ./src
+COPY package.json ./
 COPY tsconfig.json ./
 # the agenthood config (provider + defaults) the daemon loads from cwd
 COPY .agenthood/config.json ./.agenthood/config.json
