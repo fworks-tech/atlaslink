@@ -8,6 +8,7 @@ export interface Session {
   createdAt?: string;
   startedAt?: string;
   finishedAt?: string;
+  projectId?: string;
   task: { member: string; prompt: string };
   tweaks?: Record<string, unknown>;
   output?: string;
@@ -28,6 +29,17 @@ export interface TaskListResponse {
  * The SSE stream emits one envelope per frame; `type` is the discriminator and
  * remaining fields vary per event (session.*, run.*, reasoning, decision.*…).
  */
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+export interface ProjectListResponse {
+  ok: boolean;
+  projects: Project[];
+}
+
 export interface BridgeEvent {
   eventId: number;
   type: string;
