@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot } from './types'
 import { VersionConflictError } from './types'
 import { rehydrate } from './sessionStore'
 import { deepFreeze } from './deepFreeze'
@@ -19,11 +19,6 @@ function parseEvent(raw: string | SessionEvent): SessionEvent {
   return typeof raw === 'string' ? (JSON.parse(raw) as SessionEvent) : raw
 }
 
-interface Snapshot {
-  session: Session
-  version: number
-}
-
 /**
  * The `SessionBackend` over Postgres event tables (ADR-006 Decisions 4–5).
  * Event append is the commit; `version` is the optimistic CAS token held inside
@@ -32,7 +27,8 @@ interface Snapshot {
  * the auth ADR's tenant scoping is additive, not a schema rewrite.
  */
 export class PostgresBackend implements SessionBackend {
-  #snapshots = new Map<string, Snapshot>()
+  #snapshots = new Map<string, SessionSnapshot>()
+  #versions = new Map<string, number>()
 
   constructor(
     private readonly db: Db,
@@ -56,9 +52,19 @@ export class PostgresBackend implements SessionBackend {
       )
     })
     this.#snapshots.delete(event.sessionId)
+    const prev = this.#versions.get(event.sessionId) ?? 0
+    this.#versions.set(event.sessionId, prev + 1)
   }
 
   async get(sessionId: string): Promise<Session | null> {
+    const cachedVersion = this.#versions.get(sessionId)
+    if (cachedVersion !== undefined) {
+      const cached = this.#snapshots.get(sessionId)
+      if (cached !== undefined && cached.version === cachedVersion) {
+        return cached.session
+      }
+    }
+
     const { rows } = await this.db.query<EventRow>(
       `SELECT event FROM session_events
        WHERE tenant_id = $1 AND session_id = $2
@@ -73,8 +79,9 @@ export class PostgresBackend implements SessionBackend {
       return cached.session
     }
 
-    const session = rehydrate(rows.map((r) => parseEvent(r.event)))
+    const session = rehydrate(rows.map((r) => parseEvent(r.event)))!
     this.#snapshots.set(sessionId, { session: deepFreeze(session), version: currentVersion })
+    this.#versions.set(sessionId, currentVersion)
     return session
   }
 

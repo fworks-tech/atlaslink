@@ -47,6 +47,12 @@ export class VersionConflictError extends Error {
   }
 }
 
+/** Per-session snapshot cache entry shared by all SessionBackend implementations. */
+export interface SessionSnapshot {
+  session: Session
+  version: number
+}
+
 export class StreamIntegrityError extends Error {
   constructor(
     public readonly sessionId: string,

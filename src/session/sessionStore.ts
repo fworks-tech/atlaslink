@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot } from './types'
 import { StreamIntegrityError, VersionConflictError } from './types'
 import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
 import { deepFreeze } from './deepFreeze'
@@ -79,15 +79,10 @@ export function rehydrate(events: SessionEvent[]): Session | null {
   return session
 }
 
-interface Snapshot {
-  session: Session
-  version: number
-}
-
 export class SessionStore implements SessionBackend {
   private readonly events = new Map<string, SessionEvent[]>()
   private readonly versions = new Map<string, number>()
-  #snapshots = new Map<string, Snapshot>()
+  #snapshots = new Map<string, SessionSnapshot>()
 
   async append(event: SessionEvent): Promise<void> {
     const list = this.events.get(event.sessionId) ?? []
@@ -107,7 +102,7 @@ export class SessionStore implements SessionBackend {
       return cached.session
     }
 
-    const session = rehydrate(list)
+    const session = rehydrate(list)!
     this.#snapshots.set(sessionId, { session: deepFreeze(session), version: currentVersion })
     return session
   }

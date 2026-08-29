@@ -2,7 +2,7 @@ import { EventLogStore } from '../bridge/EventLogStore'
 import { rehydrate, filterSessions } from './sessionStore'
 import { deepFreeze } from './deepFreeze'
 import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
-import type { Session, SessionEvent, SessionDelta } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot } from './types'
 import { VersionConflictError } from './types'
 
 /** The store vocabulary. The queue broadcasts `session.queued`/`session.started`
@@ -20,11 +20,6 @@ function isStoreSessionEvent(type: unknown): type is string {
   return typeof type === 'string' && STORE_EVENT_TYPES.has(type)
 }
 
-interface Snapshot {
-  session: Session
-  version: number
-}
-
 /**
  * SessionBackend over the shared NDJSON EventLogStore (ADR-004): session events
  * are persisted as bridge envelopes in the same log as the run stream, and each
@@ -34,7 +29,7 @@ interface Snapshot {
  */
 export class EventLogBackend implements SessionBackend {
   readonly log: EventLogStore
-  #snapshots = new Map<string, Snapshot>()
+  #snapshots = new Map<string, SessionSnapshot>()
 
   constructor(log: EventLogStore) {
     this.log = log
