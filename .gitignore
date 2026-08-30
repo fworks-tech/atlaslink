@@ -148,6 +148,9 @@ data/
 # Vercel CLI link metadata
 .vercel
 
+# Dashboard local env (server-side BFF secrets — never commit)
+dashboard/.env.local
+
 # Agenthood runtime artifacts
 .agenthood/alerts/
 .agenthood/memory/

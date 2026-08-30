@@ -27,33 +27,32 @@ export default function Home() {
         </ErrorBoundary>
       </aside>
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-8 py-12">
-          <header className="mb-8">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Live Society Diagram
-            </h1>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              Atlas holds the sky of sessions. Start a task and watch its delegation
-              map appear under Atlas and update live from the event bridge.
-            </p>
-          </header>
-
-          {selectedSessionId ? (
+        {selectedSessionId ? (
+          <div className="mx-auto max-w-5xl px-8 py-12">
+            <header className="mb-8">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                Live Society Diagram
+              </h1>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                Atlas holds the sky of sessions. Start a task and watch its delegation
+                map appear under Atlas and update live from the event bridge.
+              </p>
+            </header>
             <div className="space-y-6">
               <ErrorBoundary>
                 <SocietyDiagram />
               </ErrorBoundary>
               <SessionList onSelect={setSelectedSessionId} />
             </div>
-          ) : (
-            <ErrorBoundary>
-              <SessionComposer
-                projects={projects}
-                onCreateSession={setSelectedSessionId}
-              />
-            </ErrorBoundary>
-          )}
-        </div>
+          </div>
+        ) : (
+          <ErrorBoundary>
+            <SessionComposer
+              projects={projects}
+              onCreateSession={setSelectedSessionId}
+            />
+          </ErrorBoundary>
+        )}
       </main>
     </div>
   );

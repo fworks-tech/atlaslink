@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { createTask, ApiError } from "@/lib/api";
-import { QUICK_MEMBERS } from "@/lib/constants";
 import type { Project } from "@/lib/types";
 
 export function SessionComposer({
@@ -12,7 +11,6 @@ export function SessionComposer({
   projects: Project[];
   onCreateSession: (sessionId: string) => void;
 }) {
-  const [member, setMember] = useState<string>("the-mediator");
   const [prompt, setPrompt] = useState("");
   const [projectId, setProjectId] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
@@ -30,12 +28,11 @@ export function SessionComposer({
     setError(null);
     try {
       const res = await createTask({
-        member,
+        member: "the-mediator",
         prompt: trimmed,
         ...(projectId ? { projectId } : {}),
       });
       setPrompt("");
-      // projectId retained intentionally for consecutive sessions in same project
       onCreateSession(res.session.sessionId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "failed to create task");
@@ -45,77 +42,61 @@ export function SessionComposer({
   };
 
   return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <form
-        onSubmit={submit}
-        className="w-full max-w-2xl rounded-xl border border-white/5 bg-surface p-6"
-      >
-        <h2 className="mb-4 text-lg font-medium text-foreground">New Session</h2>
-        <div className="space-y-4">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="composer-member" className="text-xs text-muted">
-              member
-            </label>
-            <select
-              id="composer-member"
-              value={member}
-              onChange={(e) => setMember(e.target.value)}
-              className="rounded-lg border border-white/10 bg-raised px-2.5 py-1.5 text-sm text-foreground outline-none focus:border-accent/50"
-            >
-              {QUICK_MEMBERS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </div>
+    <div className="relative flex items-center justify-center min-h-[70vh]">
+      {/* Hero watermark */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
+        <span
+          className="text-[8rem] sm:text-[10rem] md:text-[12rem] font-black tracking-tighter text-foreground/[0.04] leading-none"
+          aria-hidden
+        >
+          ATLAS
+        </span>
+      </div>
 
-          {projects.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="composer-project" className="text-xs text-muted">
-                project
-              </label>
-              <select
-                id="composer-project"
-                value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
-                className="rounded-lg border border-white/10 bg-raised px-2.5 py-1.5 text-sm text-foreground outline-none focus:border-accent/50"
-              >
-                <option value="">none</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="composer-prompt" className="text-xs text-muted">
-              prompt
-            </label>
+      <div className="relative z-10 w-full max-w-2xl">
+        <form onSubmit={submit} className="rounded-xl border border-white/5 bg-surface/80 backdrop-blur-sm p-6">
+          <div className="flex flex-col gap-4">
             <textarea
               id="composer-prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder='e.g. "Fix issue #42 — login redirects to /dashboard"'
+              placeholder="Ask Atlas anything..."
               rows={3}
               maxLength={10000}
-              className="rounded-lg border border-white/10 bg-raised px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted/70 focus:border-accent/50 resize-none"
+              autoFocus
+              className="w-full rounded-lg border border-white/10 bg-raised px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted/50 focus:border-accent/50 resize-none"
             />
-          </div>
 
-          <button
-            type="submit"
-            disabled={submitting || !prompt.trim()}
-            className="w-full rounded-lg bg-accent/15 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-40"
-          >
-            {submitting ? "creating…" : "Start session"}
-          </button>
-          {error && <p className="text-xs text-danger">{error}</p>}
-        </div>
-      </form>
+            <div className="flex items-center gap-3">
+              {projects.length > 0 && (
+                <select
+                  id="composer-project"
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                  className="rounded-lg border border-white/10 bg-raised px-2.5 py-1.5 text-xs text-muted outline-none focus:border-accent/50"
+                >
+                  <option value="">no project</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              <button
+                type="submit"
+                disabled={submitting || !prompt.trim()}
+                className="ml-auto rounded-lg bg-accent/15 px-4 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-40"
+              >
+                {submitting ? "sending…" : "Ask Atlas"}
+              </button>
+            </div>
+
+            {error && <p className="text-xs text-danger">{error}</p>}
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
