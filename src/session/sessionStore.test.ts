@@ -44,6 +44,21 @@ test('rehydrate throws StreamIntegrityError when the stream is inconsistent', ()
   assert.throws(() => rehydrate([created, stray]), (e) => e instanceof StreamIntegrityError)
 })
 
+test('rehydrate projects awaiting_input: status, nextStep and atlas interaction, then user_reply re-queues', () => {
+  const awaiting: SessionEvent = { type: 'session.awaiting_input', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:03Z', question: 'continue?', member: 'atlas' }
+  const replyEv: SessionEvent = { type: 'session.user_reply', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:04Z', reply: 'yes' }
+  const a = rehydrate([created, awaiting])
+  assert.ok(a)
+  assert.equal(a.status, 'awaiting_input')
+  assert.equal(a.nextStep?.prompt, 'continue?')
+  assert.equal(a.interaction.at(-1)?.role, 'atlas')
+  const b = rehydrate([created, awaiting, replyEv])
+  assert.ok(b)
+  assert.equal(b.status, 'queued')
+  assert.equal(b.nextStep, null)
+  assert.equal(b.interaction.at(-1)?.role, 'user')
+})
+
 backendContract('SessionStore satisfies the backend contract', async () => new SessionStore())
 
 test('SessionStore: the snapshot cache serves the same aggregate until an append', async () => {

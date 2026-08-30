@@ -3,9 +3,7 @@
 **Source of truth:** `docs/architecture/README.md` (roadmap), ADR-002 (live
 projection of society provenance), ADR-003 (Atlas as root node).
 **Issue:** #7 (feat(dashboard): add live member run-update UI)
-**Status:** In progress — Branches 1–5 merged (scaffold, api client, session
-list, society diagram, live diagram), member nodes + live pulse landed via PR #53.
-Branch 0 (projects backend) open on `feat/projects-backend`. Branch 6 (drill-down) next.
+**Status:** In progress — Branches 0–5 merged (incl. `feat/projects-backend` #58 `661c992`), Branches 6 drill-down + 7 full-DAG builder landed (`f47b34f` virtualize+delete, `8e9a874` FULL DAG) — PR #63 open. Ready for review.
 
 M4 renders the live society diagram: **Atlas** (root node) holds a growing "sky
 of sessions"; each session is a delegation graph whose nodes are Agenthood
@@ -26,6 +24,8 @@ Atlas → Session("Fix issue #42")
   → The Tester (regression coverage)
   → The Reviewer (approve the diff)
 ```
+
+> FULL DAG: 7 prompt archetypes (understand, fix, feature, refactor, audit, onboarding, performance) with `mermaid flowchart TD` + geometric symbols (hex tool, diamond decision, dashed awaiting, terminal) → [docs/diagrams/full-dag-case-studies.md](../diagrams/full-dag-case-studies.md). Deep-link: `https://atlas.flabs.tech/project/<project>/session/<session>?mode=full` or `?q=<base64url>` via `dashboard/src/lib/shareLink.ts`.
 
 ## Branch plan (learning-oriented)
 
@@ -90,15 +90,21 @@ stack on the Fastify backend on `main` (shipped M3). The dashboard lives in
 - Learning: event→state mapping, immutable graph updates, re-render scoping.
 
 ### Branch 6 — `feat/7-drill-down`
-- Click a session node → `/sessions/[id]`: metadata + per-session event timeline
-  via `GET /api/events/:id` (replay-then-live).
+- Click a session node → `/project/:projectId/session/:sessionId` (redirect to `/?project=&session=`): metadata + per-session event timeline
+  via `GET /api/events/:id` (replay-then-live); also `/s/:token` (`?q=<b64url({p,s,n,m})>`).
 - Client routing with `next/link`/`useRouter`, dynamic segments, `params` as
-  Promise (Next 16).
-- Learning: dynamic routes, per-session SSE consumption, drill-down UX.
+  Promise (Next 16), `Suspense` around `useSearchParams`.
+- Learning: dynamic routes, per-session SSE consumption, drill-down UX, share-link encoding.
+
+### Branch 7 — `feat/full-dag-builder` (FULL DAG)
+- `POST /tasks/:id/reply` + `session.awaiting_input`/`user_reply` + docked reply composer; diagram grows on Atlas question.
+- Geometric nodes: `ToolNode` hex, `DecisionNode` diamond, `Reasoning` hex, `Awaiting` stadium dashed, `Terminal` octagon; `buildSocietyGraph({mode:"full"})` with fanout support `?mode=fanout`.
+- Drawer inspector + thread view (bidirectional highlight), deep-link `/project/:p/session/:s` + `?q=<b64url>` share.
+- Docs: `docs/diagrams/full-dag-case-studies.md` 7 mermaid FULL DAGs.
 
 ## Cross-branch invariants
 
-- **Backend untouched:** dashboard consumes the shipped M3 surface only.
+- **Backend extended only for FULL DAG:** dashboard is read-only except `POST /tasks/:id/reply` + `session.awaiting_input`/`user_reply` + `diagram` stub + `DELETE /projects/:projectId` (+ `deleteProject` on port) — ADR-004 event-sourced.
 - **Read-only projection (ADR-002):** the UI renders what the event bridge
   records; no bespoke telemetry.
 - **Hermetic:** dashboard dev is offline-safe (system fonts, no Google font

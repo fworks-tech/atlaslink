@@ -101,7 +101,7 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
           additionalProperties: false,
           properties: {
             projectId: { type: 'string' },
-            status: { type: 'string', enum: ['queued', 'running', 'succeeded', 'failed', 'cancelled'] },
+            status: { type: 'string', enum: ['queued', 'running', 'awaiting_input', 'succeeded', 'failed', 'cancelled'] },
             since: { type: 'string' },
             limit: { type: 'integer', minimum: 1, maximum: 500 },
             offset: { type: 'integer', minimum: 0 },
@@ -173,6 +173,91 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     }
     return reply.code(409).send({ ok: false, error: 'session state changed' })
   })
+
+  // Full DAG: Atlas asks follow-up in the latest card → user replies → diagram grows
+  app.post<{ Params: { sessionId: string }; Body: { content: string } }>(
+    '/tasks/:sessionId/reply',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['content'],
+          properties: {
+            content: { type: 'string', minLength: 1, maxLength: 10000 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const sessionId = request.params.sessionId
+      const { content } = request.body
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const current = await deps.backend.get(sessionId)
+        if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
+        if (current.status !== 'awaiting_input') {
+          if ((TERMINAL_STATUSES as readonly string[]).includes(current.status)) {
+            return reply.code(409).send({ ok: false, error: 'session already terminated' })
+          }
+          return reply.code(409).send({ ok: false, error: 'session not awaiting input' })
+        }
+        try {
+          await deps.backend.readModifyWrite(sessionId, current.version, () => [
+            { type: 'session.user_reply', correlationId: current.correlationId, at: new Date().toISOString(), reply: content },
+            // re-queue as running so the diagram keeps growing — next iteration
+            { type: 'session.running', correlationId: current.correlationId, at: new Date().toISOString() },
+          ])
+          const after = await deps.backend.get(sessionId)
+          // also fan out on SSE so live diagram updates without polling
+          // (store is truth; SSE is best-effort projection)
+          try {
+            const eventId = after?.version ?? current.version + 2
+            deps.sse.broadcaster.emit({ eventId, type: 'session.user_reply', sessionId, correlationId: current.correlationId, at: new Date().toISOString(), reply: content } as unknown as { eventId: number; type: string } & Record<string, unknown>)
+          } catch {}
+          return reply.code(201).send({ ok: true, session: sessionToWire(after!) })
+        } catch (err) {
+          if (err instanceof VersionConflictError) continue
+          throw err
+        }
+      }
+      return reply.code(409).send({ ok: false, error: 'session state changed' })
+    }
+  )
+
+  // Persist editor drag positions (ephemeral) — diagram is a projection, but user wins position
+  app.post<{ Params: { sessionId: string }; Body: { diagram: { nodes: { id: string; type: string; position: { x: number; y: number } }[]; edges: { id: string; source: string; target: string }[]; mode: string } } }>(
+    '/tasks/:sessionId/diagram',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['diagram'],
+          properties: {
+            diagram: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['nodes', 'edges', 'mode'],
+              properties: {
+                nodes: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                edges: { type: 'array', items: { type: 'object', additionalProperties: true } },
+                mode: { type: 'string', enum: ['chain', 'fanout', 'full'] },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const sessionId = request.params.sessionId
+      const { diagram } = request.body
+      const current = await deps.backend.get(sessionId)
+      if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
+      // ephemeral: frontend localStorage is truth for drag positions; backend echoes for now
+      // until diagram persistence migrates to event-sourced overlay (not swallowing success as durable)
+      return reply.send({ ok: true, diagram, persisted: false })
+    }
+  )
 
   // Per-session SSE (spec §3/§4): replay-then-live for one session's events,
   // filtered by correlationId over the global bridge projection.
