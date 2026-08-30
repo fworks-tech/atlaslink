@@ -1,6 +1,5 @@
+// ?session/?project/?q/?mode drive UI — must not be prerendered as static (see #7, #64). force-dynamic busts Vercel edge cache for deep-links; keep single knob (revalidate/fetchCache implied).
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 import HomeClient from "./HomeClient";
 
