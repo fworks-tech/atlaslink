@@ -26,7 +26,8 @@ function HomeInner() {
   const selectedSessionId = rawSession ?? decoded?.s ?? undefined;
   const selectedProjectId = rawProject ?? decoded?.p ?? undefined;
   const selectedNodeId = searchParams.get("node") ?? decoded?.n ?? undefined;
-  const mode = (searchParams.get("mode") as GraphMode) ?? (decoded?.m as GraphMode) ?? "full";
+  const rawMode = (searchParams.get("mode") ?? (decoded?.m as string) ?? "full") as GraphMode;
+  const mode: GraphMode = (["chain", "fanout", "full"].includes(rawMode) ? rawMode : "full") as GraphMode;
   const { projects, loading: projectsLoading, error: projectsError, addProject } = useProjects();
   const { sessions } = useSessions();
   const { events } = useEvents();

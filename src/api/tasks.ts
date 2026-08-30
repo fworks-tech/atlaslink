@@ -211,7 +211,8 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
           // also fan out on SSE so live diagram updates without polling
           // (store is truth; SSE is best-effort projection)
           try {
-            deps.sse.broadcaster.emit({ eventId: 0, type: 'session.user_reply', sessionId, correlationId: current.correlationId, at: new Date().toISOString(), reply: content } as unknown as { eventId: number; type: string } & Record<string, unknown>)
+            const eventId = after?.version ?? current.version + 2
+            deps.sse.broadcaster.emit({ eventId, type: 'session.user_reply', sessionId, correlationId: current.correlationId, at: new Date().toISOString(), reply: content } as unknown as { eventId: number; type: string } & Record<string, unknown>)
           } catch {}
           return reply.code(201).send({ ok: true, session: sessionToWire(after!) })
         } catch (err) {
@@ -252,10 +253,9 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       const { diagram } = request.body
       const current = await deps.backend.get(sessionId)
       if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
-      // ephemeral: keep in memory on the backend instance; rehydrated sessions without diagram stay null
-      // store in backend is event-sourced, so we piggyback on a non-persisted in-memory overlay via registry meta
-      // for now we just echo; frontend localStorage is truth for drag until full persistence ships
-      return reply.send({ ok: true, diagram })
+      // ephemeral: frontend localStorage is truth for drag positions; backend echoes for now
+      // until diagram persistence migrates to event-sourced overlay (not swallowing success as durable)
+      return reply.send({ ok: true, diagram, persisted: false })
     }
   )
 

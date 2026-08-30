@@ -108,23 +108,28 @@ export function buildSocietyGraph(
         arr.push(r);
         byStep.set(s, arr);
       }
-      for (const [step, group] of [...byStep.entries()].sort((a, b) => a[0] - b[0])) {
+      for (const [step] of [...byStep.entries()].sort((a, b) => a[0] - b[0])) {
         const id = `${session.sessionId}::reasoning::${step}`;
         graph.setNode(id, { width: TOOL_WIDTH, height: TOOL_HEIGHT });
         graph.setEdge(last, id);
         last = id;
-        // attach tool children for same step
-        void group;
       }
       for (const pair of artifacts.toolPairs) {
+        const pairId = typeof (pair.called as unknown as Record<string, unknown>).pairId === "string" ? String((pair.called as unknown as Record<string, unknown>).pairId) : "";
         const name = typeof pair.called.name === "string" ? (pair.called.name as string) : "tool";
         const step = typeof pair.called.step === "number" ? String(pair.called.step) : "0";
-        const id = `${session.sessionId}::tool::${name}::${step}`;
-        if (!graph.hasNode(id)) {
-          graph.setNode(id, { width: TOOL_WIDTH, height: TOOL_HEIGHT });
-          graph.setEdge(last, id);
-          last = id;
+        const member = typeof pair.called.member === "string" ? String(pair.called.member) : "";
+        const base = pairId ? `pair::${pairId}` : `${member}::${name}::${step}`;
+        let id = `${session.sessionId}::tool::${base}`;
+        // parallel same-step/name tools: avoid collision via suffix
+        let suffix = 0;
+        while (graph.hasNode(id)) {
+          suffix += 1;
+          id = `${session.sessionId}::tool::${base}::${suffix}`;
         }
+        graph.setNode(id, { width: TOOL_WIDTH, height: TOOL_HEIGHT });
+        graph.setEdge(last, id);
+        last = id;
       }
       for (const d of artifacts.decisions) {
         const did = typeof d.decisionId === "string" ? (d.decisionId as string) : typeof d.eventId === "number" ? String(d.eventId) : "dec";
@@ -224,11 +229,27 @@ export function buildSocietyGraph(
         nodes.push({ id, type: "reasoning", position: { x: p.x - TOOL_WIDTH / 2, y: p.y - TOOL_HEIGHT / 2 }, data: { sessionId: session.sessionId, step, events: byStep.get(step)! } });
         edges.push({ id: `edge-${id}`, source: graph.predecessors(id)?.[0] ?? session.sessionId, target: id });
       }
+      // render tool nodes in same stable order as layout phase
+      let toolCursor = 0;
+      const toolRenderOrder: string[] = [];
+      {
+        const seenLayout = new Set<string>();
+        for (const pair of artifacts.toolPairs) {
+          const pairId = typeof (pair.called as unknown as Record<string, unknown>).pairId === "string" ? String((pair.called as unknown as Record<string, unknown>).pairId) : "";
+          const name = typeof pair.called.name === "string" ? (pair.called.name as string) : "tool";
+          const step = typeof pair.called.step === "number" ? String(pair.called.step) : "0";
+          const member = typeof pair.called.member === "string" ? String(pair.called.member) : "";
+          const base = pairId ? `pair::${pairId}` : `${member}::${name}::${step}`;
+          let id = `${session.sessionId}::tool::${base}`;
+          let suffix = 0;
+          while (seenLayout.has(id)) { suffix += 1; id = `${session.sessionId}::tool::${base}::${suffix}`; }
+          seenLayout.add(id);
+          if (graph.hasNode(id)) toolRenderOrder.push(id);
+        }
+      }
       for (const pair of artifacts.toolPairs) {
-        const name = typeof pair.called.name === "string" ? (pair.called.name as string) : "tool";
-        const step = typeof pair.called.step === "number" ? String(pair.called.step) : "0";
-        const id = `${session.sessionId}::tool::${name}::${step}`;
-        if (!graph.hasNode(id)) continue;
+        const id = toolRenderOrder[toolCursor++];
+        if (!id || !graph.hasNode(id)) continue;
         const p = graph.node(id);
         nodes.push({ id, type: "tool", position: { x: p.x - TOOL_WIDTH / 2, y: p.y - TOOL_HEIGHT / 2 }, data: { pair, sessionId: session.sessionId } });
         edges.push({ id: `edge-${id}`, source: graph.predecessors(id)?.[0] ?? session.sessionId, target: id });
