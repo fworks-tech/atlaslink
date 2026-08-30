@@ -345,6 +345,25 @@ export class PostgresBackend implements SessionBackend {
     )
     return { id, name, createdAt: at }
   }
+
+  async deleteProject(id: string): Promise<boolean> {
+    return this.db.transaction(async (tx) => {
+      const { rows } = await tx.query<{ id: string }>(
+        `DELETE FROM projects WHERE tenant_id = $1 AND id = $2 RETURNING id`,
+        [this.tenantId, id]
+      )
+      if (rows.length === 0) return false
+      await tx.query(`DELETE FROM sessions WHERE tenant_id = $1 AND project_id = $2`, [
+        this.tenantId,
+        id,
+      ])
+      await tx.query(
+        `DELETE FROM session_events WHERE tenant_id = $1 AND (event->>'projectId') = $2`,
+        [this.tenantId, id]
+      )
+      return true
+    })
+  }
 }
 
 /** Ranked rows carry each session's latest event type and first-event `at`. */

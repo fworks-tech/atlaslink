@@ -345,3 +345,27 @@ test('CORS allows only the configured origins and preflight does not need a toke
     cleanup(dir)
   }
 })
+
+test('DELETE /projects/:id removes the project and its sessions', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/projects', { name: 'to-delete' })).body)
+    const id = created.project.id
+    await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p', projectId: id })
+    const del = await jsonRequest(srv.port, 'DELETE', `/projects/${id}`)
+    assert.equal(del.status, 200)
+    assert.equal(JSON.parse(del.body).ok, true)
+    const missing = await jsonRequest(srv.port, 'GET', `/projects/${id}`)
+    assert.equal(missing.status, 404)
+    const list = JSON.parse((await jsonRequest(srv.port, 'GET', '/projects')).body)
+    assert.equal(list.projects.some((p: { id: string }) => p.id === id), false)
+    const tasks = JSON.parse((await jsonRequest(srv.port, 'GET', `/tasks?projectId=${id}`)).body)
+    assert.equal(tasks.total, 0)
+    const again = await jsonRequest(srv.port, 'DELETE', `/projects/${id}`)
+    assert.equal(again.status, 404)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
