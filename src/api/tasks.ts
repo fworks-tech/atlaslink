@@ -20,6 +20,7 @@ const TERMINAL_STATUSES = ['succeeded', 'failed', 'cancelled'] as const
 interface PostBody {
   member: string
   prompt: string
+  projectId?: string
   tweaks?: { provider?: string; member?: Record<string, unknown>; team?: Record<string, unknown> }
 }
 
@@ -46,7 +47,8 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
           required: ['member', 'prompt'],
           properties: {
             member: { type: 'string', minLength: 1 },
-            prompt: { type: 'string', minLength: 1 },
+            prompt: { type: 'string', minLength: 1, maxLength: 10000 },
+            projectId: { type: 'string', maxLength: 200 },
             tweaks: {
               type: 'object',
               additionalProperties: false,
@@ -61,7 +63,7 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       },
     },
     async (request, reply) => {
-      const { member, prompt, tweaks } = request.body
+      const { member, prompt, projectId, tweaks } = request.body
       const sessionId = `ses-${randomUUID()}`
       const correlationId = `cor-${randomUUID()}`
       const event: SessionEvent = {
@@ -71,6 +73,7 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         at: new Date().toISOString(),
         member,
         prompt,
+        ...(projectId !== undefined ? { projectId } : {}),
         ...(tweaks !== undefined ? { tweaks } : {}),
       }
       // the aggregate is committed first; the queue then runs by the same ids
@@ -83,13 +86,13 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         correlationId,
       })
       deps.queue.declareSession(created)
-      log.info('task created', { sessionId, correlationId, member })
+      log.info('task created', { sessionId, correlationId, member, projectId })
       const aggregate = await deps.backend.get(sessionId)
       return reply.code(201).send({ ok: true, session: sessionToWire(aggregate!) })
     }
   )
 
-  app.get<{ Querystring: { status?: string; since?: string; limit?: number; offset?: number } }>(
+  app.get<{ Querystring: { projectId?: string; status?: string; since?: string; limit?: number; offset?: number } }>(
     '/tasks',
     {
       schema: {
@@ -97,6 +100,7 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
           type: 'object',
           additionalProperties: false,
           properties: {
+            projectId: { type: 'string' },
             status: { type: 'string', enum: ['queued', 'running', 'succeeded', 'failed', 'cancelled'] },
             since: { type: 'string' },
             limit: { type: 'integer', minimum: 1, maximum: 500 },
@@ -111,6 +115,7 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         return reply.code(400).send({ ok: false, error: 'since must be an ISO-8601 date-time' })
       }
       const filter: SessionFilter = {
+        projectId: query.projectId ?? undefined,
         status: (query.status as SessionFilter['status']) ?? undefined,
         since: query.since ?? undefined,
         limit: query.limit ?? 50,
@@ -176,5 +181,16 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     if (!aggregate) return reply.code(404).send({ ok: false, error: 'unknown session' })
     reply.hijack()
     deps.sse.handleForSession(request.raw, reply.raw, aggregate.correlationId)
+  })
+
+  // Per-project SSE: replay-then-live for all sessions belonging to a project,
+  // filtered by the set of correlation IDs for that project's sessions.
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/events', async (request, reply) => {
+    const project = await deps.backend.getProject(request.params.projectId)
+    if (!project) return reply.code(404).send({ ok: false, error: 'unknown project' })
+    const { sessions } = await deps.backend.list({ projectId: request.params.projectId, limit: 500, offset: 0 })
+    const correlationIds = new Set(sessions.map((s) => s.correlationId))
+    reply.hijack()
+    deps.sse.handleForProject(request.raw, reply.raw, correlationIds)
   })
 }
