@@ -173,7 +173,7 @@ function HomeInner() {
             </header>
             <div className="space-y-6">
               <ErrorBoundary>
-                <SocietyDiagram selectedSessionId={selectedSessionId} mode={mode} onNodeClick={handleNodeClick} />
+                <SocietyDiagram selectedSessionId={selectedSessionId!} mode={mode} onNodeClick={handleNodeClick} />
               </ErrorBoundary>
               <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
                 <SessionList onSelect={handleSelectSession} />

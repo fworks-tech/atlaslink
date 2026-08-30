@@ -148,4 +148,18 @@ describe("buildSocietyGraph", () => {
       expect(node.position.y).toBeGreaterThan(atlasY);
     }
   });
+
+  it("isolates to selectedSessionId when provided — not rehydrating other sessions", () => {
+    const ses1 = session("ses-1", "cor-1", "succeeded")
+    const ses2 = session("ses-2", "cor-2", "succeeded")
+    const events: BridgeEvent[] = [
+      event({ eventId: 1, correlationId: "cor-1", member: "the-mediator" }),
+      event({ eventId: 2, correlationId: "cor-2", member: "the-builder" }),
+      event({ eventId: 10, type: "session.created", sessionId: "ses-2", correlationId: "cor-2", member: "the-mediator" } as unknown as BridgeEvent),
+    ]
+    const graph = buildSocietyGraph([ses1, ses2], events, { selectedSessionId: "ses-1" })
+    expect(graph.nodes.some((n) => n.id === "ses-2")).toBe(false)
+    expect(graph.nodes.some((n) => n.id === "ses-1")).toBe(true)
+    expect(graph.nodes.find((n) => n.id === "ses-1")?.data).toBeDefined()
+  });
 });
