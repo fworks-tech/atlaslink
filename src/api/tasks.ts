@@ -184,13 +184,14 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
   })
 
   // Per-project SSE: replay-then-live for all sessions belonging to a project,
-  // filtered by the set of correlation IDs for that project's sessions.
+  // filtered by the set of correlation IDs for that project's sessions. The live
+  // set grows on `session.created` for the same project so the stream is live.
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/events', async (request, reply) => {
     const project = await deps.backend.getProject(request.params.projectId)
     if (!project) return reply.code(404).send({ ok: false, error: 'unknown project' })
     const { sessions } = await deps.backend.list({ projectId: request.params.projectId, limit: 500, offset: 0 })
     const correlationIds = new Set(sessions.map((s) => s.correlationId))
     reply.hijack()
-    deps.sse.handleForProject(request.raw, reply.raw, correlationIds)
+    deps.sse.handleForProject(request.raw, reply.raw, request.params.projectId, correlationIds)
   })
 }

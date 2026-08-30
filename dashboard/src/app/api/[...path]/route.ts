@@ -14,8 +14,9 @@ const FORWARDABLE = ["get", "post", "put", "patch", "delete"] as const;
 // hop-by-hop headers that must not be handed back to the browser (the stream
 // recomputes length; Connection/Upgrade belong to the transport, not the body;
 // Content-Encoding is dropped because undici already decompressed the upstream
-// body — forwarding `br` would make the browser gunzip a plain JSON payload)
-const STRIP_RESPONSE_HEADERS = ["connection", "keep-alive", "transfer-encoding", "upgrade", "content-length", "content-encoding"];
+// body — forwarding `br` would make the browser gunzip a plain JSON payload;
+// set-cookie is stripped so daemon cookies do not leak to the browser)
+const STRIP_RESPONSE_HEADERS = ["connection", "keep-alive", "transfer-encoding", "upgrade", "content-length", "content-encoding", "set-cookie"];
 
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }): Promise<NextResponse> {
   const method = req.method.toLowerCase();
@@ -29,7 +30,8 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
 
   const headers = new Headers();
   for (const [key, value] of req.headers) {
-    if (["host", "connection", "content-length"].includes(key.toLowerCase())) continue;
+    const lower = key.toLowerCase();
+    if (["host", "connection", "content-length", "cookie", "x-forwarded-for", "x-real-ip"].includes(lower)) continue;
     headers.set(key, value);
   }
   // auth is injected here, so the daemon gate stays armed without ever leaking
