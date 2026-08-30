@@ -45,3 +45,23 @@ test('rehydrate throws StreamIntegrityError when the stream is inconsistent', ()
 })
 
 backendContract('SessionStore satisfies the backend contract', async () => new SessionStore())
+
+test('SessionStore: the snapshot cache serves the same aggregate until an append', async () => {
+  const store = new SessionStore()
+  await store.append(created)
+
+  const a = await store.get('ses-1')
+  const b = await store.get('ses-1')
+  assert.ok(a && b)
+  assert.equal(a, b) // cached reference, no rehydration on the repeat read
+  assert.ok(Object.isFrozen(a)) // a caller cannot corrupt the shared snapshot
+  assert.ok(Object.isFrozen(a.task))
+
+  const running: SessionEvent = { type: 'session.running', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:01Z' }
+  await store.append(running)
+  const c = await store.get('ses-1')
+  assert.ok(c)
+  assert.notEqual(a, c) // invalidated by the append, rebuilt fresh
+  assert.equal(c.status, 'running')
+  assert.equal(c.version, 2)
+})

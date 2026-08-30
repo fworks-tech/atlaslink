@@ -1,7 +1,7 @@
 # Atlaslink — Session Progress Checklist
 
 > Status snapshot of the atlaslink project.
-> Updated: 2026-08-28
+> Updated: 2026-08-29
 
 ## Legend
 
@@ -137,8 +137,10 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
        postgres-backend (shipped) → task-rest (shipped).
 5. [x] Ship the durable, event-sourced `SessionStore` — in-memory store behind a
        `SessionBackend` port, hardened per post-merge review (issues #28–#36), plus the
-       `EventLogStore`-backed `EventLogBackend` (ADR-004) with a frozen snapshot cache;
-       merged to main (PRs #27, #37, #38).
+       `EventLogStore`-backed `EventLogBackend` (ADR-004) with a per-session snapshot
+       cache invalidated on append; merged to main (PRs #27, #37, #38). Per-session
+       snapshot cache with `deepFreeze` and backend-contract assertion shipped via
+       PR #57 (issue #36).
 6. [x] Rebuild the HTTP layer on Fastify (ADR-006 Decision 1), preserving the SSE
        reconnection contract — merged via `feat/6-fastify-rebuild` (PR #41); the
        ADR-005 request envelope stays on the `src/log.ts` facade. Suite: 95.

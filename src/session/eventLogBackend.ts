@@ -1,7 +1,8 @@
 import { EventLogStore } from '../bridge/EventLogStore'
 import { rehydrate, filterSessions } from './sessionStore'
+import { deepFreeze } from './deepFreeze'
 import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
-import type { Session, SessionEvent, SessionDelta } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot } from './types'
 import { VersionConflictError } from './types'
 
 /** The store vocabulary. The queue broadcasts `session.queued`/`session.started`
@@ -19,32 +20,17 @@ function isStoreSessionEvent(type: unknown): type is string {
   return typeof type === 'string' && STORE_EVENT_TYPES.has(type)
 }
 
-interface Snapshot {
-  session: Session
-  logVersion: number
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value && typeof value === 'object') {
-    Object.freeze(value)
-    for (const key of Object.keys(value as Record<string, unknown>)) {
-      deepFreeze((value as Record<string, unknown>)[key])
-    }
-  }
-  return value
-}
-
 /**
  * SessionBackend over the shared NDJSON EventLogStore (ADR-004): session events
  * are persisted as bridge envelopes in the same log as the run stream, and each
  * read rebuilds the aggregate from the log. A snapshot cache serves repeated
- * reads without touching disk; the cache keyed by the log cursor is invalidated
- * by any append, so it only helps quiescent streams — per-session invalidation
- * is a DuckDB-era optimization once reads and writes coexist at scale.
+ * reads without touching disk; the cache is keyed per-session and invalidated on
+ * each append to that session — only quiescent streams benefit.
  */
 export class EventLogBackend implements SessionBackend {
   readonly log: EventLogStore
-  #snapshots = new Map<string, Snapshot>()
+  #snapshots = new Map<string, SessionSnapshot>()
+  #versions = new Map<string, number>()
 
   constructor(log: EventLogStore) {
     this.log = log
@@ -59,23 +45,34 @@ export class EventLogBackend implements SessionBackend {
   append(event: SessionEvent): Promise<void> {
     this.log.append({ ...event, eventId: this.log.nextEventId, type: event.type })
     this.#snapshots.delete(event.sessionId)
+    const prev = this.#versions.get(event.sessionId) ?? 0
+    this.#versions.set(event.sessionId, prev + 1)
     return Promise.resolve()
   }
 
   async get(sessionId: string): Promise<Session | null> {
     const cached = this.#snapshots.get(sessionId)
-    if (cached !== undefined && cached.logVersion === this.log.nextEventId) {
+    const cachedVersion = this.#versions.get(sessionId)
+    if (cached !== undefined && cachedVersion !== undefined && cached.version === cachedVersion) {
       return cached.session
     }
 
     const events = this.#sessionEvents(sessionId)
+    const currentVersion = events.length
+
+    if (cached !== undefined && cached.version === currentVersion) {
+      return cached.session
+    }
+
     const session = events.length > 0 ? rehydrate(events) : null
     if (session === null) {
       this.#snapshots.delete(sessionId)
       return null
     }
-    this.#snapshots.set(sessionId, { session: deepFreeze(session), logVersion: this.log.nextEventId })
-    return session
+    const frozen = deepFreeze(session)
+    this.#snapshots.set(sessionId, { session: frozen, version: currentVersion })
+    this.#versions.set(sessionId, currentVersion)
+    return frozen
   }
 
   async readModifyWrite(
@@ -90,6 +87,7 @@ export class EventLogBackend implements SessionBackend {
     }
 
     const current = events.length > 0 ? rehydrate(events) : null
+    // invalidation flows through append() — each delta append deletes the snapshot and bumps #versions
     for (const delta of mutator(current)) {
       await this.append({ ...delta, sessionId })
     }

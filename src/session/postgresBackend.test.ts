@@ -10,6 +10,23 @@ import { VersionConflictError } from './types'
 import { backendContract } from './backendContract'
 import type { SessionEvent } from './types'
 
+const created: SessionEvent = {
+  type: 'session.created',
+  sessionId: 'ses-1',
+  correlationId: 'cor-1',
+  at: '2026-01-01T00:00:00Z',
+  member: 'the-architect',
+  prompt: 'plan x',
+  tweaks: { provider: 'groq' },
+}
+
+const running: SessionEvent = {
+  type: 'session.running',
+  sessionId: 'ses-1',
+  correlationId: 'cor-1',
+  at: '2026-01-01T00:00:01Z',
+}
+
 async function backendWithMigrations(): Promise<PostgresBackend> {
   const db = new PGlite()
   await runMigrations(new PgliteDb(db))
@@ -130,4 +147,38 @@ test('a unique-violation on first write is surfaced as VersionConflictError', as
       return true
     }
   )
+})
+
+test('PostgresBackend: the snapshot cache serves the same aggregate until an append', async () => {
+  const backend = await backendWithMigrations()
+  await backend.append(created)
+
+  const a = await backend.get('ses-1')
+  const b = await backend.get('ses-1')
+  assert.ok(a && b)
+  assert.equal(a, b) // cached reference, no rehydration on the repeat read
+  assert.ok(Object.isFrozen(a)) // a caller cannot corrupt the shared snapshot
+  assert.ok(Object.isFrozen(a.task))
+
+  await backend.append(running)
+  const c = await backend.get('ses-1')
+  assert.ok(c)
+  assert.notEqual(a, c) // invalidated by the append, rebuilt fresh
+  assert.equal(c.status, 'running')
+  assert.equal(c.version, 2)
+})
+
+test('PostgresBackend: appending to a different session does not invalidate the cache', async () => {
+  const backend = await backendWithMigrations()
+  await backend.append(created)
+
+  const a = await backend.get('ses-1')
+  assert.ok(a)
+
+  // append to a completely different session
+  await backend.append({ type: 'session.created', sessionId: 'ses-other', correlationId: 'cor-2', at: '2026-01-01T00:00:00Z', member: 'x', prompt: 'y' })
+
+  const b = await backend.get('ses-1')
+  assert.ok(b)
+  assert.equal(a, b) // still cached — the append was for ses-other
 })
