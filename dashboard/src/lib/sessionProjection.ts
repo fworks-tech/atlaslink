@@ -9,22 +9,38 @@ export const LIFECYCLE_TRANSITIONS: Record<string, (patch: Partial<Session>, eve
   "session.running": (patch, event, current) => {
     patch.status = "running";
     patch.startedAt = typeof event.at === "string" ? event.at : current.startedAt;
+    patch.nextStep = null;
   },
   "session.succeeded": (patch, event, current) => {
     patch.status = "succeeded";
     patch.finishedAt = typeof event.at === "string" ? event.at : current.finishedAt;
     patch.durationMs = typeof event.durationMs === "number" ? event.durationMs : current.durationMs;
     patch.output = typeof event.output === "string" ? event.output : current.output;
+    patch.nextStep = null;
   },
   "session.failed": (patch, event, current) => {
     patch.status = "failed";
     patch.finishedAt = typeof event.at === "string" ? event.at : current.finishedAt;
     patch.durationMs = typeof event.durationMs === "number" ? event.durationMs : current.durationMs;
     patch.error = typeof event.error === "string" ? event.error : current.error;
+    patch.nextStep = null;
   },
   "session.cancelled": (patch, event, current) => {
     patch.status = "cancelled";
     patch.finishedAt = typeof event.at === "string" ? event.at : current.finishedAt;
+    patch.nextStep = null;
+  },
+  "session.awaiting_input": (patch, event) => {
+    patch.status = "awaiting_input";
+    patch.nextStep = {
+      awaiting_input: true,
+      prompt: typeof event.question === "string" ? (event.question as string) : typeof event.prompt === "string" ? (event.prompt as string) : undefined,
+      member: typeof event.member === "string" ? (event.member as string) : undefined,
+    };
+  },
+  "session.user_reply": (patch) => {
+    patch.status = "queued";
+    patch.nextStep = null;
   },
 };
 
@@ -33,7 +49,12 @@ export function formatDuration(session: Session): string {
     return `${(session.durationMs / 1000).toFixed(1)}s`;
   }
   if (session.status === "running") return "live…";
+  if (session.status === "awaiting_input") return "awaiting input…";
   return "—";
+}
+
+export function isAwaitingInput(session: Session): boolean {
+  return session.status === "awaiting_input" || Boolean(session.nextStep?.awaiting_input);
 }
 
 /** Overlay session.* lifecycle events onto the loaded list, in arrival order. */
@@ -57,6 +78,9 @@ export function withLiveUpdates(sessions: Session[], events: BridgeEvent[]): Ses
             prompt: typeof event.prompt === "string" ? event.prompt : "",
           },
           createdAt: typeof event.at === "string" ? event.at : undefined,
+          interaction: [],
+          nextStep: null,
+          diagram: null,
         });
       }
       continue;

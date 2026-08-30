@@ -145,7 +145,7 @@ failure paths stay silent by design) are recorded in
 | **M1 — Daemon Core** | Long-running daemon, agent runtime hosting | Shipped |
 | **M2 — Event Bridge** | Real-time event feed bridged to the browser | Shipped |
 | **M3 — Task API** | HTTP surface for driving the orchestrator | Planned — [spec](docs/spec/m3-task-api.md) |
-| **M4 — Live Dashboard** | The live diagram-flow UI | Planned |
+| **M4 — Live Dashboard** | The live diagram-flow UI — [FULL DAG case studies](docs/diagrams/full-dag-case-studies.md) (7 prompts, mermaid) | Shipped (diagram) |
 
 Track active work and open issues on the [issues page](https://github.com/fworks-tech/atlaslink/issues).
 
