@@ -39,6 +39,9 @@ export function rehydrate(events: SessionEvent[]): Session | null {
     version: events.length,
     projectId: first.projectId,
     task: { member: first.member ?? '', prompt: first.prompt ?? '' },
+    interaction: [],
+    nextStep: null,
+    diagram: null,
   }
 
   let createdAt: string | undefined
@@ -53,25 +56,42 @@ export function rehydrate(events: SessionEvent[]): Session | null {
         if (e.prompt !== undefined) session.task.prompt = e.prompt
         if (e.tweaks !== undefined) session.tweaks = e.tweaks
         if (e.projectId !== undefined) session.projectId = e.projectId
+        session.interaction.push({ role: 'user', at: e.at, content: e.prompt ?? '' })
         break
       case 'session.running':
         startedAt = e.at
         session.status = 'running'
+        session.nextStep = null
         break
       case 'session.succeeded':
         finishedAt = e.at
         session.status = 'succeeded'
         if (e.output !== undefined) session.output = e.output
         if (e.durationMs !== undefined) session.durationMs = e.durationMs
+        session.nextStep = null
+        if (e.output) session.interaction.push({ role: 'member', member: e.member, at: e.at, content: e.output })
         break
       case 'session.failed':
         finishedAt = e.at
         session.status = 'failed'
         if (e.error !== undefined) session.error = e.error
+        session.nextStep = null
+        if (e.error) session.interaction.push({ role: 'member', member: e.member, at: e.at, content: `Error: ${e.error}` })
         break
       case 'session.cancelled':
         finishedAt = e.at
         session.status = 'cancelled'
+        session.nextStep = null
+        break
+      case 'session.awaiting_input':
+        session.status = 'awaiting_input'
+        session.nextStep = { awaiting_input: true, prompt: e.question, member: e.member }
+        session.interaction.push({ role: 'atlas', member: e.member, at: e.at, content: e.question ?? '' })
+        break
+      case 'session.user_reply':
+        session.status = 'queued'
+        session.nextStep = null
+        session.interaction.push({ role: 'user', at: e.at, content: e.reply ?? '' })
         break
     }
   }

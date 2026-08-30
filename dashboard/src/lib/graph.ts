@@ -33,11 +33,21 @@ const SESSION_WIDTH = 240;
 const SESSION_HEIGHT = 118;
 const MEMBER_WIDTH = 128;
 const MEMBER_HEIGHT = 36;
+const TOOL_WIDTH = 140;
+const TOOL_HEIGHT = 46;
+const DECISION_WIDTH = 120;
+const DECISION_HEIGHT = 120;
+const AWAITING_WIDTH = 260;
+const AWAITING_HEIGHT = 92;
+const TERMINAL_WIDTH = 128;
+const TERMINAL_HEIGHT = 40;
 
 export interface SocietyGraph {
   nodes: Node[];
   edges: Edge[];
 }
+
+export type GraphMode = "chain" | "fanout" | "full";
 
 /**
  * Project the live sessions onto the society diagram (ADR-002/ADR-003):
@@ -46,7 +56,12 @@ export interface SocietyGraph {
  * via dagre. The active member pulses while its session runs. Pure — the canvas
  * component just renders it.
  */
-export function buildSocietyGraph(sessions: Session[], events: BridgeEvent[]): SocietyGraph {
+export function buildSocietyGraph(
+  sessions: Session[],
+  events: BridgeEvent[],
+  opts?: { mode?: GraphMode }
+): SocietyGraph {
+  const mode = opts?.mode ?? "chain";
   const live = withLiveUpdates(sessions, events);
 
   const graph = new dagre.graphlib.Graph();
@@ -60,16 +75,75 @@ export function buildSocietyGraph(sessions: Session[], events: BridgeEvent[]): S
     chains.set(session.sessionId, chain);
     graph.setNode(session.sessionId, { width: SESSION_WIDTH, height: SESSION_HEIGHT });
     graph.setEdge("atlas", session.sessionId);
-    for (let i = 0; i < chain.length; i++) {
-      graph.setNode(memberId(session.sessionId, chain[i]), {
-        width: MEMBER_WIDTH,
-        height: MEMBER_HEIGHT,
-      });
-      // The delegation chain hand-off: session -> first member -> next member…
-      graph.setEdge(
-        i === 0 ? session.sessionId : memberId(session.sessionId, chain[i - 1]),
-        memberId(session.sessionId, chain[i]),
-      );
+    if (mode === "fanout") {
+      for (const member of chain) {
+        graph.setNode(memberId(session.sessionId, member), {
+          width: MEMBER_WIDTH,
+          height: MEMBER_HEIGHT,
+        });
+        graph.setEdge(session.sessionId, memberId(session.sessionId, member));
+      }
+    } else {
+      for (let i = 0; i < chain.length; i++) {
+        graph.setNode(memberId(session.sessionId, chain[i]), {
+          width: MEMBER_WIDTH,
+          height: MEMBER_HEIGHT,
+        });
+        graph.setEdge(
+          i === 0 ? session.sessionId : memberId(session.sessionId, chain[i - 1]),
+          memberId(session.sessionId, chain[i]),
+        );
+      }
+    }
+
+    // Full DAG extras: tools, decisions, awaiting/terminal anchored after the chain
+    if (mode === "full") {
+      const artifacts = artifactsFor(session.correlationId, events);
+      let last = chain.length > 0 ? memberId(session.sessionId, chain[chain.length - 1]) : session.sessionId;
+      // reasoning hex nodes (coalesced by step, one per step group)
+      const byStep = new Map<number, BridgeEvent[]>();
+      for (const r of artifacts.reasoning) {
+        const s = typeof r.step === "number" ? (r.step as number) : 0;
+        const arr = byStep.get(s) ?? [];
+        arr.push(r);
+        byStep.set(s, arr);
+      }
+      for (const [step, group] of [...byStep.entries()].sort((a, b) => a[0] - b[0])) {
+        const id = `${session.sessionId}::reasoning::${step}`;
+        graph.setNode(id, { width: TOOL_WIDTH, height: TOOL_HEIGHT });
+        graph.setEdge(last, id);
+        last = id;
+        // attach tool children for same step
+        void group;
+      }
+      for (const pair of artifacts.toolPairs) {
+        const name = typeof pair.called.name === "string" ? (pair.called.name as string) : "tool";
+        const step = typeof pair.called.step === "number" ? String(pair.called.step) : "0";
+        const id = `${session.sessionId}::tool::${name}::${step}`;
+        if (!graph.hasNode(id)) {
+          graph.setNode(id, { width: TOOL_WIDTH, height: TOOL_HEIGHT });
+          graph.setEdge(last, id);
+          last = id;
+        }
+      }
+      for (const d of artifacts.decisions) {
+        const did = typeof d.decisionId === "string" ? (d.decisionId as string) : typeof d.eventId === "number" ? String(d.eventId) : "dec";
+        const id = `${session.sessionId}::decision::${did}`;
+        graph.setNode(id, { width: DECISION_WIDTH, height: DECISION_HEIGHT });
+        graph.setEdge(last, id);
+        last = id;
+      }
+      if (session.status === "awaiting_input") {
+        const id = `${session.sessionId}::awaiting`;
+        graph.setNode(id, { width: AWAITING_WIDTH, height: AWAITING_HEIGHT });
+        graph.setEdge(last, id);
+      } else if (["succeeded", "failed", "cancelled"].includes(session.status)) {
+        const id = `${session.sessionId}::terminal`;
+        graph.setNode(id, { width: TERMINAL_WIDTH, height: TERMINAL_HEIGHT });
+        graph.setEdge(last, id);
+      } else if (artifacts.reasoning.length === 0 && artifacts.toolPairs.length === 0 && artifacts.decisions.length === 0 && chain.length === 0) {
+        // keep single session node clean when no extras
+      }
     }
   }
   dagre.layout(graph);
@@ -96,28 +170,99 @@ export function buildSocietyGraph(sessions: Session[], events: BridgeEvent[]): S
     edges.push({ id: `atlas-${session.sessionId}`, source: "atlas", target: session.sessionId });
 
     const chain = chains.get(session.sessionId)!;
-    for (let i = 0; i < chain.length; i++) {
-      const memberPlacement = graph.node(memberId(session.sessionId, chain[i]));
-      nodes.push({
-        id: memberId(session.sessionId, chain[i]),
-        type: "member",
-        position: {
-          x: memberPlacement.x - MEMBER_WIDTH / 2,
-          y: memberPlacement.y - MEMBER_HEIGHT / 2,
-        },
-        data: {
-          member: chain[i],
-          sessionId: session.sessionId,
-          correlationId: session.correlationId,
-          active: session.status === "running" && i === chain.length - 1,
-        },
-      });
-      edges.push({
-        id: `handoff-${session.sessionId}-${i}`,
-        source: i === 0 ? session.sessionId : memberId(session.sessionId, chain[i - 1]),
-        target: memberId(session.sessionId, chain[i]),
-        markerEnd: { type: MarkerType.ArrowClosed },
-      });
+    if (mode === "fanout") {
+      for (const member of chain) {
+        const mp = graph.node(memberId(session.sessionId, member));
+        nodes.push({
+          id: memberId(session.sessionId, member),
+          type: "member",
+          position: { x: mp.x - MEMBER_WIDTH / 2, y: mp.y - MEMBER_HEIGHT / 2 },
+          data: { member, sessionId: session.sessionId, correlationId: session.correlationId, active: session.status === "running" && chain[chain.length - 1] === member },
+        });
+        edges.push({ id: `handoff-${session.sessionId}-${member}`, source: session.sessionId, target: memberId(session.sessionId, member), markerEnd: { type: MarkerType.ArrowClosed } });
+      }
+    } else {
+      for (let i = 0; i < chain.length; i++) {
+        const memberPlacement = graph.node(memberId(session.sessionId, chain[i]));
+        nodes.push({
+          id: memberId(session.sessionId, chain[i]),
+          type: "member",
+          position: {
+            x: memberPlacement.x - MEMBER_WIDTH / 2,
+            y: memberPlacement.y - MEMBER_HEIGHT / 2,
+          },
+          data: {
+            member: chain[i],
+            sessionId: session.sessionId,
+            correlationId: session.correlationId,
+            active: session.status === "running" && i === chain.length - 1,
+          },
+        });
+        edges.push({
+          id: `handoff-${session.sessionId}-${i}`,
+          source: i === 0 ? session.sessionId : memberId(session.sessionId, chain[i - 1]),
+          target: memberId(session.sessionId, chain[i]),
+          markerEnd: { type: MarkerType.ArrowClosed },
+        });
+      }
+    }
+
+    if (mode === "full") {
+      const artifacts = artifactsFor(session.correlationId, events);
+      // reasoning
+      const byStep = new Map<number, BridgeEvent[]>();
+      for (const r of artifacts.reasoning) {
+        const s = typeof r.step === "number" ? (r.step as number) : 0;
+        const arr = byStep.get(s) ?? [];
+        arr.push(r);
+        byStep.set(s, arr);
+      }
+      for (const [step] of [...byStep.entries()].sort((a, b) => a[0] - b[0])) {
+        const id = `${session.sessionId}::reasoning::${step}`;
+        if (!graph.hasNode(id)) continue;
+        const p = graph.node(id);
+        nodes.push({ id, type: "reasoning", position: { x: p.x - TOOL_WIDTH / 2, y: p.y - TOOL_HEIGHT / 2 }, data: { sessionId: session.sessionId, step, events: byStep.get(step)! } });
+        edges.push({ id: `edge-${id}`, source: graph.predecessors(id)?.[0] ?? session.sessionId, target: id });
+      }
+      for (const pair of artifacts.toolPairs) {
+        const name = typeof pair.called.name === "string" ? (pair.called.name as string) : "tool";
+        const step = typeof pair.called.step === "number" ? String(pair.called.step) : "0";
+        const id = `${session.sessionId}::tool::${name}::${step}`;
+        if (!graph.hasNode(id)) continue;
+        const p = graph.node(id);
+        nodes.push({ id, type: "tool", position: { x: p.x - TOOL_WIDTH / 2, y: p.y - TOOL_HEIGHT / 2 }, data: { pair, sessionId: session.sessionId } });
+        edges.push({ id: `edge-${id}`, source: graph.predecessors(id)?.[0] ?? session.sessionId, target: id });
+      }
+      for (const d of artifacts.decisions) {
+        const did = typeof d.decisionId === "string" ? (d.decisionId as string) : typeof d.eventId === "number" ? String(d.eventId) : "dec";
+        const id = `${session.sessionId}::decision::${did}`;
+        if (!graph.hasNode(id)) continue;
+        const p = graph.node(id);
+        nodes.push({ id, type: "decision", position: { x: p.x - DECISION_WIDTH / 2, y: p.y - DECISION_HEIGHT / 2 }, data: { event: d, sessionId: session.sessionId } });
+        edges.push({ id: `edge-${id}`, source: graph.predecessors(id)?.[0] ?? session.sessionId, target: id });
+      }
+      if (session.status === "awaiting_input") {
+        const id = `${session.sessionId}::awaiting`;
+        if (graph.hasNode(id)) {
+          const p = graph.node(id);
+          nodes.push({ id, type: "awaiting", position: { x: p.x - AWAITING_WIDTH / 2, y: p.y - AWAITING_HEIGHT / 2 }, data: { session } });
+          edges.push({ id: `edge-${id}`, source: graph.predecessors(id)?.[0] ?? session.sessionId, target: id });
+        }
+      } else if (["succeeded", "failed", "cancelled"].includes(session.status)) {
+        const id = `${session.sessionId}::terminal`;
+        if (graph.hasNode(id)) {
+          const p = graph.node(id);
+          nodes.push({ id, type: "terminal", position: { x: p.x - TERMINAL_WIDTH / 2, y: p.y - TERMINAL_HEIGHT / 2 }, data: { session } });
+          edges.push({ id: `edge-${id}`, source: graph.predecessors(id)?.[0] ?? session.sessionId, target: id });
+        }
+      }
+      // dedupe edges already added via graph earlier — we rebuild from nodes; extra edges already covered, but add any remaining graph edges not yet in array
+      for (const e of graph.edges()) {
+        const exists = edges.some((ed) => ed.source === e.v && ed.target === e.w);
+        if (!exists && e.v !== "atlas" && live.some((s) => s.sessionId === e.v || e.v.startsWith(s.sessionId + "::"))) {
+          edges.push({ id: `${e.v}->${e.w}`, source: e.v, target: e.w });
+        }
+      }
     }
   }
 
@@ -138,4 +283,34 @@ function membersFor(correlationId: string, events: BridgeEvent[]): string[] {
     seen.push(member);
   }
   return seen;
+}
+
+function artifactsFor(
+  correlationId: string,
+  events: BridgeEvent[]
+): { reasoning: BridgeEvent[]; toolPairs: { called: BridgeEvent; result: BridgeEvent | null }[]; decisions: BridgeEvent[] } {
+  const reasoning: BridgeEvent[] = [];
+  const called: BridgeEvent[] = [];
+  const results: BridgeEvent[] = [];
+  const decisions: BridgeEvent[] = [];
+  for (const e of events) {
+    if (e.correlationId !== correlationId) continue;
+    if (e.type === "reasoning") reasoning.push(e);
+    else if (e.type === "tool.called") called.push(e);
+    else if (e.type === "tool.result") results.push(e);
+    else if (e.type === "decision.recorded") decisions.push(e);
+  }
+  const pairKey = (e: BridgeEvent): string => {
+    const pid = typeof (e as Record<string, unknown>).pairId === "string" ? String((e as Record<string, unknown>).pairId) : "";
+    if (pid) return pid;
+    const step = typeof e.step === "number" ? String(e.step) : "0";
+    const name = typeof e.name === "string" ? String(e.name) : "tool";
+    return `${step}::${name}`;
+  };
+  const byKey = new Map<string, BridgeEvent>();
+  for (const c of called) byKey.set(pairKey(c), c);
+  const toolPairs: { called: BridgeEvent; result: BridgeEvent | null }[] = [];
+  for (const c of called) toolPairs.push({ called: c, result: results.find((r) => pairKey(r) === pairKey(c)) ?? null });
+  for (const r of results) if (!called.some((c) => pairKey(c) === pairKey(r))) toolPairs.push({ called: r, result: null });
+  return { reasoning, toolPairs, decisions };
 }

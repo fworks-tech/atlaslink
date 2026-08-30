@@ -1,4 +1,4 @@
-export type SessionStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export type SessionStatus = "queued" | "running" | "awaiting_input" | "succeeded" | "failed" | "cancelled";
 
 export interface Session {
   sessionId: string;
@@ -14,6 +14,9 @@ export interface Session {
   output?: string;
   error?: string;
   durationMs?: number;
+  interaction?: { role: "user" | "atlas" | "member"; member?: string; at: string; content: string }[];
+  nextStep?: { awaiting_input: boolean; prompt?: string; member?: string } | null;
+  diagram?: { nodes: { id: string; type: string; position: { x: number; y: number } }[]; edges: { id: string; source: string; target: string }[]; mode: string } | null;
 }
 
 export interface TaskListResponse {

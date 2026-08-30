@@ -27,6 +27,8 @@ Atlas → Session("Fix issue #42")
   → The Reviewer (approve the diff)
 ```
 
+> FULL DAG: 7 prompt archetypes (understand, fix, feature, refactor, audit, onboarding, performance) with `mermaid flowchart TD` + geometric symbols (hex tool, diamond decision, dashed awaiting, terminal) → [docs/diagrams/full-dag-case-studies.md](../diagrams/full-dag-case-studies.md). Deep-link: `https://atlas.flabs.tech/project/<project>/session/<session>?mode=full` or `?q=<base64url>` via `dashboard/src/lib/shareLink.ts`.
+
 ## Branch plan (learning-oriented)
 
 Each branch is small, self-contained, and teaches one core concept. Branches
@@ -95,6 +97,12 @@ stack on the Fastify backend on `main` (shipped M3). The dashboard lives in
 - Client routing with `next/link`/`useRouter`, dynamic segments, `params` as
   Promise (Next 16).
 - Learning: dynamic routes, per-session SSE consumption, drill-down UX.
+
+### Branch 7 — `feat/full-dag-builder` (FULL DAG)
+- `POST /tasks/:id/reply` + `session.awaiting_input`/`user_reply` + docked reply composer; diagram grows on Atlas question.
+- Geometric nodes: `ToolNode` hex, `DecisionNode` diamond, `Reasoning` hex, `Awaiting` stadium dashed, `Terminal` octagon; `buildSocietyGraph({mode:"full"})` with fanout support `?mode=fanout`.
+- Drawer inspector + thread view (bidirectional highlight), deep-link `/project/:p/session/:s` + `?q=<b64url>` share.
+- Docs: `docs/diagrams/full-dag-case-studies.md` 7 mermaid FULL DAGs.
 
 ## Cross-branch invariants
 
