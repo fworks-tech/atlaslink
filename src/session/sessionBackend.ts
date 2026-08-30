@@ -37,4 +37,5 @@ export interface SessionBackend {
   listProjects(): Promise<Project[]>
   getProject(id: string): Promise<Project | null>
   createProject(id: string, name: string): Promise<Project>
+  deleteProject(id: string): Promise<boolean>
 }

@@ -155,4 +155,18 @@ export class SessionStore implements SessionBackend {
     this.#projects.set(id, project)
     return project
   }
+
+  async deleteProject(id: string): Promise<boolean> {
+    const existed = this.#projects.delete(id)
+    for (const [sessionId, events] of this.events.entries()) {
+      const first = events[0]
+      if (first?.projectId === id) {
+        this.events.delete(sessionId)
+        this.versions.delete(sessionId)
+        this.#snapshots.delete(sessionId)
+      }
+    }
+    // also remove sessions that were rehydrated but never appended? covered above
+    return existed
+  }
 }

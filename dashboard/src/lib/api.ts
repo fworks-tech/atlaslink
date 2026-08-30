@@ -77,3 +77,9 @@ export interface CreateProjectResponse {
 export function createProject(input: CreateProjectInput): Promise<CreateProjectResponse> {
   return fetchJSON<CreateProjectResponse>("/projects", { method: "POST", body: JSON.stringify(input) });
 }
+
+export function deleteProject(projectId: string): Promise<{ ok: boolean }> {
+  return fetchJSON<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}`, {
+    method: "DELETE",
+  });
+}
