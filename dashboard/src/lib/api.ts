@@ -39,13 +39,16 @@ export async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T>
   return (await res.json()) as T;
 }
 
-export function getTasks(limit = 50, offset = 0): Promise<TaskListResponse> {
-  return fetchJSON<TaskListResponse>(`/tasks?limit=${limit}&offset=${offset}`);
+export function getTasks(limit = 50, offset = 0, projectId?: string): Promise<TaskListResponse> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (projectId) params.set("projectId", projectId);
+  return fetchJSON<TaskListResponse>(`/tasks?${params.toString()}`);
 }
 
 export interface CreateTaskInput {
   member: string;
   prompt: string;
+  projectId?: string;
   tweaks?: Record<string, unknown>;
 }
 

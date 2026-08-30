@@ -1,28 +1,29 @@
 "use client";
 
-import { useState } from "react";
-import { useProjects } from "@/hooks/useProjects";
+import { useMemo, useState } from "react";
 import { useSessions } from "@/hooks/useSessions";
 import { useEvents } from "@/hooks/useEvents";
 import { StatusBadge } from "@/components/StatusBadge";
 import { withLiveUpdates } from "@/lib/sessionProjection";
-import type { Session } from "@/lib/types";
+import type { Project, Session } from "@/lib/types";
 
-function groupByDate(sessions: Session[]): Map<string, Session[]> {
+export function groupByDate(sessions: Session[]): Map<string, Session[]> {
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const yesterday = new Date(now.getTime() - 86400000).toISOString().slice(0, 10);
+  const todayStr = now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const yesterdayStr = yesterday.toDateString();
 
   const groups = new Map<string, Session[]>();
   const older: Session[] = [];
 
   for (const s of sessions) {
-    const date = s.createdAt?.slice(0, 10) ?? "";
-    if (date === today) {
+    const dateStr = s.createdAt ? new Date(s.createdAt).toDateString() : "";
+    if (dateStr === todayStr) {
       const arr = groups.get("Today") ?? [];
       arr.push(s);
       groups.set("Today", arr);
-    } else if (date === yesterday) {
+    } else if (dateStr === yesterdayStr) {
       const arr = groups.get("Yesterday") ?? [];
       arr.push(s);
       groups.set("Yesterday", arr);
@@ -36,19 +37,27 @@ function groupByDate(sessions: Session[]): Map<string, Session[]> {
 }
 
 export function Sidebar({
+  projects,
+  projectsLoading,
+  projectsError,
+  onCreateProject,
   selectedSessionId,
   onSelectSession,
 }: {
+  projects: Project[];
+  projectsLoading: boolean;
+  projectsError: string | null;
+  onCreateProject: (name: string) => Promise<Project | null>;
   selectedSessionId?: string;
   onSelectSession: (id: string) => void;
 }) {
-  const { projects, loading: projectsLoading, addProject } = useProjects();
   const { sessions } = useSessions();
   const { events } = useEvents();
-  const live = withLiveUpdates(sessions, events);
+  const live = useMemo(() => withLiveUpdates(sessions, events), [sessions, events]);
 
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
 
   const toggle = (id: string) => {
@@ -62,16 +71,37 @@ export function Sidebar({
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProjectName.trim()) return;
-    const project = await addProject(newProjectName.trim());
+    const trimmed = newProjectName.trim();
+    if (!trimmed) return;
+    if (trimmed.length > 200) {
+      setCreateError("Project name must be ≤200 characters");
+      return;
+    }
+    setCreateError(null);
+    const project = await onCreateProject(trimmed);
     if (project) {
       setNewProjectName("");
       setShowNewProject(false);
       setExpandedProjects((prev) => new Set(prev).add(project.id));
+    } else {
+      setCreateError("Failed to create project");
     }
   };
 
-  const unassigned = live.filter((s) => !s.projectId);
+  const { projectMap, unassigned } = useMemo(() => {
+    const map = new Map<string, Session[]>();
+    const unassignedList: Session[] = [];
+    for (const s of live) {
+      if (s.projectId) {
+        const arr = map.get(s.projectId) ?? [];
+        arr.push(s);
+        map.set(s.projectId, arr);
+      } else {
+        unassignedList.push(s);
+      }
+    }
+    return { projectMap: map, unassigned: unassignedList };
+  }, [live]);
 
   return (
     <div className="flex flex-col h-full">
@@ -92,18 +122,22 @@ export function Sidebar({
             value={newProjectName}
             onChange={(e) => setNewProjectName(e.target.value)}
             placeholder="Project name"
+            maxLength={200}
             className="w-full rounded-md border border-white/10 bg-raised px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted/70 focus:border-accent/50"
           />
+          {createError && <p className="mt-1 text-xs text-danger">{createError}</p>}
         </form>
       )}
 
       <div className="flex-1 overflow-y-auto px-2 py-2">
         {projectsLoading ? (
           <p className="px-2 py-4 text-xs text-muted">Loading…</p>
+        ) : projectsError ? (
+          <p className="px-2 py-4 text-xs text-danger">{projectsError}</p>
         ) : (
           <>
             {projects.map((project) => {
-              const projectSessions = live.filter((s) => s.projectId === project.id);
+              const projectSessions = projectMap.get(project.id) ?? [];
               const groups = groupByDate(projectSessions);
               const expanded = expandedProjects.has(project.id);
 

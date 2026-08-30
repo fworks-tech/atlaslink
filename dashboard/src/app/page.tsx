@@ -5,19 +5,26 @@ import { Sidebar } from "@/components/Sidebar";
 import { SessionComposer } from "@/components/SessionComposer";
 import { SocietyDiagram } from "@/components/SocietyDiagram";
 import { SessionList } from "@/components/SessionList";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useProjects } from "@/hooks/useProjects";
 
 export default function Home() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | undefined>();
-  const { projects } = useProjects();
+  const { projects, loading: projectsLoading, error: projectsError, addProject } = useProjects();
 
   return (
     <div className="flex h-screen">
       <aside className="w-64 shrink-0 border-r border-white/5 bg-surface overflow-hidden">
-        <Sidebar
-          selectedSessionId={selectedSessionId}
-          onSelectSession={setSelectedSessionId}
-        />
+        <ErrorBoundary>
+          <Sidebar
+            projects={projects}
+            projectsLoading={projectsLoading}
+            projectsError={projectsError}
+            onCreateProject={addProject}
+            selectedSessionId={selectedSessionId}
+            onSelectSession={setSelectedSessionId}
+          />
+        </ErrorBoundary>
       </aside>
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-8 py-12">
@@ -33,14 +40,18 @@ export default function Home() {
 
           {selectedSessionId ? (
             <div className="space-y-6">
-              <SocietyDiagram />
+              <ErrorBoundary>
+                <SocietyDiagram />
+              </ErrorBoundary>
               <SessionList onSelect={setSelectedSessionId} />
             </div>
           ) : (
-            <SessionComposer
-              projects={projects}
-              onCreateSession={setSelectedSessionId}
-            />
+            <ErrorBoundary>
+              <SessionComposer
+                projects={projects}
+                onCreateSession={setSelectedSessionId}
+              />
+            </ErrorBoundary>
           )}
         </div>
       </main>

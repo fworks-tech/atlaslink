@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { createTask, ApiError } from "@/lib/api";
-import { QUICK_MEMBERS } from "@/components/NewTaskForm";
+import { QUICK_MEMBERS } from "@/lib/constants";
 import type { Project } from "@/lib/types";
 
 export function SessionComposer({
@@ -20,16 +20,22 @@ export function SessionComposer({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim()) return;
+    const trimmed = prompt.trim();
+    if (!trimmed) return;
+    if (trimmed.length > 10000) {
+      setError("Prompt must be ≤10000 characters");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
       const res = await createTask({
         member,
-        prompt: prompt.trim(),
+        prompt: trimmed,
         ...(projectId ? { projectId } : {}),
       });
       setPrompt("");
+      // projectId retained intentionally for consecutive sessions in same project
       onCreateSession(res.session.sessionId);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "failed to create task");
@@ -95,6 +101,7 @@ export function SessionComposer({
               onChange={(e) => setPrompt(e.target.value)}
               placeholder='e.g. "Fix issue #42 — login redirects to /dashboard"'
               rows={3}
+              maxLength={10000}
               className="rounded-lg border border-white/10 bg-raised px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted/70 focus:border-accent/50 resize-none"
             />
           </div>
