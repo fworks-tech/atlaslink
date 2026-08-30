@@ -3,9 +3,9 @@
 **Source of truth:** `docs/architecture/README.md` (roadmap), ADR-002 (live
 projection of society provenance), ADR-003 (Atlas as root node).
 **Issue:** #7 (feat(dashboard): add live member run-update UI)
-**Status:** In progress — Branches 1–4 merged (scaffold, api client, session
-list, society diagram), member nodes + live pulse landed via PR #53.
-Branch 6 (drill-down) next.
+**Status:** In progress — Branches 1–5 merged (scaffold, api client, session
+list, society diagram, live diagram), member nodes + live pulse landed via PR #53.
+Branch 0 (projects backend) open on `feat/projects-backend`. Branch 6 (drill-down) next.
 
 M4 renders the live society diagram: **Atlas** (root node) holds a growing "sky
 of sessions"; each session is a delegation graph whose nodes are Agenthood
@@ -32,6 +32,16 @@ Atlas → Session("Fix issue #42")
 Each branch is small, self-contained, and teaches one core concept. Branches
 stack on the Fastify backend on `main` (shipped M3). The dashboard lives in
 `dashboard/` with its own `package.json`; backend `src/` stays untouched.
+
+### Branch 0 — `feat/projects-backend` (backend)
+- `projects` table + `sessions` directory table (maintained projection).
+- `POST/GET /projects`, `GET /projects/:projectId` — project CRUD.
+- `projectId` on `SessionEvent` + `SessionFilter` — project-scoped listing.
+- `POST /tasks` accepts `projectId` — sessions belong to projects.
+- `GET /projects/:projectId/events` — project-scoped SSE.
+- `SessionBackend` port extended: `listProjects()`, `getProject()`, `createProject()`.
+- All three backends implement project methods.
+- Learning: maintained projections, transactional upserts, event-sourced workspace model.
 
 ### Branch 1 — `feat/7-nextjs-scaffold`
 - Next.js 16 (App Router) + Tailwind v4 shell in `dashboard/`.

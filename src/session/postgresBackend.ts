@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta, SessionSnapshot } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project } from './types'
 import { VersionConflictError } from './types'
 import { rehydrate } from './sessionStore'
 import { deepFreeze } from './deepFreeze'
@@ -13,6 +13,20 @@ interface EventRow {
 
 interface VersionRow {
   version: number
+}
+
+interface ProjectRow {
+  id: string
+  name: string
+  created_at: string
+}
+
+interface SessionDirectoryRow {
+  session_id: string
+  project_id: string
+  title: string
+  status: string
+  created_at: string
 }
 
 function parseEvent(raw: string | SessionEvent): SessionEvent {
@@ -33,6 +47,9 @@ function parseEvent(raw: string | SessionEvent): SessionEvent {
  * after a DB-backed `get()`. They are single-process in-memory state; across
  * processes the DB is the source of truth and a stale `#versions` falls through
  * to the DB path and re-syncs.
+ *
+ * Sessions directory table is a maintained projection for fast
+ * project-scoped listing — upserted transactionally on each append.
  */
 export class PostgresBackend implements SessionBackend {
   #snapshots = new Map<string, SessionSnapshot>()
@@ -65,6 +82,37 @@ export class PostgresBackend implements SessionBackend {
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [this.tenantId, event.sessionId, next, event.correlationId, event.at, JSON.stringify(event)]
       )
+
+      // Maintain the sessions directory projection (transactionally consistent with event commit)
+      if (event.type === 'session.created' && event.projectId) {
+        const title = (event.prompt ?? event.sessionId).slice(0, 500)
+        await tx.query(
+          `INSERT INTO sessions (tenant_id, session_id, project_id, title, status, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, 'queued', $5, $5)
+           ON CONFLICT (tenant_id, session_id) DO UPDATE SET
+             project_id = EXCLUDED.project_id,
+             title = EXCLUDED.title,
+             updated_at = EXCLUDED.updated_at`,
+          [this.tenantId, event.sessionId, event.projectId, title, event.at]
+        )
+      } else if (event.type !== 'session.created') {
+        // status mapping is exhaustive; unknown types fail-fast to surface new SessionEvent variants
+        const statusMap: Record<string, string> = {
+          'session.running': 'running',
+          'session.succeeded': 'succeeded',
+          'session.failed': 'failed',
+          'session.cancelled': 'cancelled',
+        }
+        const status = statusMap[event.type]
+        if (!status) throw new Error(`unknown session event type for directory projection: ${event.type}`)
+        // For sessions not in the directory (no projectId), this UPDATE is a no-op
+        // but still touches the index; acceptable for expected scale (<1k sessions/project).
+        await tx.query(
+          `UPDATE sessions SET status = $3, updated_at = $4
+           WHERE tenant_id = $1 AND session_id = $2`,
+          [this.tenantId, event.sessionId, status, event.at]
+        )
+      }
     })
     this.#snapshots.delete(event.sessionId)
     const prev = this.#versions.get(event.sessionId) ?? 0
@@ -135,8 +183,38 @@ export class PostgresBackend implements SessionBackend {
              VALUES ($1, $2, $3, $4, $5, $6)`,
             [this.tenantId, sessionId, version, event.correlationId, event.at, JSON.stringify(event)]
           )
+          // Maintain sessions directory for each delta (same logic as append)
+          if (event.type === 'session.created' && (event as SessionEvent).projectId) {
+            const title = ((event as SessionEvent).prompt ?? sessionId).slice(0, 500)
+            await tx.query(
+              `INSERT INTO sessions (tenant_id, session_id, project_id, title, status, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, 'queued', $5, $5)
+               ON CONFLICT (tenant_id, session_id) DO UPDATE SET
+                 project_id = EXCLUDED.project_id,
+                 title = EXCLUDED.title,
+                 updated_at = EXCLUDED.updated_at`,
+              [this.tenantId, sessionId, (event as SessionEvent).projectId!, title, event.at]
+            )
+          } else if (event.type !== 'session.created') {
+            const statusMap: Record<string, string> = {
+              'session.running': 'running',
+              'session.succeeded': 'succeeded',
+              'session.failed': 'failed',
+              'session.cancelled': 'cancelled',
+            }
+            const status = statusMap[event.type]
+            if (!status) throw new Error(`unknown session event type for directory projection: ${event.type}`)
+            await tx.query(
+              `UPDATE sessions SET status = $3, updated_at = $4
+               WHERE tenant_id = $1 AND session_id = $2`,
+              [this.tenantId, sessionId, status, event.at]
+            )
+          }
         }
       })
+      // Invalidate snapshot cache after successful commit (mirrors append)
+      this.#snapshots.delete(sessionId)
+      this.#versions.delete(sessionId)
     } catch (err) {
       // a brand-new session has no row to `FOR UPDATE`, so two first writers can
       // both compute version 1 and collide on the UNIQUE constraint — surface the
@@ -156,16 +234,52 @@ export class PostgresBackend implements SessionBackend {
   /**
    * List applies the filters in SQL (bound parameters only — the task-rest
    * route never concatenates), then rehydrates the matching sessions from their
-   * event rows. The latest event per session decides the status filter; the
-   * first event's `at` decides the `since` filter; ordering is newest-first.
+   * event rows. When `projectId` is provided, uses the sessions directory
+   * for a fast project-scoped listing.
    */
   async list(filter: SessionFilter): Promise<SessionList> {
-    const status = filter.status ?? null
-    const since = filter.since ?? null
+    if (filter.projectId) {
+      return this.listByProject(filter)
+    }
+    return this.listAll(filter)
+  }
+
+  private async listByProject(filter: SessionFilter): Promise<SessionList> {
+    const projectId = filter.projectId!
+    const { status, since } = normalizeFilter(filter)
 
     const [countRes, pageRes] = await Promise.all([
       this.db.query<{ total: number }>(
-        `${rankedSessionCte()} SELECT count(*)::int AS total FROM ranked${rankedMatchClause()}`,
+        `SELECT count(*) AS total FROM sessions
+         WHERE tenant_id = $1 AND project_id = $2
+           AND ($3::text IS NULL OR status = $3)
+           AND ($4::text IS NULL OR created_at >= $4::timestamptz)`,
+        [this.tenantId, projectId, status, since]
+      ),
+      this.db.query<SessionDirectoryRow>(
+        `SELECT session_id, project_id, title, status, created_at FROM sessions
+         WHERE tenant_id = $1 AND project_id = $2
+           AND ($3::text IS NULL OR status = $3)
+           AND ($4::text IS NULL OR created_at >= $4::timestamptz)
+         ORDER BY created_at DESC
+         LIMIT $5 OFFSET $6`,
+        [this.tenantId, projectId, status, since, filter.limit, filter.offset]
+      ),
+    ])
+
+    const ids = pageRes.rows.map((r) => r.session_id)
+    const total = Number(countRes.rows[0]?.total ?? 0)
+    if (ids.length === 0) return { sessions: [], total }
+
+    return this.fetchAndRehydrate(ids, total)
+  }
+
+  private async listAll(filter: SessionFilter): Promise<SessionList> {
+    const { status, since } = normalizeFilter(filter)
+
+    const [countRes, pageRes] = await Promise.all([
+      this.db.query<{ total: number }>(
+        `${rankedSessionCte()} SELECT count(*) AS total FROM ranked${rankedMatchClause()}`,
         [this.tenantId, status, since]
       ),
       this.db.query<{ sessionId: string }>(
@@ -175,9 +289,13 @@ export class PostgresBackend implements SessionBackend {
     ])
 
     const ids = pageRes.rows.map((r) => r.sessionId)
-    const total = countRes.rows[0]?.total ?? 0
+    const total = Number(countRes.rows[0]?.total ?? 0)
     if (ids.length === 0) return { sessions: [], total }
 
+    return this.fetchAndRehydrate(ids, total)
+  }
+
+  private async fetchAndRehydrate(ids: string[], totalOverride?: number): Promise<SessionList> {
     const { rows } = await this.db.query<EventRow>(
       `SELECT session_id AS "sessionId", event FROM session_events
        WHERE tenant_id = $1 AND session_id = ANY($2::text[])
@@ -194,9 +312,38 @@ export class PostgresBackend implements SessionBackend {
     const sessions = [...bySession.values()]
       .map((events) => rehydrate(events))
       .filter((s): s is Session => s !== null)
-      // the event fetch is ordered by session_id, so re-apply the page order here
       .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
-    return { sessions, total }
+    return { sessions, total: totalOverride ?? ids.length }
+  }
+
+  async listProjects(): Promise<Project[]> {
+    const { rows } = await this.db.query<ProjectRow>(
+      `SELECT id, name, created_at FROM projects
+       WHERE tenant_id = $1
+       ORDER BY created_at DESC`,
+      [this.tenantId]
+    )
+    return rows.map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at }))
+  }
+
+  async getProject(id: string): Promise<Project | null> {
+    const { rows } = await this.db.query<ProjectRow>(
+      `SELECT id, name, created_at FROM projects
+       WHERE tenant_id = $1 AND id = $2`,
+      [this.tenantId, id]
+    )
+    if (rows.length === 0) return null
+    return { id: rows[0].id, name: rows[0].name, createdAt: rows[0].created_at }
+  }
+
+  async createProject(id: string, name: string): Promise<Project> {
+    const at = new Date().toISOString()
+    await this.db.query(
+      `INSERT INTO projects (tenant_id, id, name, created_at)
+       VALUES ($1, $2, $3, $4)`,
+      [this.tenantId, id, name, at]
+    )
+    return { id, name, createdAt: at }
   }
 }
 
@@ -222,4 +369,8 @@ function rankedMatchClause(): string {
            OR last_type = 'session.' || $2
            OR ($2 = 'queued' AND last_type = 'session.created'))
       AND ($3::text IS NULL OR created_at >= $3)`
+}
+
+function normalizeFilter(filter: SessionFilter): { status: string | null; since: string | null } {
+  return { status: filter.status ?? null, since: filter.since ?? null }
 }

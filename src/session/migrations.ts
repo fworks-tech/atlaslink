@@ -33,6 +33,36 @@ export const migrations: Migration[] = [
       CREATE INDEX session_events_correlation ON session_events (tenant_id, correlation_id);
     `,
   },
+  {
+    version: 2,
+    name: 'projects',
+    up: `
+      CREATE TABLE projects (
+        tenant_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (tenant_id, id)
+      );
+    `,
+  },
+  {
+    version: 3,
+    name: 'sessions_directory',
+    up: `
+      CREATE TABLE sessions (
+        tenant_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued',
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (tenant_id, session_id)
+      );
+      CREATE INDEX sessions_project_idx ON sessions (tenant_id, project_id, created_at DESC);
+    `,
+  },
 ]
 
 // Advisory lock key serializing the migrate loop across processes; two daemons

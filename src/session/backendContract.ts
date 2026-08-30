@@ -187,5 +187,54 @@ export async function backendContract(name: string, create: () => Promise<Sessio
       await store.append({ ...created, sessionId: 'ses-other', correlationId: 'cor-9' })
       assert.equal(await store.get('ses-missing'), null)
     })
+
+    await test('list filters by projectId, status and since, newest-first, with total before pagination', async () => {
+      const store = await create()
+      await store.append({
+        ...created,
+        sessionId: 'ses-a',
+        correlationId: 'cor-a',
+        at: '2026-01-01T00:00:00Z',
+        projectId: 'proj-1',
+      })
+      await store.append({
+        ...created,
+        sessionId: 'ses-b',
+        correlationId: 'cor-b',
+        at: '2026-01-02T00:00:00Z',
+        projectId: 'proj-1',
+      })
+      await store.append({
+        type: 'session.running',
+        sessionId: 'ses-b',
+        correlationId: 'cor-b',
+        at: '2026-01-02T00:00:01Z',
+      })
+      await store.append({
+        ...created,
+        sessionId: 'ses-c',
+        correlationId: 'cor-c',
+        at: '2026-01-03T00:00:00Z',
+        projectId: 'proj-2',
+      })
+
+      const all = await store.list({ limit: 50, offset: 0 })
+      assert.equal(all.total, 3)
+
+      const proj1 = await store.list({ projectId: 'proj-1', limit: 50, offset: 0 })
+      assert.equal(proj1.total, 2)
+      assert.deepEqual(
+        proj1.sessions.map((s) => s.sessionId),
+        ['ses-b', 'ses-a']
+      )
+
+      const proj2 = await store.list({ projectId: 'proj-2', limit: 50, offset: 0 })
+      assert.equal(proj2.total, 1)
+      assert.equal(proj2.sessions[0].sessionId, 'ses-c')
+
+      const proj1Running = await store.list({ projectId: 'proj-1', status: 'running', limit: 50, offset: 0 })
+      assert.equal(proj1Running.total, 1)
+      assert.equal(proj1Running.sessions[0].sessionId, 'ses-b')
+    })
   })
 }
