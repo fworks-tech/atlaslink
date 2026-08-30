@@ -13,9 +13,9 @@ export function ConnectionStatus() {
   const { connection, events } = useEvents();
   const state = STATE_LABEL[connection];
   return (
-    <div className="flex items-center justify-between">
+    <div role="status" aria-live="polite" aria-atomic="true" className="flex items-center justify-between">
       <span className="flex items-center gap-1.5">
-        <span className={`h-2 w-2 rounded-full ${state.dot}`} />
+        <span className={`h-2 w-2 rounded-full ${state.dot}`} aria-hidden="true" />
         {state.text}
       </span>
       <span className="font-mono text-muted">{events.length} events</span>

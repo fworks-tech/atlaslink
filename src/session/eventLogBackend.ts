@@ -44,12 +44,12 @@ export class EventLogBackend implements SessionBackend {
    * so a failed commit never advances it — the next readModifyWrite carrying the
    * old expectedVersion rejects, which is how the caller notices.
    */
-  append(event: SessionEvent): Promise<void> {
-    this.log.append({ ...event, eventId: this.log.nextEventId, type: event.type })
+  async append(event: SessionEvent): Promise<void> {
+    const persisted = this.log.append({ ...event, eventId: this.log.nextEventId, type: event.type })
+    if (!persisted) return
     this.#snapshots.delete(event.sessionId)
     const prev = this.#versions.get(event.sessionId) ?? 0
     this.#versions.set(event.sessionId, prev + 1)
-    return Promise.resolve()
   }
 
   async get(sessionId: string): Promise<Session | null> {

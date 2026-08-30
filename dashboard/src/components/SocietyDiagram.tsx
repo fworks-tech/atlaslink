@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -22,9 +22,20 @@ const nodeTypes = { atlas: AtlasNode, session: SessionNode, member: MemberNode }
 export function SocietyDiagram() {
   const { sessions, loading } = useSessions();
   const { events } = useEvents();
+  const [debouncedSessions, setDebouncedSessions] = useState(sessions);
+  const [debouncedEvents, setDebouncedEvents] = useState(events);
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setDebouncedSessions(sessions);
+      setDebouncedEvents(events);
+    }, 100);
+    return () => clearTimeout(id);
+  }, [sessions, events]);
+
   const { nodes: nextNodes, edges: nextEdges } = useMemo(
-    () => buildSocietyGraph(sessions, events),
-    [sessions, events],
+    () => buildSocietyGraph(debouncedSessions, debouncedEvents),
+    [debouncedSessions, debouncedEvents],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(nextNodes);
