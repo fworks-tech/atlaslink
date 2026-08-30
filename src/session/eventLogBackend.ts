@@ -14,6 +14,8 @@ const STORE_EVENT_TYPES = new Set([
   'session.succeeded',
   'session.failed',
   'session.cancelled',
+  'session.awaiting_input',
+  'session.user_reply',
 ])
 
 function isStoreSessionEvent(type: unknown): type is string {

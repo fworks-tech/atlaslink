@@ -1,4 +1,4 @@
-export type SessionStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+export type SessionStatus = 'queued' | 'running' | 'awaiting_input' | 'succeeded' | 'failed' | 'cancelled'
 
 export interface SessionEvent {
   type:
@@ -7,6 +7,8 @@ export interface SessionEvent {
     | 'session.succeeded'
     | 'session.failed'
     | 'session.cancelled'
+    | 'session.awaiting_input'
+    | 'session.user_reply'
   sessionId: string
   correlationId: string
   at: string
@@ -17,6 +19,10 @@ export interface SessionEvent {
   output?: string
   error?: string
   durationMs?: number
+  // awaiting_input / user_reply
+  question?: string
+  reply?: string
+  iteration?: number
 }
 
 /** What a readModifyWrite mutator may produce: a session event with the identity left to the store. */
@@ -36,6 +42,10 @@ export interface Session {
   output?: string
   error?: string
   durationMs?: number
+  // conversational + next-step projection (M4)
+  interaction: { role: 'user' | 'atlas' | 'member'; member?: string; at: string; content: string }[]
+  nextStep: { awaiting_input: boolean; prompt?: string; member?: string } | null
+  diagram: { nodes: { id: string; type: string; position: { x: number; y: number } }[]; edges: { id: string; source: string; target: string }[]; mode: string } | null
 }
 
 export interface Project {

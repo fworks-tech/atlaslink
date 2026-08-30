@@ -3,6 +3,7 @@ import type { SessionStatus } from "@/lib/types";
 const STATUS_STYLE: Record<SessionStatus, string> = {
   queued: "border-warn/30 bg-warn/15 text-warn",
   running: "border-accent/30 bg-accent/15 text-accent",
+  awaiting_input: "border-accent/30 bg-accent/10 text-accent animate-pulse",
   succeeded: "border-ok/30 bg-ok/15 text-ok",
   failed: "border-danger/30 bg-danger/15 text-danger",
   cancelled: "border-white/10 bg-white/10 text-muted",
