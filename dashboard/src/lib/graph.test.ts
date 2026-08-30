@@ -148,4 +148,46 @@ describe("buildSocietyGraph", () => {
       expect(node.position.y).toBeGreaterThan(atlasY);
     }
   });
+
+  it("isolates to selectedSessionId when provided — not rehydrating other sessions", () => {
+    const ses1 = session("ses-1", "cor-1", "succeeded");
+    const ses2 = session("ses-2", "cor-2", "succeeded");
+    const events: BridgeEvent[] = [
+      event({ eventId: 1, correlationId: "cor-1", member: "the-mediator" }),
+      event({ eventId: 2, correlationId: "cor-2", member: "the-builder" }),
+      event({ eventId: 10, type: "session.created", sessionId: "ses-2", correlationId: "cor-2", member: "the-mediator" } as unknown as BridgeEvent),
+    ];
+    const graph = buildSocietyGraph([ses1, ses2], events, { selectedSessionId: "ses-1" });
+    expect(graph.nodes.some((n) => n.id === "ses-2")).toBe(false);
+    expect(graph.nodes.some((n) => n.id === "ses-1")).toBe(true);
+    const ses1Node = graph.nodes.find((n) => n.id === "ses-1");
+    expect(ses1Node?.data).toBeDefined();
+    // chain must not leak members from the other correlation
+    expect((ses1Node?.data as { members: string[] }).members).toEqual(["the-mediator"]);
+    expect((ses1Node?.data as { members: string[] }).members).not.toContain("the-builder");
+    expect(memberNodesOf(graph).every((m) => m.id.startsWith("ses-1::"))).toBe(true);
+  });
+
+  it("returns only atlas when selectedSessionId does not match any live session", () => {
+    const ses1 = session("ses-1", "cor-1", "running");
+    const events: BridgeEvent[] = [event({ eventId: 1, correlationId: "cor-1", member: "the-mediator" })];
+    const graph = buildSocietyGraph([ses1], events, { selectedSessionId: "ses-unknown" });
+    expect(graph.nodes).toHaveLength(1);
+    expect(graph.nodes[0].id).toBe("atlas");
+    expect(graph.edges).toEqual([]);
+  });
+
+  it("isolates full DAG artifacts to the selected correlation", () => {
+    const ses1 = session("ses-1", "cor-1", "succeeded");
+    const ses2 = session("ses-2", "cor-2", "succeeded");
+    const events: BridgeEvent[] = [
+      event({ eventId: 1, correlationId: "cor-1", member: "the-mediator" }),
+      event({ eventId: 2, correlationId: "cor-2", member: "the-builder" }),
+      event({ eventId: 3, type: "reasoning", correlationId: "cor-1", member: "the-mediator", step: 1 } as unknown as BridgeEvent),
+      event({ eventId: 4, type: "reasoning", correlationId: "cor-2", member: "the-builder", step: 1 } as unknown as BridgeEvent),
+    ];
+    const graph = buildSocietyGraph([ses1, ses2], events, { mode: "full", selectedSessionId: "ses-1" });
+    expect(graph.nodes.some((n) => n.id.includes("ses-2"))).toBe(false);
+    expect(graph.nodes.some((n) => n.id === "ses-1::reasoning::1")).toBe(true);
+  });
 });
