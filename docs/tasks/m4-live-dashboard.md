@@ -3,7 +3,7 @@
 **Source of truth:** `docs/architecture/README.md` (roadmap), ADR-002 (live
 projection of society provenance), ADR-003 (Atlas as root node).
 **Issue:** #7 (feat(dashboard): add live member run-update UI)
-**Status:** In progress — Branches 0–5 merged (incl. `feat/projects-backend` #58 `661c992`), Branches 6 drill-down + 7 full-DAG builder landed (`f47b34f` virtualize+delete, `8e9a874` FULL DAG) — PR #63 open. Ready for review.
+**Status:** Shipped — Branches 0–7 merged to `main` (#58 `661c992` projects, #63 `76232ff` FULL DAG, #64 `7b02cd2` `force-dynamic`). Isolation polish in progress — `fix/issue-7-isolate-session-diagram` (#7: empty composer when unselected, isolate by `sessionId`).
 
 M4 renders the live society diagram: **Atlas** (root node) holds a growing "sky
 of sessions"; each session is a delegation graph whose nodes are Agenthood
