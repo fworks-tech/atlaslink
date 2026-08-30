@@ -1,4 +1,4 @@
-import type { Session, TaskListResponse } from "./types";
+import type { Session, TaskListResponse, Project, ProjectListResponse } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -39,13 +39,16 @@ export async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T>
   return (await res.json()) as T;
 }
 
-export function getTasks(limit = 50, offset = 0): Promise<TaskListResponse> {
-  return fetchJSON<TaskListResponse>(`/tasks?limit=${limit}&offset=${offset}`);
+export function getTasks(limit = 50, offset = 0, projectId?: string): Promise<TaskListResponse> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (projectId) params.set("projectId", projectId);
+  return fetchJSON<TaskListResponse>(`/tasks?${params.toString()}`);
 }
 
 export interface CreateTaskInput {
   member: string;
   prompt: string;
+  projectId?: string;
   tweaks?: Record<string, unknown>;
 }
 
@@ -56,4 +59,21 @@ export interface CreateTaskResponse {
 
 export function createTask(input: CreateTaskInput): Promise<CreateTaskResponse> {
   return fetchJSON<CreateTaskResponse>("/tasks", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function listProjects(): Promise<ProjectListResponse> {
+  return fetchJSON<ProjectListResponse>("/projects");
+}
+
+export interface CreateProjectInput {
+  name: string;
+}
+
+export interface CreateProjectResponse {
+  ok: boolean;
+  project: Project;
+}
+
+export function createProject(input: CreateProjectInput): Promise<CreateProjectResponse> {
+  return fetchJSON<CreateProjectResponse>("/projects", { method: "POST", body: JSON.stringify(input) });
 }
