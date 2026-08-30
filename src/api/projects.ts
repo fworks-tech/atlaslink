@@ -44,4 +44,13 @@ export function registerProjectRoutes(app: FastifyInstance, deps: ProjectDeps): 
     if (!project) return reply.code(404).send({ ok: false, error: 'unknown project' })
     return reply.send({ ok: true, project })
   })
+
+  app.delete<{ Params: { projectId: string } }>(
+    '/projects/:projectId',
+    async (request, reply) => {
+      const deleted = await deps.backend.deleteProject(request.params.projectId)
+      if (!deleted) return reply.code(404).send({ ok: false, error: 'unknown project' })
+      return reply.send({ ok: true })
+    }
+  )
 }
