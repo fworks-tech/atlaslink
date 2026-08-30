@@ -83,8 +83,6 @@ export function Sidebar({
       setNewProjectName("");
       setShowNewProject(false);
       setExpandedProjects((prev) => new Set(prev).add(project.id));
-    } else {
-      setCreateError("Failed to create project");
     }
   };
 
@@ -170,7 +168,7 @@ export function Sidebar({
 
             {unassigned.length > 0 && (
               <div className="mt-2 border-t border-white/5 pt-2">
-                {groupByDate(unassigned).entries().toArray().map(([label, items]) => (
+                {Array.from(groupByDate(unassigned).entries()).map(([label, items]) => (
                   <SessionGroup
                     key={label}
                     label={label}

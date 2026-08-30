@@ -42,7 +42,13 @@ export function useProjects() {
         setProjects((prev) => [res.project, ...prev]);
         return res.project;
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : "failed to create project");
+        const msg =
+          err instanceof ApiError && err.status === 404
+            ? "Project API not available — backend needs redeploy"
+            : err instanceof Error
+              ? err.message
+              : "failed to create project";
+        setError(msg);
         return null;
       }
     },

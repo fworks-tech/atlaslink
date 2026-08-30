@@ -6,7 +6,19 @@ import { log } from '../log'
 function safeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a)
   const right = Buffer.from(b)
-  return left.length === right.length && timingSafeEqual(left, right)
+  if (left.length !== right.length) {
+    // Avoid length oracle: still invoke timingSafeEqual on equal-length buffers
+    // so the early-return timing does not reveal the expected length. Use a
+    // dummy of the same shape as `right` when lengths differ.
+    const dummy = Buffer.alloc(right.length)
+    try {
+      timingSafeEqual(dummy, right)
+    } catch {
+      /* ignore — dummy compare is only for timing */
+    }
+    return false
+  }
+  return timingSafeEqual(left, right)
 }
 
 /** Hostnames that are loopback-equivalent; anything else is a cross-host bind. */

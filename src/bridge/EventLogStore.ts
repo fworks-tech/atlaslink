@@ -69,17 +69,20 @@ export class EventLogStore {
     return this.#nextEventId
   }
 
-  append(envelope: BridgeEnvelope): void {
-    if (!Number.isInteger(envelope.eventId) || envelope.eventId < this.#nextEventId) return
+  append(envelope: BridgeEnvelope): boolean {
+    if (!Number.isInteger(envelope.eventId) || envelope.eventId < this.#nextEventId) return false
     this.#nextEventId = envelope.eventId + 1
     const line = JSON.stringify(envelope) + '\n'
-    this.#rotateIfNeeded(Buffer.byteLength(line, 'utf8'))
+    const incomingLen = Buffer.byteLength(line, 'utf8')
+    this.#rotateIfNeeded(incomingLen)
     try {
       appendFileSync(this.#path(0), line, 'utf8')
-      this.#tailBytes += Buffer.byteLength(line, 'utf8')
+      this.#tailBytes += incomingLen
+      return true
     } catch {
       // swallow-write-failure: a slow/failed disk write never blocks the live stream
       log.warn('append failed, swallowed', { eventId: envelope.eventId, dataDir: this.dataDir })
+      return false
     }
   }
 
@@ -110,10 +113,16 @@ export class EventLogStore {
       this.#tailBytes = 0
       this.#writeSeq()
     } catch {
-      // rotation must never break live streaming either; size state resets so a
-      // persistent rename failure does not re-throw on every append
+      // rotation must never break live streaming; preserve accounting so the next
+      // append still triggers rotation instead of silently exceeding the cap
       log.warn('rotation failed, swallowed', { dataDir: this.dataDir })
-      this.#tailBytes = 0
+      try {
+        this.#tailBytes = existsSync(this.#path(0))
+          ? Buffer.byteLength(readFileSync(this.#path(0), 'utf8'), 'utf8')
+          : 0
+      } catch {
+        this.#tailBytes = 0
+      }
     }
   }
 

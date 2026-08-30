@@ -63,14 +63,19 @@ export class SseHandler {
 
   /**
    * Project-scoped variant: replay-then-live limited to sessions belonging to
-   * a project. `correlationIds` is the pre-fetched set of correlation IDs for
-   * all sessions in the project at connection time (v1). Sessions created
-   * after the connection opens are not included in the live stream until the
-   * client reconnects; the PR description calls this out as an accepted
-   * limitation matching the per-session SSE pattern.
+   * a project. `correlationIds` is the pre-fetched set at connection time; the
+   * live stream grows the set when a `session.created` for this project arrives
+   * so a client that stays connected sees new sessions without reconnecting.
    */
-  handleForProject(req: IncomingMessage, res: ServerResponse, correlationIds: Set<string>): void {
-    this.#handle(req, res, (envelope) => correlationIds.has(envelope.correlationId as string))
+  handleForProject(req: IncomingMessage, res: ServerResponse, projectId: string, correlationIds: Set<string>): void {
+    const liveIds = new Set(correlationIds)
+    this.#handle(req, res, (envelope) => {
+      if (envelope.type === 'session.created' && (envelope as { projectId?: string }).projectId === projectId) {
+        const cid = envelope.correlationId as string | undefined
+        if (typeof cid === 'string') liveIds.add(cid)
+      }
+      return liveIds.has(envelope.correlationId as string)
+    })
   }
 
   #handle(req: IncomingMessage, res: ServerResponse, filter?: (envelope: BridgeEnvelope) => boolean): void {
