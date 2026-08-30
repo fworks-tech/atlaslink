@@ -63,8 +63,12 @@ export function buildSocietyGraph(
 ): SocietyGraph {
   const mode = opts?.mode ?? "chain";
   const selectedId = opts?.selectedSessionId;
+  // Source of truth for isolation: isolate post-withLiveUpdates so a
+  // session.created tail event for an unselected session never rehydrates.
+  // View pre-filtering (SocietyDiagram) is a performance pre-filter only.
   const liveAll = withLiveUpdates(sessions, events);
-  const live = selectedId ? liveAll.filter((s) => s.sessionId === selectedId) : liveAll;
+  const isolatedLive = selectedId ? liveAll.filter((s) => s.sessionId === selectedId) : liveAll;
+  const live = isolatedLive;
 
   const graph = new dagre.graphlib.Graph();
   graph.setDefaultEdgeLabel(() => ({}));

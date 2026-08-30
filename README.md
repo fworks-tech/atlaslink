@@ -107,7 +107,7 @@ Configure `dashboard/.env.local` when proxying a remote backend (Render :10000 v
 
 ```bash
 ATLASLINK_API_URL=https://atlaslink-backend.onrender.com
-ATLASLINK_API_TOKEN=236d8505… # must match backend ATLASLINK_API_TOKEN
+ATLASLINK_API_TOKEN=<your-atlaslink-token> # must match backend ATLASLINK_API_TOKEN (placeholder — not a real token)
 ```
 
 Selecting a session from the sidebar pushes `/?session=<id>&project=<id>&mode=full` (canonical deep-link; `/?q=<b64url>` and `/project/:p/session/:s` + `/s/:token` redirect there). The header shows *Viewing session `ses-…`*; the diagram isolates to `ATLAS → selected SESSION card → mediator delegation chain (reasoning hex → tool parallelogram → decision diamond → awaiting/terminal)` and updates live from the event bridge.
