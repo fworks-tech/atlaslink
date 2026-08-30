@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createTask, ApiError } from "@/lib/api";
 import type { Project } from "@/lib/types";
 
@@ -15,6 +15,17 @@ export function SessionComposer({
   const [projectId, setProjectId] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; kind: "success" | "error" } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
+    return () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    };
+  }, [toast]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,9 +44,12 @@ export function SessionComposer({
         ...(projectId ? { projectId } : {}),
       });
       setPrompt("");
+      setToast({ message: "Task created", kind: "success" });
       onCreateSession(res.session.sessionId);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "failed to create task");
+      const msg = err instanceof ApiError ? err.message : "failed to create task";
+      setError(msg);
+      setToast({ message: msg, kind: "error" });
     } finally {
       setSubmitting(false);
     }
@@ -96,6 +110,27 @@ export function SessionComposer({
             {error && <p className="text-xs text-danger">{error}</p>}
           </div>
         </form>
+        {toast && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={`fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg border px-4 py-2 text-sm shadow-lg backdrop-blur-sm ${
+              toast.kind === "success"
+                ? "border-ok/20 bg-ok/10 text-ok"
+                : "border-danger/20 bg-danger/10 text-danger"
+            }`}
+          >
+            {toast.message}
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              aria-label="Dismiss notification"
+              className="ml-3 text-xs opacity-70 hover:opacity-100"
+            >
+              ×
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

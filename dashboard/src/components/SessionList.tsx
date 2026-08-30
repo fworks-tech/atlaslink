@@ -12,7 +12,22 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
   const live = useMemo(() => withLiveUpdates(sessions, events), [sessions, events]);
 
   if (loading) {
-    return <p className="py-8 text-center text-sm text-muted">Loading sessions…</p>;
+    return (
+      <div className="overflow-hidden rounded-xl border border-white/5 bg-surface" aria-busy="true" aria-label="Loading sessions">
+        <div className="border-b border-white/5 px-4 py-3">
+          <div className="h-3 w-20 animate-pulse rounded bg-white/10" />
+        </div>
+        <div className="divide-y divide-white/5">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-4 px-4 py-3">
+              <div className="h-3 w-32 animate-pulse rounded bg-white/10" />
+              <div className="h-3 w-24 animate-pulse rounded bg-white/5" />
+              <div className="ml-auto h-5 w-16 animate-pulse rounded-full bg-white/5" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   if (error) {
@@ -38,8 +53,8 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-white/5 bg-surface">
-      <table className="w-full text-left text-sm">
+    <div className="overflow-x-auto rounded-xl border border-white/5 bg-surface">
+      <table className="w-full min-w-[640px] text-left text-sm">
         <thead className="border-b border-white/5 text-xs uppercase tracking-widest text-muted">
           <tr>
             <th className="px-4 py-3 font-medium">session</th>
@@ -53,8 +68,20 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
           {live.map((session) => (
             <tr
               key={session.sessionId}
+              role={onSelect ? "button" : undefined}
+              tabIndex={onSelect ? 0 : undefined}
               onClick={onSelect ? () => onSelect(session.sessionId) : undefined}
-              className={`border-b border-white/5 last:border-0 ${onSelect ? "cursor-pointer hover:bg-raised/60" : ""}`}
+              onKeyDown={
+                onSelect
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelect(session.sessionId);
+                      }
+                    }
+                  : undefined
+              }
+              className={`border-b border-white/5 last:border-0 ${onSelect ? "cursor-pointer hover:bg-raised/60 focus-visible:outline-none focus-visible:bg-raised/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" : ""}`}
             >
               <td className="max-w-xs truncate px-4 py-3 pr-8">
                 <div className="truncate text-foreground">{session.task.prompt}</div>
