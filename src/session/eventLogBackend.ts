@@ -30,6 +30,7 @@ function isStoreSessionEvent(type: unknown): type is string {
 export class EventLogBackend implements SessionBackend {
   readonly log: EventLogStore
   #snapshots = new Map<string, SessionSnapshot>()
+  #versions = new Map<string, number>()
 
   constructor(log: EventLogStore) {
     this.log = log
@@ -44,14 +45,21 @@ export class EventLogBackend implements SessionBackend {
   append(event: SessionEvent): Promise<void> {
     this.log.append({ ...event, eventId: this.log.nextEventId, type: event.type })
     this.#snapshots.delete(event.sessionId)
+    const prev = this.#versions.get(event.sessionId) ?? 0
+    this.#versions.set(event.sessionId, prev + 1)
     return Promise.resolve()
   }
 
   async get(sessionId: string): Promise<Session | null> {
+    const cached = this.#snapshots.get(sessionId)
+    const cachedVersion = this.#versions.get(sessionId)
+    if (cached !== undefined && cachedVersion !== undefined && cached.version === cachedVersion) {
+      return cached.session
+    }
+
     const events = this.#sessionEvents(sessionId)
     const currentVersion = events.length
 
-    const cached = this.#snapshots.get(sessionId)
     if (cached !== undefined && cached.version === currentVersion) {
       return cached.session
     }
@@ -61,8 +69,10 @@ export class EventLogBackend implements SessionBackend {
       this.#snapshots.delete(sessionId)
       return null
     }
-    this.#snapshots.set(sessionId, { session: deepFreeze(session), version: currentVersion })
-    return session
+    const frozen = deepFreeze(session)
+    this.#snapshots.set(sessionId, { session: frozen, version: currentVersion })
+    this.#versions.set(sessionId, currentVersion)
+    return frozen
   }
 
   async readModifyWrite(
@@ -77,6 +87,7 @@ export class EventLogBackend implements SessionBackend {
     }
 
     const current = events.length > 0 ? rehydrate(events) : null
+    // invalidation flows through append() — each delta append deletes the snapshot and bumps #versions
     for (const delta of mutator(current)) {
       await this.append({ ...delta, sessionId })
     }

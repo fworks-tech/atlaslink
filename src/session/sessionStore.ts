@@ -102,9 +102,11 @@ export class SessionStore implements SessionBackend {
       return cached.session
     }
 
-    const session = rehydrate(list)!
-    this.#snapshots.set(sessionId, { session: deepFreeze(session), version: currentVersion })
-    return session
+    const session = rehydrate(list)
+    if (session === null) throw new Error(`rehydrate returned null for non-empty list: ${sessionId}`)
+    const frozen = deepFreeze(session)
+    this.#snapshots.set(sessionId, { session: frozen, version: currentVersion })
+    return frozen
   }
 
   async list(filter: SessionFilter): Promise<SessionList> {
@@ -128,6 +130,7 @@ export class SessionStore implements SessionBackend {
     }
 
     const current = list.length > 0 ? rehydrate(list) : null
+    // invalidation flows through append() — each delta append deletes the snapshot
     for (const delta of mutator(current)) {
       await this.append({ ...delta, sessionId })
     }

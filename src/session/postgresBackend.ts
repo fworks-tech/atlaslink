@@ -25,10 +25,25 @@ function parseEvent(raw: string | SessionEvent): SessionEvent {
  * a `FOR UPDATE` transaction so two writers holding the same `expectedVersion`
  * cannot both commit (the #32 class of bug). `tenant_id` is set per row now so
  * the auth ADR's tenant scoping is additive, not a schema rewrite.
+ *
+ * Snapshot cache: `#snapshots` holds the frozen aggregate per session;
+ * `#versions` is the local commit counter that enables zero-I/O hits — `get()`
+ * returns the cached snapshot when `#versions` matches the snapshot version
+ * without touching Postgres. The two maps are updated together in `append()` and
+ * after a DB-backed `get()`. They are single-process in-memory state; across
+ * processes the DB is the source of truth and a stale `#versions` falls through
+ * to the DB path and re-syncs.
  */
 export class PostgresBackend implements SessionBackend {
   #snapshots = new Map<string, SessionSnapshot>()
   #versions = new Map<string, number>()
+
+  #cachedSnapshot(sessionId: string): Session | null {
+    const version = this.#versions.get(sessionId)
+    if (version === undefined) return null
+    const snap = this.#snapshots.get(sessionId)
+    return snap !== undefined && snap.version === version ? snap.session : null
+  }
 
   constructor(
     private readonly db: Db,
@@ -57,13 +72,8 @@ export class PostgresBackend implements SessionBackend {
   }
 
   async get(sessionId: string): Promise<Session | null> {
-    const cachedVersion = this.#versions.get(sessionId)
-    if (cachedVersion !== undefined) {
-      const cached = this.#snapshots.get(sessionId)
-      if (cached !== undefined && cached.version === cachedVersion) {
-        return cached.session
-      }
-    }
+    const hit = this.#cachedSnapshot(sessionId)
+    if (hit !== null) return hit
 
     const { rows } = await this.db.query<EventRow>(
       `SELECT event FROM session_events
@@ -76,13 +86,17 @@ export class PostgresBackend implements SessionBackend {
     const currentVersion = rows.length
     const cached = this.#snapshots.get(sessionId)
     if (cached !== undefined && cached.version === currentVersion) {
+      // re-sync #versions if it drifted (e.g. after restart or cross-process write)
+      this.#versions.set(sessionId, currentVersion)
       return cached.session
     }
 
-    const session = rehydrate(rows.map((r) => parseEvent(r.event)))!
-    this.#snapshots.set(sessionId, { session: deepFreeze(session), version: currentVersion })
+    const session = rehydrate(rows.map((r) => parseEvent(r.event)))
+    if (session === null) throw new Error(`rehydrate returned null for non-empty rows: ${sessionId}`)
+    const frozen = deepFreeze(session)
+    this.#snapshots.set(sessionId, { session: frozen, version: currentVersion })
     this.#versions.set(sessionId, currentVersion)
-    return session
+    return frozen
   }
 
   async readModifyWrite(

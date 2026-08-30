@@ -148,6 +148,7 @@ export async function backendContract(name: string, create: () => Promise<Sessio
       assert.ok(a && b)
       assert.equal(a, b) // cached reference
       assert.ok(Object.isFrozen(a))
+      assert.ok(Object.isFrozen(a.task))
 
       await store.append({ type: 'session.running', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:01Z' })
       const c = await store.get('ses-1')
@@ -155,6 +156,36 @@ export async function backendContract(name: string, create: () => Promise<Sessio
       assert.notEqual(a, c) // invalidated by the append
       assert.equal(c.status, 'running')
       assert.equal(c.version, 2)
+    })
+
+    await test('list is not served from the snapshot cache', async () => {
+      const store = await create()
+      await store.append(created)
+      const a = await store.get('ses-1')
+      assert.ok(a)
+
+      await store.append({
+        type: 'session.created',
+        sessionId: 'ses-2',
+        correlationId: 'cor-2',
+        at: '2026-01-02T00:00:00Z',
+        member: 'x',
+        prompt: 'y',
+      })
+
+      const listed = await store.list({ limit: 50, offset: 0 })
+      assert.equal(listed.total, 2)
+      const again = await store.get('ses-1')
+      assert.ok(again)
+      assert.equal(again, a) // ses-1 snapshot still valid
+    })
+
+    await test('repeated get on an unknown session stays null', async () => {
+      const store = await create()
+      assert.equal(await store.get('ses-missing'), null)
+      assert.equal(await store.get('ses-missing'), null)
+      await store.append({ ...created, sessionId: 'ses-other', correlationId: 'cor-9' })
+      assert.equal(await store.get('ses-missing'), null)
     })
   })
 }

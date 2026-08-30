@@ -12,8 +12,8 @@ silently clobbering.
 | `sessionBackend.ts` | The `SessionBackend` port: `append`, `get`, `readModifyWrite`. Implementations must keep version-check + commit atomic. |
 | `sessionStore.ts` | In-memory `SessionStore` plus the shared `rehydrate(events)` reducer and the `StreamIntegrityError`/`VersionConflictError` types. |
 | `deepFreeze.ts` | `deepFreeze(value)` — recursively freezes an object graph. Used by every backend to prevent snapshot mutation. |
-| `eventLogBackend.ts` | `EventLogBackend`: the same contract over the NDJSON `EventLogStore`, with a per-session snapshot cache invalidated on append. |
-| `postgresBackend.ts` | `PostgresBackend` over Postgres event tables — pending `feat/6-postgres-backend`. CAS is enforced inside a `FOR UPDATE` transaction. Per-session snapshot cache with in-memory version tracking to short-circuit DB reads on cache hits. |
+| `eventLogBackend.ts` | `EventLogBackend`: the same contract over the NDJSON `EventLogStore`, with a per-session `SessionSnapshot` cache and `#versions` map for zero-I/O hits; invalidated on `append` to that session. |
+| `postgresBackend.ts` | `PostgresBackend` over Postgres event tables. CAS is enforced inside a `FOR UPDATE` transaction. Per-session `SessionSnapshot` cache with `#versions` in-memory counter for zero-I/O hits; the cache is single-process state — cross-process writes fall through to Postgres and re-sync. |
 | `db.ts` | Minimal `Db` seam (`query`/`exec`/`transaction`) with `pglite` (hermetic CI) and `pg` (managed) adapters. |
 | `migrations.ts` | Hand-rolled runner: applied-versions table, standard-SQL migrations in one transaction guarded by an advisory xact lock, so the identical statements run on both drivers. |
 | `backendFactory.ts` | `createSessionBackend()`: in-memory by default; `ATLASLINK_DATABASE_URL` selects Postgres (migrations applied first). |
