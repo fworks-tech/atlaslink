@@ -236,5 +236,37 @@ export async function backendContract(name: string, create: () => Promise<Sessio
       assert.equal(proj1Running.total, 1)
       assert.equal(proj1Running.sessions[0].sessionId, 'ses-b')
     })
+
+    await test('createProject / listProjects / getProject / deleteProject lifecycle', async () => {
+      const store = await create()
+      const p = await store.createProject('proj-x', 'probe')
+      assert.equal(p.id, 'proj-x')
+      assert.equal(p.name, 'probe')
+
+      const listed = await store.listProjects()
+      assert.ok(listed.some((pr) => pr.id === 'proj-x'))
+
+      const fetched = await store.getProject('proj-x')
+      assert.equal(fetched?.name, 'probe')
+
+      // project-scoped session is removed when the project is deleted
+      await store.append({
+        type: 'session.created',
+        sessionId: 'ses-proj',
+        correlationId: 'cor-proj',
+        at: '2026-01-04T00:00:00Z',
+        member: 'm',
+        prompt: 'p',
+        projectId: 'proj-x',
+      })
+      const deleted = await store.deleteProject('proj-x')
+      assert.equal(deleted, true)
+      assert.equal(await store.getProject('proj-x'), null)
+      assert.equal(await store.deleteProject('proj-x'), false)
+      assert.equal(await store.deleteProject('proj-missing'), false)
+      const after = await store.list({ projectId: 'proj-x', limit: 50, offset: 0 })
+      assert.equal(after.total, 0)
+      assert.equal(await store.get('ses-proj'), null)
+    })
   })
 }

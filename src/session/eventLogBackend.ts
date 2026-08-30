@@ -33,6 +33,7 @@ export class EventLogBackend implements SessionBackend {
   #versions = new Map<string, number>()
   /** In-memory projects — lost on restart; PostgresBackend is durable. */
   #projects = new Map<string, Project>()
+  #deletedProjects = new Set<string>()
 
   constructor(log: EventLogStore) {
     this.log = log
@@ -56,6 +57,7 @@ export class EventLogBackend implements SessionBackend {
     const cached = this.#snapshots.get(sessionId)
     const cachedVersion = this.#versions.get(sessionId)
     if (cached !== undefined && cachedVersion !== undefined && cached.version === cachedVersion) {
+      if (cached.session.projectId !== undefined && this.#deletedProjects.has(cached.session.projectId)) return null
       return cached.session
     }
 
@@ -63,11 +65,16 @@ export class EventLogBackend implements SessionBackend {
     const currentVersion = events.length
 
     if (cached !== undefined && cached.version === currentVersion) {
+      if (cached.session.projectId !== undefined && this.#deletedProjects.has(cached.session.projectId)) return null
       return cached.session
     }
 
     const session = events.length > 0 ? rehydrate(events) : null
     if (session === null) {
+      this.#snapshots.delete(sessionId)
+      return null
+    }
+    if (session.projectId !== undefined && this.#deletedProjects.has(session.projectId)) {
       this.#snapshots.delete(sessionId)
       return null
     }
@@ -107,6 +114,7 @@ export class EventLogBackend implements SessionBackend {
     const sessions = [...bySession.values()]
       .map((events) => rehydrate(events))
       .filter((s): s is Session => s !== null)
+      .filter((s) => s.projectId === undefined || !this.#deletedProjects.has(s.projectId))
     return filterSessions(sessions, filter)
   }
 
@@ -124,6 +132,18 @@ export class EventLogBackend implements SessionBackend {
     const project: Project = { id, name, createdAt: new Date().toISOString() }
     this.#projects.set(id, project)
     return project
+  }
+
+  async deleteProject(id: string): Promise<boolean> {
+    const existed = this.#projects.delete(id)
+    if (existed) this.#deletedProjects.add(id)
+    for (const [sessionId, snap] of this.#snapshots.entries()) {
+      if (snap.session.projectId === id) {
+        this.#snapshots.delete(sessionId)
+        this.#versions.delete(sessionId)
+      }
+    }
+    return existed
   }
 
   #sessionEvents(sessionId: string): SessionEvent[] {
