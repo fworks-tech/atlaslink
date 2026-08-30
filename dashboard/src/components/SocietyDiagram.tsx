@@ -35,6 +35,8 @@ const nodeTypes = {
   terminal: TerminalNode,
 } as unknown as NodeTypes;
 
+const DEBOUNCE_MS = 100;
+
 export function SocietyDiagram({
   selectedSessionId,
   mode = "full",
@@ -46,15 +48,30 @@ export function SocietyDiagram({
 }) {
   const { sessions, loading } = useSessions();
   const { events } = useEvents();
+
+  // Stable correlationId for the selected session — derive from the session row
+  // when loaded, fall back to buffered events so the chain renders before the
+  // session fetch resolves (avoids transient empty chain on hard-reload).
+  const selectedCorrelationId = useMemo(
+    () => sessions.find((s) => s.sessionId === selectedSessionId)?.correlationId,
+    [sessions, selectedSessionId],
+  );
+  const cidFromEvents = useMemo(() => {
+    if (selectedCorrelationId) return selectedCorrelationId;
+    const seeded = events.find((e) => e.sessionId === selectedSessionId)?.correlationId;
+    return typeof seeded === "string" && seeded.length > 0 ? seeded : undefined;
+  }, [events, selectedSessionId, selectedCorrelationId]);
+
   const filteredSessions = useMemo(
     () => sessions.filter((s) => s.sessionId === selectedSessionId),
-    [sessions, selectedSessionId]
+    [sessions, selectedSessionId],
   );
+  // Contract: view pre-filters by correlationId for performance; buildSocietyGraph
+  // is the source of truth for isolation (post-withLiveUpdates, no rehydration).
   const filteredEvents = useMemo(() => {
-    const cid = filteredSessions[0]?.correlationId;
-    if (!cid) return events.filter((e) => e.sessionId === selectedSessionId);
-    return events.filter((e) => e.correlationId === cid || e.sessionId === selectedSessionId);
-  }, [events, filteredSessions, selectedSessionId]);
+    if (!cidFromEvents) return events.filter((e) => e.sessionId === selectedSessionId);
+    return events.filter((e) => e.correlationId === cidFromEvents || e.sessionId === selectedSessionId);
+  }, [events, selectedSessionId, cidFromEvents]);
   const [debouncedSessions, setDebouncedSessions] = useState(filteredSessions);
   const [debouncedEvents, setDebouncedEvents] = useState(filteredEvents);
 
@@ -62,7 +79,7 @@ export function SocietyDiagram({
     const id = setTimeout(() => {
       setDebouncedSessions(filteredSessions);
       setDebouncedEvents(filteredEvents);
-    }, 100);
+    }, DEBOUNCE_MS);
     return () => clearTimeout(id);
   }, [filteredSessions, filteredEvents]);
 
