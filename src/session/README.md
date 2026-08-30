@@ -11,12 +11,13 @@ silently clobbering.
 |------|----------------|
 | `sessionBackend.ts` | The `SessionBackend` port: `append`, `get`, `readModifyWrite`. Implementations must keep version-check + commit atomic. |
 | `sessionStore.ts` | In-memory `SessionStore` plus the shared `rehydrate(events)` reducer and the `StreamIntegrityError`/`VersionConflictError` types. |
-| `eventLogBackend.ts` | `EventLogBackend`: the same contract over the NDJSON `EventLogStore`, with a frozen snapshot cache keyed by the log cursor. |
-| `postgresBackend.ts` | `PostgresBackend` over Postgres event tables — pending `feat/6-postgres-backend`. CAS is enforced inside a `FOR UPDATE` transaction. |
+| `deepFreeze.ts` | `deepFreeze(value)` — recursively freezes an object graph. Used by every backend to prevent snapshot mutation. |
+| `eventLogBackend.ts` | `EventLogBackend`: the same contract over the NDJSON `EventLogStore`, with a per-session `SessionSnapshot` cache and `#versions` map for zero-I/O hits; invalidated on `append` to that session. |
+| `postgresBackend.ts` | `PostgresBackend` over Postgres event tables. CAS is enforced inside a `FOR UPDATE` transaction. Per-session `SessionSnapshot` cache with `#versions` in-memory counter for zero-I/O hits; the cache is single-process state — cross-process writes fall through to Postgres and re-sync. |
 | `db.ts` | Minimal `Db` seam (`query`/`exec`/`transaction`) with `pglite` (hermetic CI) and `pg` (managed) adapters. |
 | `migrations.ts` | Hand-rolled runner: applied-versions table, standard-SQL migrations in one transaction guarded by an advisory xact lock, so the identical statements run on both drivers. |
 | `backendFactory.ts` | `createSessionBackend()`: in-memory by default; `ATLASLINK_DATABASE_URL` selects Postgres (migrations applied first). |
-| `types.ts` | `Session`, `SessionEvent`, `SessionDelta`, and the error classes. |
+| `types.ts` | `Session`, `SessionEvent`, `SessionDelta`, `SessionSnapshot`, and the error classes. |
 | `backendContract.ts` | Shared test harness — every backend binds to the same behavioral suite. |
 
 ## Data model
@@ -34,6 +35,11 @@ is additive, not a schema rewrite. M3 ships rebuild-on-read; a maintained
   are not invented).
 - **A backend swap cannot change observable behavior** — `backendContract` pins it.
 - **Hermetic:** `pglite` is in-process and offline; managed Postgres never runs in CI.
+- **Snapshot cache consistency.** Every backend tracks a per-session snapshot
+  (`SessionSnapshot` in `types.ts`). `append()` invalidates the affected
+  session's cache; `get()` returns the frozen cached reference when the version
+  matches. Callers receive a `deepFreeze`d snapshot — mutation is a contract
+  violation caught by the shared backend contract test.
 
 ## Note on the two status models
 

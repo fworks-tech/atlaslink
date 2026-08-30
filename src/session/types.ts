@@ -47,6 +47,13 @@ export class VersionConflictError extends Error {
   }
 }
 
+/** Per-session snapshot cache entry shared by all SessionBackend implementations. */
+export interface SessionSnapshot {
+  session: Session
+  /** Number of store events for the session — the version/CAS token used by `rehydrate`. */
+  version: number
+}
+
 export class StreamIntegrityError extends Error {
   constructor(
     public readonly sessionId: string,

@@ -1,6 +1,7 @@
-import type { Session, SessionEvent, SessionDelta } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot } from './types'
 import { VersionConflictError } from './types'
 import { rehydrate } from './sessionStore'
+import { deepFreeze } from './deepFreeze'
 import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
 import type { Db } from './db'
 import { DEFAULT_TENANT_ID } from './migrations'
@@ -24,8 +25,26 @@ function parseEvent(raw: string | SessionEvent): SessionEvent {
  * a `FOR UPDATE` transaction so two writers holding the same `expectedVersion`
  * cannot both commit (the #32 class of bug). `tenant_id` is set per row now so
  * the auth ADR's tenant scoping is additive, not a schema rewrite.
+ *
+ * Snapshot cache: `#snapshots` holds the frozen aggregate per session;
+ * `#versions` is the local commit counter that enables zero-I/O hits — `get()`
+ * returns the cached snapshot when `#versions` matches the snapshot version
+ * without touching Postgres. The two maps are updated together in `append()` and
+ * after a DB-backed `get()`. They are single-process in-memory state; across
+ * processes the DB is the source of truth and a stale `#versions` falls through
+ * to the DB path and re-syncs.
  */
 export class PostgresBackend implements SessionBackend {
+  #snapshots = new Map<string, SessionSnapshot>()
+  #versions = new Map<string, number>()
+
+  #cachedSnapshot(sessionId: string): Session | null {
+    const version = this.#versions.get(sessionId)
+    if (version === undefined) return null
+    const snap = this.#snapshots.get(sessionId)
+    return snap !== undefined && snap.version === version ? snap.session : null
+  }
+
   constructor(
     private readonly db: Db,
     private readonly tenantId: string = DEFAULT_TENANT_ID
@@ -47,9 +66,15 @@ export class PostgresBackend implements SessionBackend {
         [this.tenantId, event.sessionId, next, event.correlationId, event.at, JSON.stringify(event)]
       )
     })
+    this.#snapshots.delete(event.sessionId)
+    const prev = this.#versions.get(event.sessionId) ?? 0
+    this.#versions.set(event.sessionId, prev + 1)
   }
 
   async get(sessionId: string): Promise<Session | null> {
+    const hit = this.#cachedSnapshot(sessionId)
+    if (hit !== null) return hit
+
     const { rows } = await this.db.query<EventRow>(
       `SELECT event FROM session_events
        WHERE tenant_id = $1 AND session_id = $2
@@ -57,7 +82,21 @@ export class PostgresBackend implements SessionBackend {
       [this.tenantId, sessionId]
     )
     if (rows.length === 0) return null
-    return rehydrate(rows.map((r) => parseEvent(r.event)))
+
+    const currentVersion = rows.length
+    const cached = this.#snapshots.get(sessionId)
+    if (cached !== undefined && cached.version === currentVersion) {
+      // re-sync #versions if it drifted (e.g. after restart or cross-process write)
+      this.#versions.set(sessionId, currentVersion)
+      return cached.session
+    }
+
+    const session = rehydrate(rows.map((r) => parseEvent(r.event)))
+    if (session === null) throw new Error(`rehydrate returned null for non-empty rows: ${sessionId}`)
+    const frozen = deepFreeze(session)
+    this.#snapshots.set(sessionId, { session: frozen, version: currentVersion })
+    this.#versions.set(sessionId, currentVersion)
+    return frozen
   }
 
   async readModifyWrite(
