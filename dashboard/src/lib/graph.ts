@@ -59,10 +59,12 @@ export type GraphMode = "chain" | "fanout" | "full";
 export function buildSocietyGraph(
   sessions: Session[],
   events: BridgeEvent[],
-  opts?: { mode?: GraphMode }
+  opts?: { mode?: GraphMode; selectedSessionId?: string }
 ): SocietyGraph {
   const mode = opts?.mode ?? "chain";
-  const live = withLiveUpdates(sessions, events);
+  const selectedId = opts?.selectedSessionId;
+  const liveAll = withLiveUpdates(sessions, events);
+  const live = selectedId ? liveAll.filter((s) => s.sessionId === selectedId) : liveAll;
 
   const graph = new dagre.graphlib.Graph();
   graph.setDefaultEdgeLabel(() => ({}));

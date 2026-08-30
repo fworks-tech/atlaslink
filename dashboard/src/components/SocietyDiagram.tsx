@@ -40,30 +40,35 @@ export function SocietyDiagram({
   mode = "full",
   onNodeClick,
 }: {
-  selectedSessionId?: string;
+  selectedSessionId: string;
   mode?: GraphMode;
   onNodeClick?: (nodeId: string, type: string, data: unknown) => void;
 }) {
   const { sessions, loading } = useSessions();
   const { events } = useEvents();
   const filteredSessions = useMemo(
-    () => (selectedSessionId ? sessions.filter((s) => s.sessionId === selectedSessionId) : sessions),
+    () => sessions.filter((s) => s.sessionId === selectedSessionId),
     [sessions, selectedSessionId]
   );
+  const filteredEvents = useMemo(() => {
+    const cid = filteredSessions[0]?.correlationId;
+    if (!cid) return events.filter((e) => e.sessionId === selectedSessionId);
+    return events.filter((e) => e.correlationId === cid || e.sessionId === selectedSessionId);
+  }, [events, filteredSessions, selectedSessionId]);
   const [debouncedSessions, setDebouncedSessions] = useState(filteredSessions);
-  const [debouncedEvents, setDebouncedEvents] = useState(events);
+  const [debouncedEvents, setDebouncedEvents] = useState(filteredEvents);
 
   useEffect(() => {
     const id = setTimeout(() => {
       setDebouncedSessions(filteredSessions);
-      setDebouncedEvents(events);
+      setDebouncedEvents(filteredEvents);
     }, 100);
     return () => clearTimeout(id);
-  }, [filteredSessions, events]);
+  }, [filteredSessions, filteredEvents]);
 
   const { nodes: nextNodes, edges: nextEdges } = useMemo(
-    () => buildSocietyGraph(debouncedSessions, debouncedEvents, { mode }),
-    [debouncedSessions, debouncedEvents, mode],
+    () => buildSocietyGraph(debouncedSessions, debouncedEvents, { mode, selectedSessionId }),
+    [debouncedSessions, debouncedEvents, mode, selectedSessionId],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(nextNodes);
