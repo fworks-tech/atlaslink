@@ -155,8 +155,9 @@ through that facade so the logged shape stays fixed. SSE streams never emit a
 | `feat/45-security-audit` | bearer gate over /runs + /events, rate limiting, auth-rejection logging, `execRawDdl` | merged (#46) |
 | auth ADR | accounts/tenancy at the data-access boundary | pending |
 | infra ADR | serverless API / container daemon split, Terraform | pending |
-| `feat/projects-backend` | projects table, sessions directory, project CRUD, project-scoped SSE | open (#58) |
-| M4 | live dashboard UI rendering society provenance | in progress |
+| `feat/projects-backend` | projects table, sessions directory, project CRUD, project-scoped SSE | merged (#58) `661c992` |
+| `feat/full-dag-builder` | FULL DAG: `POST /tasks/:id/reply` (`session.awaiting_input` ↔ `user_reply`), `graph full` (hex/diamond/stadium/terminal), Inspector/Thread, deep-links `/project/:p/session/:s` + `/s/:token` + `?q=<b64url>` | open (#63) |
+| M4 | live dashboard UI rendering society provenance | in progress — Projects + Full DAG landed, review pending |
 
 See [`docs/spec/m3-task-api.md`](../spec/m3-task-api.md) for the M3 plan and
 [`PROGRESS.md`](../../PROGRESS.md) for shipped state.

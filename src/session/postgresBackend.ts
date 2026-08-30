@@ -102,6 +102,8 @@ export class PostgresBackend implements SessionBackend {
           'session.succeeded': 'succeeded',
           'session.failed': 'failed',
           'session.cancelled': 'cancelled',
+          'session.awaiting_input': 'awaiting_input',
+          'session.user_reply': 'queued',
         }
         const status = statusMap[event.type]
         if (!status) throw new Error(`unknown session event type for directory projection: ${event.type}`)
@@ -201,6 +203,8 @@ export class PostgresBackend implements SessionBackend {
               'session.succeeded': 'succeeded',
               'session.failed': 'failed',
               'session.cancelled': 'cancelled',
+              'session.awaiting_input': 'awaiting_input',
+              'session.user_reply': 'queued',
             }
             const status = statusMap[event.type]
             if (!status) throw new Error(`unknown session event type for directory projection: ${event.type}`)
@@ -353,14 +357,16 @@ export class PostgresBackend implements SessionBackend {
         [this.tenantId, id]
       )
       if (rows.length === 0) return false
+      // Delete events by session_id — projectId only lives on session.created, so direct
+      // event->>'projectId' leaves orphans. Collect session_ids first, then delete events, then directory.
+      await tx.query(
+        `DELETE FROM session_events WHERE tenant_id = $1 AND session_id IN (SELECT session_id FROM sessions WHERE tenant_id = $1 AND project_id = $2)`,
+        [this.tenantId, id]
+      )
       await tx.query(`DELETE FROM sessions WHERE tenant_id = $1 AND project_id = $2`, [
         this.tenantId,
         id,
       ])
-      await tx.query(
-        `DELETE FROM session_events WHERE tenant_id = $1 AND (event->>'projectId') = $2`,
-        [this.tenantId, id]
-      )
       return true
     })
   }

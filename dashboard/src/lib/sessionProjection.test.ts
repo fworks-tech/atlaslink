@@ -89,4 +89,19 @@ describe("formatDuration", () => {
   it("shows a dash for queued sessions", () => {
     expect(formatDuration(session({ status: "queued" }))).toBe("—");
   });
+
+  it("shows awaiting input for awaiting_input", () => {
+    expect(formatDuration(session({ status: "awaiting_input" }))).toBe("awaiting input…");
+  });
+});
+
+describe("withLiveUpdates awaiting_input flow", () => {
+  it("transitions to awaiting_input and sets nextStep/interaction, then queued on user_reply", () => {
+    const afterAwait = withLiveUpdates([session()], [ev("session.awaiting_input", { question: "continue?", member: "atlas" }) as BridgeEvent]);
+    expect(afterAwait[0].status).toBe("awaiting_input");
+    expect((afterAwait[0] as unknown as { nextStep: unknown }).nextStep).toMatchObject({ awaiting_input: true, prompt: "continue?" });
+    const afterReply = withLiveUpdates(afterAwait, [ev("session.user_reply", { reply: "yes" }) as BridgeEvent]);
+    expect(afterReply[0].status).toBe("queued");
+    expect((afterReply[0] as unknown as { nextStep: unknown }).nextStep).toBeNull();
+  });
 });

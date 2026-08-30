@@ -1,6 +1,6 @@
 # Atlaslink
 
-> **Status: M1 and M2 shipped** — The daemon core and the real-time Event Bridge are live. M3 (Task API) and M4 (Live Dashboard) are on the roadmap.
+> **Status: M1, M2 and M3 shipped — M4 in progress** — Daemon, Event Bridge and Task API are live. Live Dashboard (diagram + FULL DAG builder `chain|fanout|full`, deep-links) is on `feat/full-dag-builder` #63.
 
 Multi-agent orchestrator, Agenthood proof-of-concept, and modern UI to integrate agents through gorgeous, easy-to-use, live diagram flows.
 
@@ -144,8 +144,8 @@ failure paths stay silent by design) are recorded in
 |-----------|-------|--------|
 | **M1 — Daemon Core** | Long-running daemon, agent runtime hosting | Shipped |
 | **M2 — Event Bridge** | Real-time event feed bridged to the browser | Shipped |
-| **M3 — Task API** | HTTP surface for driving the orchestrator | Planned — [spec](docs/spec/m3-task-api.md) |
-| **M4 — Live Dashboard** | The live diagram-flow UI — [FULL DAG case studies](docs/diagrams/full-dag-case-studies.md) (7 prompts, mermaid) | Shipped (diagram) |
+| **M3 — Task API** | HTTP surface for driving the orchestrator (Fastify + Postgres, bearer gate, `POST/GET /tasks`, cancel, per-session/project SSE) | Shipped (#44, #46) — [spec](docs/spec/m3-task-api.md) |
+| **M4 — Live Dashboard** | The live diagram-flow UI — `chain|fanout|full` DAG, Inspector/Thread, `awaiting_input` ↔ `user_reply` loop, deep-links `/project/:p/session/:s` + `/s/:token` + `?q=<b64url>` — [FULL DAG case studies](docs/diagrams/full-dag-case-studies.md) (7 prompts, mermaid) | In progress — Projects (#58) + Full DAG (#63) |
 
 Track active work and open issues on the [issues page](https://github.com/fworks-tech/atlaslink/issues).
 
