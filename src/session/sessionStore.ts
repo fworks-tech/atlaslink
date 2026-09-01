@@ -13,6 +13,7 @@ export { StreamIntegrityError, VersionConflictError }
 export function filterSessions(sessions: Session[], filter: SessionFilter): SessionList {
   const matched = sessions
     .filter((s) => filter.projectId === undefined || s.projectId === filter.projectId)
+    .filter((s) => filter.tenantId === undefined || s.tenantId === filter.tenantId)
     .filter((s) => filter.status === undefined || s.status === filter.status)
     .filter((s) => filter.since === undefined || (s.createdAt !== undefined && s.createdAt >= filter.since))
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
@@ -38,6 +39,7 @@ export function rehydrate(events: SessionEvent[]): Session | null {
     status: 'queued',
     version: events.length,
     projectId: first.projectId,
+    tenantId: first.tenantId,
     task: { member: first.member ?? '', prompt: first.prompt ?? '' },
     interaction: [],
     nextStep: null,
@@ -56,6 +58,7 @@ export function rehydrate(events: SessionEvent[]): Session | null {
         if (e.prompt !== undefined) session.task.prompt = e.prompt
         if (e.tweaks !== undefined) session.tweaks = e.tweaks
         if (e.projectId !== undefined) session.projectId = e.projectId
+        if (e.tenantId !== undefined) session.tenantId = e.tenantId
         session.interaction.push({ role: 'user', at: e.at, content: e.prompt ?? '' })
         break
       case 'session.running':

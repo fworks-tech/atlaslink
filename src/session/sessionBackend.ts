@@ -8,6 +8,7 @@ import type { Session, SessionEvent, SessionDelta, SessionStatus, Project } from
  */
 export interface SessionFilter {
   projectId?: string
+  tenantId?: string
   status?: SessionStatus
   since?: string
   limit: number
