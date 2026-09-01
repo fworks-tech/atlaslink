@@ -30,7 +30,9 @@ export async function createSessionBackendForTenant(tenantId: string = DEFAULT_T
 }
 
 export function backendForTenant(base: SessionBackend, tenantId: string = DEFAULT_TENANT_ID): SessionBackend {
-  if (base instanceof PostgresBackend) return base.withTenant(tenantId)
+  if (typeof (base as SessionBackend & { withTenant?: (t: string) => SessionBackend }).withTenant === 'function') {
+    return (base as SessionBackend & { withTenant: (t: string) => SessionBackend }).withTenant(tenantId)
+  }
   return base
 }
 

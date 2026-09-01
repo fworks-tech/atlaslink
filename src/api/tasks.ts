@@ -6,19 +6,8 @@ import { VersionConflictError } from '../session/types'
 import type { SessionQueue } from '../bridge/SessionQueue'
 import type { SseHandler } from '../bridge/sseEndpoint'
 import type { TaskRegistry } from '../tasks/taskRegistry'
-import { backendForTenant } from '../session/backendFactory'
-import { requireValidTenantId, resolveTenantId } from '../session/tenant'
+import { tenantBackendForRequest } from './tenant'
 import { log } from '../log'
-
-function tenantBackendForRequest(request: { headers: Record<string, string | string[] | undefined> }, base: SessionBackend): SessionBackend {
-  const tenantId = resolveTenantId(request.headers as Record<string, string | string[] | undefined>)
-  return backendForTenant(base, tenantId)
-}
-
-function rejectInvalidTenant(request: { headers: Record<string, string | string[] | undefined> }): string | null {
-  const v = requireValidTenantId(request.headers as Record<string, string | string[] | undefined>)
-  return v === null ? 'invalid tenant id' : null
-}
 
 export interface TaskDeps {
   backend: SessionBackend
@@ -75,10 +64,10 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       },
     },
     async (request, reply) => {
-      const bad = rejectInvalidTenant(request)
-      if (bad) return reply.code(400).send({ ok: false, error: bad })
-      const tenantId = resolveTenantId(request.headers as Record<string, string | string[] | undefined>)
-      const backend = backendForTenant(deps.backend, tenantId)
+      const tenantCtx = tenantBackendForRequest(request, deps.backend)
+      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const tenantId = tenantCtx.tenantId!
+      const backend = tenantCtx.backend
       const { member, prompt, projectId, tweaks } = request.body
       const sessionId = `ses-${randomUUID()}`
       const correlationId = `cor-${randomUUID()}`
@@ -127,10 +116,10 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       },
     },
     async (request, reply) => {
-      const bad = rejectInvalidTenant(request)
-      if (bad) return reply.code(400).send({ ok: false, error: bad })
-      const tenantId = resolveTenantId(request.headers as Record<string, string | string[] | undefined>)
-      const backend = backendForTenant(deps.backend, tenantId)
+      const tenantCtx = tenantBackendForRequest(request, deps.backend)
+      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const tenantId = tenantCtx.tenantId!
+      const backend = tenantCtx.backend
       const query = request.query
       if (query.since !== undefined && Number.isNaN(Date.parse(query.since))) {
         return reply.code(400).send({ ok: false, error: 'since must be an ISO-8601 date-time' })
@@ -155,18 +144,17 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
   )
 
   app.get<{ Params: { sessionId: string } }>('/tasks/:sessionId', async (request, reply) => {
-    const bad = rejectInvalidTenant(request)
-    if (bad) return reply.code(400).send({ ok: false, error: bad })
-    const backend = tenantBackendForRequest(request, deps.backend)
-    const aggregate = await backend.get(request.params.sessionId)
+    const tenantCtx = tenantBackendForRequest(request, deps.backend)
+    if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+    const aggregate = await tenantCtx.backend.get(request.params.sessionId)
     if (!aggregate) return reply.code(404).send({ ok: false, error: 'unknown session' })
     return reply.send({ ok: true, session: sessionToWire(aggregate) })
   })
 
   app.post<{ Params: { sessionId: string } }>('/tasks/:sessionId/cancel', async (request, reply) => {
-    const bad = rejectInvalidTenant(request)
-    if (bad) return reply.code(400).send({ ok: false, error: bad })
-    const backend = tenantBackendForRequest(request, deps.backend)
+    const tenantCtx = tenantBackendForRequest(request, deps.backend)
+    if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+    const backend = tenantCtx.backend
     const sessionId = request.params.sessionId
 
     // Re-evaluate against a fresh aggregate until the state is stable: a
@@ -218,9 +206,9 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       },
     },
     async (request, reply) => {
-      const bad = rejectInvalidTenant(request)
-      if (bad) return reply.code(400).send({ ok: false, error: bad })
-      const backend = tenantBackendForRequest(request, deps.backend)
+      const tenantCtx = tenantBackendForRequest(request, deps.backend)
+      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const backend = tenantCtx.backend
       const sessionId = request.params.sessionId
       const { content } = request.body
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -280,9 +268,9 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       },
     },
     async (request, reply) => {
-      const bad = rejectInvalidTenant(request)
-      if (bad) return reply.code(400).send({ ok: false, error: bad })
-      const backend = tenantBackendForRequest(request, deps.backend)
+      const tenantCtx = tenantBackendForRequest(request, deps.backend)
+      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const backend = tenantCtx.backend
       const sessionId = request.params.sessionId
       const { diagram } = request.body
       const current = await backend.get(sessionId)
@@ -296,10 +284,9 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
   // Per-session SSE (spec §3/§4): replay-then-live for one session's events,
   // filtered by correlationId over the global bridge projection.
   app.get<{ Params: { sessionId: string } }>('/events/:sessionId', async (request, reply) => {
-    const bad = rejectInvalidTenant(request)
-    if (bad) return reply.code(400).send({ ok: false, error: bad })
-    const backend = tenantBackendForRequest(request, deps.backend)
-    const aggregate = await backend.get(request.params.sessionId)
+    const tenantCtx = tenantBackendForRequest(request, deps.backend)
+    if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+    const aggregate = await tenantCtx.backend.get(request.params.sessionId)
     if (!aggregate) return reply.code(404).send({ ok: false, error: 'unknown session' })
     reply.hijack()
     deps.sse.handleForSession(request.raw, reply.raw, aggregate.correlationId)
@@ -309,12 +296,13 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
   // filtered by the set of correlation IDs for that project's sessions. The live
   // set grows on `session.created` for the same project so the stream is live.
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/events', async (request, reply) => {
-    const bad = rejectInvalidTenant(request)
-    if (bad) return reply.code(400).send({ ok: false, error: bad })
-    const backend = tenantBackendForRequest(request, deps.backend)
+    const tenantCtx = tenantBackendForRequest(request, deps.backend)
+    if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+    const backend = tenantCtx.backend
+    const tenantId = tenantCtx.tenantId!
     const project = await backend.getProject(request.params.projectId)
     if (!project) return reply.code(404).send({ ok: false, error: 'unknown project' })
-    const { sessions } = await backend.list({ projectId: request.params.projectId, tenantId: resolveTenantId(request.headers as Record<string, string | string[] | undefined>), limit: 500, offset: 0 })
+    const { sessions } = await backend.list({ projectId: request.params.projectId, tenantId, limit: 500, offset: 0 })
     const correlationIds = new Set(sessions.map((s) => s.correlationId))
     reply.hijack()
     deps.sse.handleForProject(request.raw, reply.raw, request.params.projectId, correlationIds)
