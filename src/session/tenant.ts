@@ -30,3 +30,8 @@ export function requireValidTenantId(headers: Record<string, string | string[] |
   if (trimmed === '') return DEFAULT_TENANT_ID
   return isValidTenantId(trimmed) ? trimmed : null
 }
+
+export const INVALID_TENANT_ERROR = 'invalid tenant id'
+// TODO(auth-ADR): bind tenant to bearer token claims — x-tenant-id is
+// currently client-supplied and any bearer can claim any tenant. The guard
+// is advisory until the auth ADR ties tenant to token identity.
