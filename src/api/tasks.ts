@@ -6,7 +6,19 @@ import { VersionConflictError } from '../session/types'
 import type { SessionQueue } from '../bridge/SessionQueue'
 import type { SseHandler } from '../bridge/sseEndpoint'
 import type { TaskRegistry } from '../tasks/taskRegistry'
+import { backendForTenant } from '../session/backendFactory'
+import { requireValidTenantId, resolveTenantId } from '../session/tenant'
 import { log } from '../log'
+
+function tenantBackendForRequest(request: { headers: Record<string, string | string[] | undefined> }, base: SessionBackend): SessionBackend {
+  const tenantId = resolveTenantId(request.headers as Record<string, string | string[] | undefined>)
+  return backendForTenant(base, tenantId)
+}
+
+function rejectInvalidTenant(request: { headers: Record<string, string | string[] | undefined> }): string | null {
+  const v = requireValidTenantId(request.headers as Record<string, string | string[] | undefined>)
+  return v === null ? 'invalid tenant id' : null
+}
 
 export interface TaskDeps {
   backend: SessionBackend
@@ -63,6 +75,10 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       },
     },
     async (request, reply) => {
+      const bad = rejectInvalidTenant(request)
+      if (bad) return reply.code(400).send({ ok: false, error: bad })
+      const tenantId = resolveTenantId(request.headers as Record<string, string | string[] | undefined>)
+      const backend = backendForTenant(deps.backend, tenantId)
       const { member, prompt, projectId, tweaks } = request.body
       const sessionId = `ses-${randomUUID()}`
       const correlationId = `cor-${randomUUID()}`
@@ -73,11 +89,12 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         at: new Date().toISOString(),
         member,
         prompt,
+        tenantId,
         ...(projectId !== undefined ? { projectId } : {}),
         ...(tweaks !== undefined ? { tweaks } : {}),
       }
       // the aggregate is committed first; the queue then runs by the same ids
-      await deps.backend.append(event)
+      await backend.append(event)
       const created = deps.registry.create({
         member,
         prompt,
@@ -86,8 +103,8 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         correlationId,
       })
       deps.queue.declareSession(created)
-      log.info('task created', { sessionId, correlationId, member, projectId })
-      const aggregate = await deps.backend.get(sessionId)
+      log.info('task created', { sessionId, correlationId, member, projectId, tenantId })
+      const aggregate = await backend.get(sessionId)
       return reply.code(201).send({ ok: true, session: sessionToWire(aggregate!) })
     }
   )
@@ -110,18 +127,23 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       },
     },
     async (request, reply) => {
+      const bad = rejectInvalidTenant(request)
+      if (bad) return reply.code(400).send({ ok: false, error: bad })
+      const tenantId = resolveTenantId(request.headers as Record<string, string | string[] | undefined>)
+      const backend = backendForTenant(deps.backend, tenantId)
       const query = request.query
       if (query.since !== undefined && Number.isNaN(Date.parse(query.since))) {
         return reply.code(400).send({ ok: false, error: 'since must be an ISO-8601 date-time' })
       }
       const filter: SessionFilter = {
         projectId: query.projectId ?? undefined,
+        tenantId,
         status: (query.status as SessionFilter['status']) ?? undefined,
         since: query.since ?? undefined,
         limit: query.limit ?? 50,
         offset: query.offset ?? 0,
       }
-      const { sessions, total } = await deps.backend.list(filter)
+      const { sessions, total } = await backend.list(filter)
       return reply.send({
         ok: true,
         sessions: sessions.map(sessionToWire),
@@ -133,19 +155,25 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
   )
 
   app.get<{ Params: { sessionId: string } }>('/tasks/:sessionId', async (request, reply) => {
-    const aggregate = await deps.backend.get(request.params.sessionId)
+    const bad = rejectInvalidTenant(request)
+    if (bad) return reply.code(400).send({ ok: false, error: bad })
+    const backend = tenantBackendForRequest(request, deps.backend)
+    const aggregate = await backend.get(request.params.sessionId)
     if (!aggregate) return reply.code(404).send({ ok: false, error: 'unknown session' })
     return reply.send({ ok: true, session: sessionToWire(aggregate) })
   })
 
   app.post<{ Params: { sessionId: string } }>('/tasks/:sessionId/cancel', async (request, reply) => {
+    const bad = rejectInvalidTenant(request)
+    if (bad) return reply.code(400).send({ ok: false, error: bad })
+    const backend = tenantBackendForRequest(request, deps.backend)
     const sessionId = request.params.sessionId
 
     // Re-evaluate against a fresh aggregate until the state is stable: a
     // VersionConflictError means the lifecycle moved between our read and
     // write (the queue started the run) — resolve rather than 500.
     for (let attempt = 0; attempt < 2; attempt++) {
-      const current = await deps.backend.get(sessionId)
+      const current = await backend.get(sessionId)
       if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
       if ((TERMINAL_STATUSES as readonly string[]).includes(current.status)) {
         return reply.code(409).send({ ok: false, error: 'session already terminated' })
@@ -155,7 +183,7 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         return reply.code(202).send({ ok: true, status: 'running', cancel: 'best-effort', session: sessionToWire(current) })
       }
       try {
-        await deps.backend.readModifyWrite(sessionId, current.version, () => [
+        await backend.readModifyWrite(sessionId, current.version, () => [
           { type: 'session.cancelled', correlationId: current.correlationId, at: new Date().toISOString() },
         ])
         // dequeue from execution so the pump never runs a cancelled session
@@ -164,7 +192,7 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         } catch {
           // the registry entry may already be gone or terminal — the store commit is the truth
         }
-        const after = await deps.backend.get(sessionId)
+        const after = await backend.get(sessionId)
         return reply.code(202).send({ ok: true, status: 'cancelled', session: sessionToWire(after!) })
       } catch (err) {
         if (err instanceof VersionConflictError) continue
@@ -190,10 +218,13 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       },
     },
     async (request, reply) => {
+      const bad = rejectInvalidTenant(request)
+      if (bad) return reply.code(400).send({ ok: false, error: bad })
+      const backend = tenantBackendForRequest(request, deps.backend)
       const sessionId = request.params.sessionId
       const { content } = request.body
       for (let attempt = 0; attempt < 2; attempt++) {
-        const current = await deps.backend.get(sessionId)
+        const current = await backend.get(sessionId)
         if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
         if (current.status !== 'awaiting_input') {
           if ((TERMINAL_STATUSES as readonly string[]).includes(current.status)) {
@@ -202,12 +233,12 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
           return reply.code(409).send({ ok: false, error: 'session not awaiting input' })
         }
         try {
-          await deps.backend.readModifyWrite(sessionId, current.version, () => [
+          await backend.readModifyWrite(sessionId, current.version, () => [
             { type: 'session.user_reply', correlationId: current.correlationId, at: new Date().toISOString(), reply: content },
             // re-queue as running so the diagram keeps growing — next iteration
             { type: 'session.running', correlationId: current.correlationId, at: new Date().toISOString() },
           ])
-          const after = await deps.backend.get(sessionId)
+          const after = await backend.get(sessionId)
           // also fan out on SSE so live diagram updates without polling
           // (store is truth; SSE is best-effort projection)
           try {
@@ -249,9 +280,12 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       },
     },
     async (request, reply) => {
+      const bad = rejectInvalidTenant(request)
+      if (bad) return reply.code(400).send({ ok: false, error: bad })
+      const backend = tenantBackendForRequest(request, deps.backend)
       const sessionId = request.params.sessionId
       const { diagram } = request.body
-      const current = await deps.backend.get(sessionId)
+      const current = await backend.get(sessionId)
       if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
       // ephemeral: frontend localStorage is truth for drag positions; backend echoes for now
       // until diagram persistence migrates to event-sourced overlay (not swallowing success as durable)
@@ -262,7 +296,10 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
   // Per-session SSE (spec §3/§4): replay-then-live for one session's events,
   // filtered by correlationId over the global bridge projection.
   app.get<{ Params: { sessionId: string } }>('/events/:sessionId', async (request, reply) => {
-    const aggregate = await deps.backend.get(request.params.sessionId)
+    const bad = rejectInvalidTenant(request)
+    if (bad) return reply.code(400).send({ ok: false, error: bad })
+    const backend = tenantBackendForRequest(request, deps.backend)
+    const aggregate = await backend.get(request.params.sessionId)
     if (!aggregate) return reply.code(404).send({ ok: false, error: 'unknown session' })
     reply.hijack()
     deps.sse.handleForSession(request.raw, reply.raw, aggregate.correlationId)
@@ -272,9 +309,12 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
   // filtered by the set of correlation IDs for that project's sessions. The live
   // set grows on `session.created` for the same project so the stream is live.
   app.get<{ Params: { projectId: string } }>('/projects/:projectId/events', async (request, reply) => {
-    const project = await deps.backend.getProject(request.params.projectId)
+    const bad = rejectInvalidTenant(request)
+    if (bad) return reply.code(400).send({ ok: false, error: bad })
+    const backend = tenantBackendForRequest(request, deps.backend)
+    const project = await backend.getProject(request.params.projectId)
     if (!project) return reply.code(404).send({ ok: false, error: 'unknown project' })
-    const { sessions } = await deps.backend.list({ projectId: request.params.projectId, limit: 500, offset: 0 })
+    const { sessions } = await backend.list({ projectId: request.params.projectId, tenantId: resolveTenantId(request.headers as Record<string, string | string[] | undefined>), limit: 500, offset: 0 })
     const correlationIds = new Set(sessions.map((s) => s.correlationId))
     reply.hijack()
     deps.sse.handleForProject(request.raw, reply.raw, request.params.projectId, correlationIds)
