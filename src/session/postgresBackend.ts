@@ -67,6 +67,15 @@ export class PostgresBackend implements SessionBackend {
     private readonly tenantId: string = DEFAULT_TENANT_ID
   ) {}
 
+  withTenant(tenantId: string): PostgresBackend {
+    if (tenantId === this.tenantId) return this
+    return new PostgresBackend(this.db, tenantId)
+  }
+
+  get tenant(): string {
+    return this.tenantId
+  }
+
   async append(event: SessionEvent): Promise<void> {
     await this.db.transaction(async (tx) => {
       const { rows } = await tx.query<VersionRow>(

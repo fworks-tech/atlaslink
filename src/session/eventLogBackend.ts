@@ -4,6 +4,11 @@ import { deepFreeze } from './deepFreeze'
 import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
 import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project } from './types'
 import { VersionConflictError } from './types'
+import { DEFAULT_TENANT_ID } from './migrations'
+
+function tenantOfSession(session: Session | null): string {
+  return session?.tenantId ?? DEFAULT_TENANT_ID
+}
 
 /** The store vocabulary. The queue broadcasts `session.queued`/`session.started`
  * into the same log; only the five aggregate event types count as store events,
@@ -31,14 +36,41 @@ function isStoreSessionEvent(type: unknown): type is string {
  */
 export class EventLogBackend implements SessionBackend {
   readonly log: EventLogStore
-  #snapshots = new Map<string, SessionSnapshot>()
-  #versions = new Map<string, number>()
+  private readonly _snapshots: Map<string, SessionSnapshot>
+  private readonly _versions: Map<string, number>
   /** In-memory projects — lost on restart; PostgresBackend is durable. */
-  #projects = new Map<string, Project>()
-  #deletedProjects = new Set<string>()
+  private readonly _projects: Map<string, Project>
+  private readonly _deletedProjects: Set<string>
+  private readonly _tenantId: string
 
-  constructor(log: EventLogStore) {
+  constructor(log: EventLogStore, tenantId: string = DEFAULT_TENANT_ID, shared?: { snapshots: Map<string, SessionSnapshot>; versions: Map<string, number>; projects: Map<string, Project>; deletedProjects: Set<string> }) {
     this.log = log
+    this._tenantId = tenantId
+    if (shared) {
+      this._snapshots = shared.snapshots
+      this._versions = shared.versions
+      this._projects = shared.projects
+      this._deletedProjects = shared.deletedProjects
+    } else {
+      this._snapshots = new Map<string, SessionSnapshot>()
+      this._versions = new Map<string, number>()
+      this._projects = new Map<string, Project>()
+      this._deletedProjects = new Set<string>()
+    }
+  }
+
+  withTenant(tenantId: string): SessionBackend {
+    if (tenantId === this._tenantId) return this
+    return new EventLogBackend(this.log, tenantId, {
+      snapshots: this._snapshots,
+      versions: this._versions,
+      projects: this._projects,
+      deletedProjects: this._deletedProjects,
+    })
+  }
+
+  get tenant(): string {
+    return this._tenantId
   }
 
   /**
@@ -48,41 +80,46 @@ export class EventLogBackend implements SessionBackend {
    * old expectedVersion rejects, which is how the caller notices.
    */
   async append(event: SessionEvent): Promise<void> {
-    const persisted = this.log.append({ ...event, eventId: this.log.nextEventId, type: event.type })
+    const tenantId = event.tenantId ?? this._tenantId
+    const stored: SessionEvent = { ...event, tenantId }
+    const persisted = this.log.append({ ...stored, eventId: this.log.nextEventId, type: stored.type })
     if (!persisted) return
-    this.#snapshots.delete(event.sessionId)
-    const prev = this.#versions.get(event.sessionId) ?? 0
-    this.#versions.set(event.sessionId, prev + 1)
+    this._snapshots.delete(event.sessionId)
+    const prev = this._versions.get(event.sessionId) ?? 0
+    this._versions.set(event.sessionId, prev + 1)
   }
 
   async get(sessionId: string): Promise<Session | null> {
-    const cached = this.#snapshots.get(sessionId)
-    const cachedVersion = this.#versions.get(sessionId)
+    const cached = this._snapshots.get(sessionId)
+    const cachedVersion = this._versions.get(sessionId)
     if (cached !== undefined && cachedVersion !== undefined && cached.version === cachedVersion) {
-      if (cached.session.projectId !== undefined && this.#deletedProjects.has(cached.session.projectId)) return null
+      if (cached.session.projectId !== undefined && this._deletedProjects.has(cached.session.projectId)) return null
+      if (tenantOfSession(cached.session) !== this._tenantId) return null
       return cached.session
     }
 
-    const events = this.#sessionEvents(sessionId)
+    const events = this._sessionEvents(sessionId)
     const currentVersion = events.length
 
     if (cached !== undefined && cached.version === currentVersion) {
-      if (cached.session.projectId !== undefined && this.#deletedProjects.has(cached.session.projectId)) return null
+      if (cached.session.projectId !== undefined && this._deletedProjects.has(cached.session.projectId)) return null
+      if (tenantOfSession(cached.session) !== this._tenantId) return null
       return cached.session
     }
 
     const session = events.length > 0 ? rehydrate(events) : null
     if (session === null) {
-      this.#snapshots.delete(sessionId)
+      this._snapshots.delete(sessionId)
       return null
     }
-    if (session.projectId !== undefined && this.#deletedProjects.has(session.projectId)) {
-      this.#snapshots.delete(sessionId)
+    if (tenantOfSession(session) !== this._tenantId) return null
+    if (session.projectId !== undefined && this._deletedProjects.has(session.projectId)) {
+      this._snapshots.delete(sessionId)
       return null
     }
     const frozen = deepFreeze(session)
-    this.#snapshots.set(sessionId, { session: frozen, version: currentVersion })
-    this.#versions.set(sessionId, currentVersion)
+    this._snapshots.set(sessionId, { session: frozen, version: currentVersion })
+    this._versions.set(sessionId, currentVersion)
     return frozen
   }
 
@@ -91,16 +128,25 @@ export class EventLogBackend implements SessionBackend {
     expectedVersion: number,
     mutator: (current: Session | null) => SessionDelta[]
   ): Promise<void> {
-    const events = this.#sessionEvents(sessionId)
+    const events = this._sessionEvents(sessionId)
+    // if existing session belongs to another tenant, treat as not found for this tenant
+    if (events.length > 0) {
+      const owner = (events[0] as SessionEvent).tenantId ?? DEFAULT_TENANT_ID
+      if (owner !== this._tenantId) throw new VersionConflictError(sessionId, expectedVersion, 0)
+    }
     const actual = events.length
     if (actual !== expectedVersion) {
       throw new VersionConflictError(sessionId, expectedVersion, actual)
     }
 
     const current = events.length > 0 ? rehydrate(events) : null
+    if (current !== null && tenantOfSession(current) !== this._tenantId) {
+      throw new VersionConflictError(sessionId, expectedVersion, 0)
+    }
     // invalidation flows through append() — each delta append deletes the snapshot and bumps #versions
     for (const delta of mutator(current)) {
-      await this.append({ ...delta, sessionId })
+      const tenantDelta: SessionDelta = delta.tenantId !== undefined ? delta : { ...delta, tenantId: this._tenantId }
+      await this.append({ ...tenantDelta, sessionId } as SessionEvent)
     }
   }
 
@@ -116,39 +162,45 @@ export class EventLogBackend implements SessionBackend {
     const sessions = [...bySession.values()]
       .map((events) => rehydrate(events))
       .filter((s): s is Session => s !== null)
-      .filter((s) => s.projectId === undefined || !this.#deletedProjects.has(s.projectId))
-    return filterSessions(sessions, filter)
+      .filter((s) => tenantOfSession(s) === this._tenantId)
+      .filter((s) => s.projectId === undefined || !this._deletedProjects.has(s.projectId))
+    const tenantFilter: SessionFilter = { ...filter, tenantId: this._tenantId }
+    return filterSessions(sessions, tenantFilter)
   }
 
   async listProjects(): Promise<Project[]> {
-    return [...this.#projects.values()].sort(
-      (a, b) => b.createdAt.localeCompare(a.createdAt)
-    )
+    return [...this._projects.values()]
+      .filter((p) => (p.tenantId ?? DEFAULT_TENANT_ID) === this._tenantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   }
 
   async getProject(id: string): Promise<Project | null> {
-    return this.#projects.get(id) ?? null
+    const p = this._projects.get(id) ?? null
+    if (!p) return null
+    return (p.tenantId ?? DEFAULT_TENANT_ID) === this._tenantId ? p : null
   }
 
   async createProject(id: string, name: string): Promise<Project> {
-    const project: Project = { id, name, createdAt: new Date().toISOString() }
-    this.#projects.set(id, project)
+    const project: Project = { id, name, createdAt: new Date().toISOString(), tenantId: this._tenantId }
+    this._projects.set(id, project)
     return project
   }
 
   async deleteProject(id: string): Promise<boolean> {
-    const existed = this.#projects.delete(id)
-    if (existed) this.#deletedProjects.add(id)
-    for (const [sessionId, snap] of this.#snapshots.entries()) {
-      if (snap.session.projectId === id) {
-        this.#snapshots.delete(sessionId)
-        this.#versions.delete(sessionId)
+    const p = this._projects.get(id)
+    if (!p || (p.tenantId ?? DEFAULT_TENANT_ID) !== this._tenantId) return false
+    const existed = this._projects.delete(id)
+    if (existed) this._deletedProjects.add(id)
+    for (const [sessionId, snap] of this._snapshots.entries()) {
+      if (snap.session.projectId === id && tenantOfSession(snap.session) === this._tenantId) {
+        this._snapshots.delete(sessionId)
+        this._versions.delete(sessionId)
       }
     }
     return existed
   }
 
-  #sessionEvents(sessionId: string): SessionEvent[] {
+  private _sessionEvents(sessionId: string): SessionEvent[] {
     const events: SessionEvent[] = []
     for (const { envelope } of this.log.replay(-1)) {
       if (isStoreSessionEvent(envelope.type) && envelope.sessionId === sessionId) {

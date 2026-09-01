@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import type { SessionBackend } from '../session/sessionBackend'
 import { randomUUID } from 'node:crypto'
+import { tenantBackendForRequest } from './tenant'
 
 interface ProjectDeps {
   backend: SessionBackend
@@ -27,20 +28,26 @@ export function registerProjectRoutes(app: FastifyInstance, deps: ProjectDeps): 
       },
     },
     async (request, reply) => {
+      const tenantCtx = tenantBackendForRequest(request, deps.backend)
+      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
       const { name } = request.body
       const id = `proj-${randomUUID()}`
-      const project = await deps.backend.createProject(id, name)
+      const project = await tenantCtx.backend.createProject(id, name)
       return reply.code(201).send({ ok: true, project })
     }
   )
 
-  app.get('/projects', async (_request, reply) => {
-    const projects = await deps.backend.listProjects()
+  app.get('/projects', async (request, reply) => {
+    const tenantCtx = tenantBackendForRequest(request, deps.backend)
+    if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+    const projects = await tenantCtx.backend.listProjects()
     return reply.send({ ok: true, projects })
   })
 
   app.get<{ Params: { projectId: string } }>('/projects/:projectId', async (request, reply) => {
-    const project = await deps.backend.getProject(request.params.projectId)
+    const tenantCtx = tenantBackendForRequest(request, deps.backend)
+    if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+    const project = await tenantCtx.backend.getProject(request.params.projectId)
     if (!project) return reply.code(404).send({ ok: false, error: 'unknown project' })
     return reply.send({ ok: true, project })
   })
@@ -48,7 +55,9 @@ export function registerProjectRoutes(app: FastifyInstance, deps: ProjectDeps): 
   app.delete<{ Params: { projectId: string } }>(
     '/projects/:projectId',
     async (request, reply) => {
-      const deleted = await deps.backend.deleteProject(request.params.projectId)
+      const tenantCtx = tenantBackendForRequest(request, deps.backend)
+      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const deleted = await tenantCtx.backend.deleteProject(request.params.projectId)
       if (!deleted) return reply.code(404).send({ ok: false, error: 'unknown project' })
       return reply.send({ ok: true })
     }

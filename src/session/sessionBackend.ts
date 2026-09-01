@@ -8,6 +8,7 @@ import type { Session, SessionEvent, SessionDelta, SessionStatus, Project } from
  */
 export interface SessionFilter {
   projectId?: string
+  tenantId?: string
   status?: SessionStatus
   since?: string
   limit: number
@@ -38,4 +39,5 @@ export interface SessionBackend {
   getProject(id: string): Promise<Project | null>
   createProject(id: string, name: string): Promise<Project>
   deleteProject(id: string): Promise<boolean>
+  withTenant?(tenantId: string): SessionBackend
 }
