@@ -86,7 +86,7 @@ function HomeInner() {
   }, [selectedSessionId, replyContent]);
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex min-h-[60vh] flex-1 overflow-hidden">
       {mobileSidebarOpen && (
         <button
           type="button"
@@ -96,6 +96,7 @@ function HomeInner() {
         />
       )}
       <aside
+        id="sidebar"
         className={`${
           mobileSidebarOpen ? "flex" : "hidden"
         } md:flex fixed md:static inset-y-0 left-0 z-40 w-64 max-w-[85vw] shrink-0 flex-col border-r border-white/5 bg-surface overflow-hidden`}

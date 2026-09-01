@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@mantine/core/styles.css";
 
 @theme {
   --color-background: #0a0e1a;
@@ -26,4 +27,15 @@ body {
 *:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
