@@ -16,6 +16,8 @@ import { decodeShareLink, encodeShareLink, canonicalUrl } from "@/lib/shareLink"
 import { replyToSession } from "@/lib/api";
 import type { GraphMode } from "@/lib/graph";
 
+const hideSidebarTemporarily = true; // TODO: remove this once the sidebar is ready for production
+
 function HomeInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -95,6 +97,7 @@ function HomeInner() {
           className="fixed inset-0 z-30 bg-black/50 md:hidden"
         />
       )}
+          {!hideSidebarTemporarily && 
       <aside
         id="sidebar"
         className={`${
@@ -110,9 +113,10 @@ function HomeInner() {
             onCreateProject={addProject}
             selectedSessionId={selectedSessionId}
             onSelectSession={handleSelectSession}
-          />
+            />
         </ErrorBoundary>
       </aside>
+}
       <main className="flex-1 overflow-y-auto overflow-x-hidden">
         <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-white/5 bg-background px-4 py-2 md:hidden">
           <button
