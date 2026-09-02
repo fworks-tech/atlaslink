@@ -3,16 +3,22 @@
 import { useEffect, useRef, useState } from "react";
 import { createTask, ApiError } from "@/lib/api";
 import type { Project } from "@/lib/types";
-import AnimatedMessage from "./AnimatedMessage";
 import FadeIn from "./FadeIn";
 
 const SAMPLE_PROMPTS = [
   "Review my pull request for security vulnerabilities",
+  "Write a summary of the last 10 commits",
+  "Generate a test plan for the new feature",
+  "Explain the architecture of the new module",
+  "What are the potential risks of this implementation?",
+  "Identify performance bottlenecks in the code",
+  "List the dependencies of the project and their versions",
+  "Create a checklist for code review",
   "Suggest improvements for test coverage",
   "Plan the implementation for the new feature",
+  "Draft a design document for the upcoming release",
+  "Analyze the code for potential memory leaks",
   "Why did the DAG fan out here? Explain the handoff",
-  "Summarize the session where the Architect delegated to the Builder",
-  "What is Atlas holding in the sky of sessions?",
 ];
 
 
@@ -77,7 +83,8 @@ export function SessionComposer({
   return (
     <div className="relative flex flex-col items-center justify-center min-h-[70vh] px-4 py-10">
       {/* Hero watermark */}
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
+      <FadeIn className="relative z-10 mb-8 max-w-7xl text-center">
+        <div className="inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
         <span
           className="text-[8rem] sm:text-[10rem] md:text-[12rem] font-black tracking-tighter text-foreground/[0.04] leading-none"
           aria-hidden
@@ -85,27 +92,16 @@ export function SessionComposer({
           ATLAS
         </span>
       </div>
-
-      <FadeIn className="relative z-10 mb-8 max-w-2xl text-center">
-        <div className="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900 px-3 py-1 text-xs text-zinc-400">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden />
-          Live Society Diagram · Atlas holds the sky of sessions
-        </div>
-        <h1 className="mt-4 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+        {/* <h1 className="mt-4 text-2xl font-semibold tracking-tight text-foreground">
           Ask Atlas. Watch the Society work.
-        </h1>
+        </h1> */}
         <p className="mt-3 text-sm leading-6 text-muted">
-          A shared thread, a live DAG, and the full provenance of every handoff — from The Mediator to The Reviewer.
+          Ask Atlas. See how the AI and human members of the Society collaborate to solve your problem.
         </p>
       </FadeIn>
 
       <div className="relative z-10 w-full max-w-2xl">
         {/* AnimatedMessage above Ask Atlas input */}
-        <AnimatedMessage key={cycleIdx} className="mb-3">
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/80 px-3 py-2.5 font-mono text-xs text-zinc-400 backdrop-blur-sm">
-            <span className="text-emerald-400">$</span> {SAMPLE_PROMPTS[cycleIdx]}
-          </div>
-        </AnimatedMessage>
 
         <form onSubmit={submit} className="rounded-xl border border-white/5 bg-surface/80 backdrop-blur-sm p-6">
           <div className="flex flex-col gap-4">
@@ -113,7 +109,7 @@ export function SessionComposer({
               id="composer-prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Ask Atlas anything..."
+              placeholder={SAMPLE_PROMPTS[cycleIdx]}
               rows={3}
               maxLength={10000}
               autoFocus
