@@ -21,11 +21,30 @@ const API_BASE = "/api";
  * client bundle. Errors are folded into ApiError so callers can branch on
  * status.
  */
-export async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
+export async function fetchJSON<T>(
+  path: string,
+  init?: RequestInit & { timeoutMs?: number },
+): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body) headers.set("Content-Type", "application/json");
 
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  let signal = init?.signal ?? undefined;
+  if (init?.timeoutMs) {
+    const timeoutSignal = AbortSignal.timeout(init.timeoutMs);
+    signal = signal
+      ? AbortSignal.any([signal, timeoutSignal])
+      : timeoutSignal;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers, signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new ApiError(504, "Server is starting — please wait");
+    }
+    throw err;
+  }
   if (!res.ok) {
     let message = res.statusText;
     try {

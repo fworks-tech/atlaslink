@@ -7,6 +7,7 @@ import "./globals.css";
 import theme from "../../mantine-theme.mjs";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import { BackendWakingOverlay } from "@/components/BackendWakingOverlay";
 
 export const metadata: Metadata = {
   title: "Atlaslink — Live Dashboard",
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             </main>
             <Footer />
           </div>
+          <BackendWakingOverlay />
         </MantineProvider>
         <Analytics />
         <SpeedInsights />
