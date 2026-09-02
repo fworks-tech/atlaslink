@@ -102,6 +102,15 @@ stack on the Fastify backend on `main` (shipped M3). The dashboard lives in
 - Drawer inspector + thread view (bidirectional highlight), deep-link `/project/:p/session/:s` + `?q=<b64url>` share.
 - Docs: `docs/diagrams/full-dag-case-studies.md` 7 mermaid FULL DAGs.
 
+### Branch 8 — `feat/render-waking-overlay` (Render cold start)
+
+- `hooks/useBackendHealth.ts`: poll `GET /api/health` with `AbortSignal.timeout(7000)`, treat `502/503/504` or `>2.5s` TTFB as waking, healthy on fast `200`, escalate to `down` after 3 consecutive failures. Interval `1.5s` while waking/`15s` while healthy, single loop with `inFlight` guard.
+- `lib/api.ts`: `fetchJSON(path, {timeoutMs})` via `AbortSignal.any` fallback, maps `TimeoutError`/`AbortError` → `ApiError(504)`.
+- `app/api/[...path]/route.ts`: upstream `fetch` with `AbortSignal.timeout(30000)` and `504` mapping (covers Render 15–30s wake without 500).
+- `components/BackendWakingOverlay.tsx`: `fixed inset-0 z-[200]` blocking overlay (`role="dialog" aria-modal`, live `status` on subtitle only, 800ms grace for `unknown` to avoid flash), mounted once in `app/layout.tsx`.
+- Tests: `hooks/useBackendHealth.test.tsx`, `components/BackendWakingOverlay.test.tsx`.
+- Learning: cold-start detection, `AbortSignal` timeout composition, `jsdom` compat (`AbortSignal.any` fallback), accessible blocking overlays.
+
 ## Cross-branch invariants
 
 - **Backend extended only for FULL DAG:** dashboard is read-only except `POST /tasks/:id/reply` + `session.awaiting_input`/`user_reply` + `diagram` stub + `DELETE /projects/:projectId` (+ `deleteProject` on port) — ADR-004 event-sourced.

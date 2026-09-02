@@ -25,22 +25,29 @@ export async function fetchJSON<T>(
   path: string,
   init?: RequestInit & { timeoutMs?: number },
 ): Promise<T> {
-  const headers = new Headers(init?.headers);
-  if (init?.body) headers.set("Content-Type", "application/json");
+  const { timeoutMs, ...rest } = (init ?? {}) as RequestInit & { timeoutMs?: number };
+  const headers = new Headers(rest.headers);
+  if (rest.body) headers.set("Content-Type", "application/json");
 
-  let signal = init?.signal ?? undefined;
-  if (init?.timeoutMs) {
-    const timeoutSignal = AbortSignal.timeout(init.timeoutMs);
-    signal = signal
-      ? AbortSignal.any([signal, timeoutSignal])
-      : timeoutSignal;
+  let signal = rest.signal ?? undefined;
+  if (timeoutMs) {
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    if (signal) {
+      const anyFn = (AbortSignal as unknown as { any?: (s: AbortSignal[]) => AbortSignal }).any;
+      signal = anyFn ? anyFn([signal, timeoutSignal]) : timeoutSignal;
+    } else {
+      signal = timeoutSignal;
+    }
   }
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, { ...init, headers, signal });
+    res = await fetch(`${API_BASE}${path}`, { ...rest, headers, signal });
   } catch (err) {
-    if (err instanceof DOMException && err.name === "TimeoutError") {
+    if (
+      err instanceof DOMException &&
+      (err.name === "TimeoutError" || err.name === "AbortError")
+    ) {
       throw new ApiError(504, "Server is starting — please wait");
     }
     throw err;

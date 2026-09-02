@@ -24,7 +24,16 @@ headers, hence the route handler). SSE streams back through it verbatim.
 
 `ATLASLINK_API_URL` and `ATLASLINK_API_TOKEN` configure the proxy (see
 `.env.example`). The loopback default is unauthenticated per the auth gate
-contract (`src/api/auth.ts`).
+contract (`src/api/auth.ts`). In production on Vercel (`atlas.flabs.tech`)
+`ATLASLINK_API_URL` points at the Render backend; the BFF proxy forwards
+`ATLASLINK_API_TOKEN` server-side.
+
+Render free tier sleeps after ~15m idle (cold start 15–30s). The dashboard
+polls `GET /api/health` (`hooks/useBackendHealth.ts`, 7s timeout, 1.5s while
+waking / 15s while healthy) and shows a blocking overlay
+(`components/BackendWakingOverlay.tsx`) until the backend is healthy. The BFF
+`src/app/api/[...path]/route.ts` upstream `fetch` has a 30s timeout and maps
+timeouts to `504` so the overlay can distinguish waking from down.
 
 ## Scripts
 

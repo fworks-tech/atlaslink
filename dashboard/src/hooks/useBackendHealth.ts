@@ -14,10 +14,20 @@ export function useBackendHealth() {
   const [health, setHealth] = useState<BackendHealth>("unknown");
   const [attempt, setAttempt] = useState(0);
   const consecutiveFailures = useRef(0);
+  const inFlight = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelled = useRef(false);
+  const healthRef = useRef<BackendHealth>("unknown");
+  const wasHealthy = useRef(false);
 
+  useEffect(() => {
+    healthRef.current = health;
+  }, [health]);
+
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- check is stable (refs only)
   const check = useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     const start = performance.now();
     try {
       const res = await fetch(HEALTH_PATH, {
@@ -28,67 +38,53 @@ export function useBackendHealth() {
       if (cancelled.current) return;
 
       if (!res.ok) {
-        // Render returns 502/503 while waking
+        consecutiveFailures.current += 1;
+        setAttempt((a) => a + 1);
         if ([502, 503, 504].includes(res.status)) {
-          consecutiveFailures.current += 1;
-          setAttempt((a) => a + 1);
-          setHealth(consecutiveFailures.current >= 2 ? "down" : "waking");
+          setHealth(consecutiveFailures.current >= 3 ? "down" : "waking");
         } else {
-          consecutiveFailures.current += 1;
           setHealth("down");
         }
         return;
       }
 
-      if (elapsed > SLOW_THRESHOLD_MS) {
+      // Only treat slowness as waking if we were not already healthy
+      // (avoids false overlay on a loaded-but-healthy backend)
+      if (elapsed > SLOW_THRESHOLD_MS && !wasHealthy.current) {
         consecutiveFailures.current = 0;
         setHealth("waking");
         return;
       }
 
       consecutiveFailures.current = 0;
+      wasHealthy.current = true;
+      setAttempt(0);
       setHealth("healthy");
     } catch (err) {
       if (cancelled.current) return;
-      const isTimeout =
-        err instanceof DOMException && err.name === "TimeoutError";
+      const isAbort =
+        err instanceof DOMException &&
+        (err.name === "TimeoutError" || err.name === "AbortError");
+      // isAbort is kept for future severity tuning; currently all failures
+      // escalate the same (waking for first 2, down at 3+) — see review #6
+      void isAbort;
       consecutiveFailures.current += 1;
       setAttempt((a) => a + 1);
-      // First timeout/network error is "waking" (cold start), second+ is "down"
-      if (consecutiveFailures.current >= 2 || !isTimeout) {
-        // keep "waking" for first timeout so message stays friendly
-        setHealth(consecutiveFailures.current >= 3 ? "down" : "waking");
-      } else {
-        setHealth("waking");
+      setHealth(consecutiveFailures.current >= 3 ? "down" : "waking");
+    } finally {
+      inFlight.current = false;
+      if (!cancelled.current) {
+        const next = healthRef.current;
+        const interval = next === "healthy" ? HEALTHY_INTERVAL_MS : WAKING_INTERVAL_MS;
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => void check(), interval);
       }
     }
   }, []);
 
-  const schedule = useCallback(
-    (nextHealth: BackendHealth) => {
-      if (timer.current) clearTimeout(timer.current);
-      const interval =
-        nextHealth === "healthy" ? HEALTHY_INTERVAL_MS : WAKING_INTERVAL_MS;
-      timer.current = setTimeout(async () => {
-        if (cancelled.current) return;
-        await check();
-      }, interval);
-    },
-    [check],
-  );
-
-  // Drive polling loop off health changes
-  useEffect(() => {
-    schedule(health);
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [health, schedule]);
-
-  // Initial check
+  // Single polling loop: initial check + interval driven from check() finally
   useEffect(() => {
     cancelled.current = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void check();
     return () => {
       cancelled.current = true;
@@ -98,7 +94,8 @@ export function useBackendHealth() {
 
   const retry = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
-    check();
+    setHealth("waking");
+    void check();
   }, [check]);
 
   return { health, attempt, retry };
