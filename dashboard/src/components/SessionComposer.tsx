@@ -15,16 +15,7 @@ const SAMPLE_PROMPTS = [
   "What is Atlas holding in the sky of sessions?",
 ];
 
-const SOCIETY_MEMBERS = [
-  { id: "the-mediator", label: "The Mediator", desc: "Routes intent → specialist", icon: "◈" },
-  { id: "the-architect", label: "The Architect", desc: "Plans before coding", icon: "⬢" },
-  { id: "the-builder", label: "The Builder", desc: "Implements & fixes", icon: "▣" },
-  { id: "the-reviewer", label: "The Reviewer", desc: "5-axis code review", icon: "◎" },
-  { id: "the-tester", label: "The Tester", desc: "TDD & coverage", icon: "◐" },
-  { id: "the-debugger", label: "The Debugger", desc: "Root-cause traces", icon: "⚡" },
-  { id: "the-auditor", label: "The Auditor", desc: "Security & deps", icon: "⬣" },
-  { id: "the-librarian", label: "The Librarian", desc: "Docs & memory", icon: "⬔" },
-];
+
 
 export function SessionComposer({
   projects,
@@ -180,7 +171,7 @@ export function SessionComposer({
                 : "border-danger/20 bg-danger/10 text-danger"
             }`}
           >
-            {toast.message}
+            {toast.message || 'An error occurred'}
             <button
               type="button"
               onClick={() => setToast(null)}
@@ -192,40 +183,6 @@ export function SessionComposer({
           </div>
         )}
       </div>
-
-      {/* Society strip — Atlas identity, agenthood-society parity */}
-      <FadeIn delay={120} className="relative z-10 mt-10 w-full max-w-5xl">
-        <div id="society" className="rounded-xl border border-white/5 bg-surface/50 p-4 sm:p-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-semibold uppercase tracking-widest text-muted">The Society</h2>
-            <span className="text-xs text-muted">{SOCIETY_MEMBERS.length} members · any runtime</span>
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {SOCIETY_MEMBERS.map((m) => (
-              <div key={m.id} className="rounded-lg border border-zinc-800 bg-zinc-900 p-3 transition-colors hover:border-zinc-700">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-md bg-zinc-800 text-xs text-zinc-300" aria-hidden>
-                    {m.icon}
-                  </span>
-                  <span className="text-xs font-medium text-zinc-200">{m.label}</span>
-                </div>
-                <p className="mt-1.5 text-[11px] leading-4 text-zinc-500">{m.desc}</p>
-              </div>
-            ))}
-          </div>
-          <div id="how-it-works" className="mt-6 grid gap-3 sm:grid-cols-3 text-xs text-zinc-500">
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
-              <span className="font-medium text-zinc-300">1 · Ask</span> — You prompt The Mediator; it holds the sky.
-            </div>
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
-              <span className="font-medium text-zinc-300">2 · Society acts</span> — DAG fans out · chain · full.
-            </div>
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2.5">
-              <span className="font-medium text-zinc-300">3 · Inspect</span> — Click any node → thread & provenance.
-            </div>
-          </div>
-        </div>
-      </FadeIn>
     </div>
   );
 }
