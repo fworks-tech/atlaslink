@@ -5,10 +5,9 @@ import { IconBrandGithub } from "@tabler/icons-react";
 
 interface FooterProps {
   className?: string;
-  version: string;
 }
 
-export default function Footer({ className = "", version }: FooterProps) {
+export default function Footer({ className = "" }: FooterProps) {
   return (
     <footer className={`border-t border-zinc-800 px-6 py-8 mx-auto w-full max-w-6xl ${className}`}>
       <Group justify="space-between" align="center" gap="lg" className="flex-col sm:flex-row">

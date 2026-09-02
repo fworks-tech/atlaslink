@@ -7,7 +7,6 @@ import "./globals.css";
 import theme from "../../mantine-theme.mjs";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import { ATLAS_VERSION } from "@/lib/atlas-version";
 
 export const metadata: Metadata = {
   title: "Atlaslink — Live Dashboard",
@@ -34,7 +33,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none focus-visible:outline-none">
               {children}
             </main>
-            <Footer version={ATLAS_VERSION} />
+            <Footer />
           </div>
         </MantineProvider>
         <Analytics />
