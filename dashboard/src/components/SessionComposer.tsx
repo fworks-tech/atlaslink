@@ -84,7 +84,7 @@ export function SessionComposer({
     <div className="relative flex flex-col items-center justify-center min-h-[70vh] px-4 py-10">
       {/* Hero watermark */}
       <FadeIn className="relative z-10 mb-8 max-w-7xl text-center">
-        <div className="inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
+        <div className="flex items-center justify-center pointer-events-none select-none overflow-hidden">
         <span
           className="text-[8rem] sm:text-[10rem] md:text-[12rem] font-black tracking-tighter text-foreground/[0.04] leading-none"
           aria-hidden
@@ -92,16 +92,12 @@ export function SessionComposer({
           ATLAS
         </span>
       </div>
-        {/* <h1 className="mt-4 text-2xl font-semibold tracking-tight text-foreground">
-          Ask Atlas. Watch the Society work.
-        </h1> */}
         <p className="mt-3 text-sm leading-6 text-muted">
           Ask Atlas. See how the AI and human members of the Society collaborate to solve your problem.
         </p>
       </FadeIn>
 
       <div className="relative z-10 w-full max-w-2xl">
-        {/* AnimatedMessage above Ask Atlas input */}
 
         <form onSubmit={submit} className="rounded-xl border border-white/5 bg-surface/80 backdrop-blur-sm p-6">
           <div className="flex flex-col gap-4">
