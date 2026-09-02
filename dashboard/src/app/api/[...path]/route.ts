@@ -48,6 +48,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     body,
     // route handlers must not let the data cache treat daemon responses as static
     cache: "no-store",
+    signal: AbortSignal.timeout(15000),
   });
 
   const responseHeaders = new Headers();
