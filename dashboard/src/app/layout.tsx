@@ -5,7 +5,6 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import theme from "../../mantine-theme.mjs";
-import { ConnectionStatus } from "@/components/ConnectionStatus";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { ATLAS_VERSION } from "@/lib/atlas-version";
@@ -36,9 +35,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               {children}
             </main>
             <Footer version={ATLAS_VERSION} />
-          </div>
-          <div className="fixed bottom-4 right-4 z-50">
-            <ConnectionStatus />
           </div>
         </MantineProvider>
         <Analytics />
