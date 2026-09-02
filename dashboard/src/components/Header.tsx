@@ -14,11 +14,8 @@ interface NavLink {
 }
 
 const navLinks: NavLink[] = [
-  { href: "/", label: "Home" },
-  { href: "/#how-it-works", label: "How it works" },
   { href: "https://github.com/fworks-tech/atlaslink/blob/main/README.md", label: "Docs", external: true },
   { href: "https://github.com/fworks-tech/atlaslink/releases", label: "Releases", external: true },
-  { href: "/", label: "Live", highlight: true },
 ];
 
 export default function Header() {
@@ -33,10 +30,10 @@ export default function Header() {
 
   return (
     <nav className="border-b border-zinc-800 bg-zinc-650">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+      <div className="mx-auto flex max-w-7xl items-center justify-between py-4">
         <Link
           href="/"
-          className="font-semibold tracking-tight text-white transition-colors hover:text-zinc-200"
+          className="font-semibold tracking-tight text-white transition-colors hover:text-zinc-200 text-xl sm:text-2xl"
           onClick={() => trackNav("atlaslink")}
         >
           atlaslink
@@ -118,15 +115,13 @@ export default function Header() {
           )}
           <Button
             component="a"
-            href="https://github.com/fworks-tech/atlaslink"
             target="_blank"
             rel="noopener noreferrer"
             variant="outline"
-            color="gray"
             size="sm"
-            onClick={() => trackNav("github")}
+            disabled
           >
-            GitHub →
+            My Atlas
           </Button>
         </Group>
 
@@ -229,18 +224,13 @@ export default function Header() {
           )}
           <Button
             component="a"
-            href="https://github.com/fworks-tech/atlaslink"
             target="_blank"
             rel="noopener noreferrer"
             variant="outline"
             color="emerald"
             fullWidth
-            onClick={() => {
-              trackNav("github");
-              setMenuOpen(false);
-            }}
           >
-            GitHub →
+            My Atlas
           </Button>
         </Stack>
       </Drawer>
