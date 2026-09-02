@@ -9,7 +9,7 @@ interface FooterProps {
 
 export default function Footer({ className = "" }: FooterProps) {
   return (
-    <footer className={`border-t border-zinc-800 px-6 py-8 mx-auto w-full max-w-6xl ${className}`}>
+    <footer className={`border-t border-zinc-800 px-6 py-8 mx-auto w-full max-w-7xl ${className}`}>
       <Group justify="space-between" align="center" gap="lg" className="flex-col sm:flex-row">
         <Group gap="sm" className="text-sm text-zinc-500">
           <Text size="sm" c="dimmed">
