@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 // Daemon origin, read at runtime (server-side). Dev defaults to the loopback
-// daemon; Vercel sets it to the Fly.io backend URL.
+// daemon; Vercel sets it to the Render backend URL.
 const API_URL = process.env.ATLASLINK_API_URL ?? "http://127.0.0.1:3000";
 // Gate token, server-side only — the browser bundle never sees it.
 const API_TOKEN = process.env.ATLASLINK_API_TOKEN;
@@ -42,14 +42,22 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   const body = method === "get" ? undefined : await req.text();
   if (body !== undefined) headers.set("content-type", req.headers.get("content-type") ?? "application/json");
 
-  const upstream = await fetch(target, {
-    method: req.method,
-    headers,
-    body,
-    // route handlers must not let the data cache treat daemon responses as static
-    cache: "no-store",
-    signal: AbortSignal.timeout(15000),
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(target, {
+      method: req.method,
+      headers,
+      body,
+      // route handlers must not let the data cache treat daemon responses as static
+      cache: "no-store",
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+      return NextResponse.json({ ok: false, error: "Server is starting — please wait" }, { status: 504 });
+    }
+    throw err;
+  }
 
   const responseHeaders = new Headers();
   for (const [key, value] of upstream.headers) {
