@@ -15,7 +15,6 @@ interface NavLink {
 
 const navLinks: NavLink[] = [
   { href: "/", label: "Home" },
-  { href: "/#society", label: "Society" },
   { href: "/#how-it-works", label: "How it works" },
   { href: "https://github.com/fworks-tech/atlaslink/blob/main/README.md", label: "Docs", external: true },
   { href: "https://github.com/fworks-tech/atlaslink/releases", label: "Releases", external: true },
@@ -33,7 +32,7 @@ export default function Header() {
   }, []);
 
   return (
-    <nav className="border-b border-zinc-800 bg-zinc-950">
+    <nav className="border-b border-zinc-800 bg-zinc-650">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <Link
           href="/"
