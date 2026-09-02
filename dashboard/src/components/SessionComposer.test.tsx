@@ -22,7 +22,7 @@ describe("SessionComposer", () => {
     const projects = [{ id: "proj-1", name: "alpha", createdAt: new Date().toISOString() }];
     const onCreate = vi.fn();
     render(<SessionComposer projects={projects} onCreateSession={onCreate} />);
-    const textarea = screen.getByPlaceholderText(/ask atlas/i) as HTMLTextAreaElement;
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
     expect(textarea.maxLength).toBe(10000);
 
     const button = screen.getByRole("button", { name: /ask atlas/i });
@@ -47,7 +47,7 @@ describe("SessionComposer", () => {
     fireEvent.change(projectSelect, { target: { value: "proj-2" } });
     expect(projectSelect.value).toBe("proj-2");
 
-    const textarea = screen.getByPlaceholderText(/ask atlas/i);
+    const textarea = screen.getByRole("textbox");
     fireEvent.change(textarea, { target: { value: "do thing" } });
     fireEvent.click(screen.getByRole("button", { name: /ask atlas/i }));
     await waitFor(() => expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj-2" })));
@@ -57,7 +57,7 @@ describe("SessionComposer", () => {
   it("rejects prompt over 10000 chars", async () => {
     const onCreate = vi.fn();
     render(<SessionComposer projects={[]} onCreateSession={onCreate} />);
-    const textarea = screen.getByPlaceholderText(/ask atlas/i);
+    const textarea = screen.getByRole("textbox");
     fireEvent.change(textarea, { target: { value: "a".repeat(10001) } });
     fireEvent.click(screen.getByRole("button", { name: /ask atlas/i }));
     await waitFor(() => expect(screen.getByText(/≤10000/)).toBeInTheDocument());
