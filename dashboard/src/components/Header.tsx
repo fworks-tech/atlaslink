@@ -3,13 +3,11 @@
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { track } from "@vercel/analytics";
-import { Badge, Burger, Button, Drawer, Group, Stack } from "@mantine/core";
-import HelpTip from "./HelpTip";
+import { Burger, Button, Drawer, Group, Stack } from "@mantine/core";
 
 interface NavLink {
   href: string;
   label: string;
-  highlight?: boolean;
   external?: boolean;
 }
 
@@ -29,7 +27,7 @@ export default function Header() {
   }, []);
 
   return (
-    <nav className="border-b border-zinc-800 bg-zinc-650">
+    <nav className="border-b border-zinc-800">
       <div className="mx-auto flex max-w-7xl items-center justify-between py-4">
         <Link
           href="/"
@@ -41,57 +39,7 @@ export default function Header() {
 
         <Group visibleFrom="md" gap="lg" c="dimmed" fz="sm">
           {navLinks.map((link) =>
-            link.highlight ? (
-              link.external ? (
-                <a
-                  key={link.href + link.label}
-                  href={link.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => trackNav(link.label)}
-                  className="flex items-center gap-1.5 font-medium text-emerald-400 transition-colors hover:text-emerald-300"
-                >
-                  {link.label}
-                  <Badge
-                    size="xs"
-                    variant="outline"
-                    color="emerald"
-                    rightSection={
-                      <HelpTip
-                        text="Live Society Diagram — Atlas holds the sky of sessions. Watch the DAG in real time."
-                        side="top"
-                      />
-                    }
-                    styles={{ label: { textTransform: "uppercase", letterSpacing: "0.05em" } }}
-                  >
-                    New
-                  </Badge>
-                </a>
-              ) : (
-                <Link
-                  key={link.href + link.label}
-                  href={link.href}
-                  onClick={() => trackNav(link.label)}
-                  className="flex items-center gap-1.5 font-medium text-emerald-400 transition-colors hover:text-emerald-300"
-                >
-                  {link.label}
-                  <Badge
-                    size="xs"
-                    variant="outline"
-                    color="emerald"
-                    rightSection={
-                      <HelpTip
-                        text="Live Society Diagram — Atlas holds the sky of sessions. Watch the DAG in real time."
-                        side="top"
-                      />
-                    }
-                    styles={{ label: { textTransform: "uppercase", letterSpacing: "0.05em" } }}
-                  >
-                    New
-                  </Badge>
-                </Link>
-              )
-            ) : link.external ? (
+            link.external ? (
               <a
                 key={link.href + link.label}
                 href={link.href}
@@ -113,14 +61,7 @@ export default function Header() {
               </Link>
             )
           )}
-          <Button
-            component="a"
-            target="_blank"
-            rel="noopener noreferrer"
-            variant="outline"
-            size="sm"
-            disabled
-          >
+          <Button component="a" variant="outline" size="sm" disabled>
             My Atlas
           </Button>
         </Group>
@@ -148,53 +89,7 @@ export default function Header() {
       >
         <Stack gap="sm">
           {navLinks.map((link) =>
-            link.highlight ? (
-              link.external ? (
-                <a
-                  key={link.href + link.label}
-                  href={link.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => {
-                    trackNav(link.label);
-                    setMenuOpen(false);
-                  }}
-                  className="flex items-center gap-2 font-medium text-emerald-400 transition-colors hover:text-emerald-300"
-                >
-                  {link.label}
-                  <Badge
-                    size="xs"
-                    variant="outline"
-                    color="emerald"
-                    rightSection={<HelpTip text="Live Society Diagram — Atlas holds the sky of sessions." side="top" />}
-                    styles={{ label: { textTransform: "uppercase", letterSpacing: "0.05em" } }}
-                  >
-                    New
-                  </Badge>
-                </a>
-              ) : (
-                <Link
-                  key={link.href + link.label}
-                  href={link.href}
-                  onClick={() => {
-                    trackNav(link.label);
-                    setMenuOpen(false);
-                  }}
-                  className="flex items-center gap-2 font-medium text-emerald-400 transition-colors hover:text-emerald-300"
-                >
-                  {link.label}
-                  <Badge
-                    size="xs"
-                    variant="outline"
-                    color="emerald"
-                    rightSection={<HelpTip text="Live Society Diagram — Atlas holds the sky of sessions." side="top" />}
-                    styles={{ label: { textTransform: "uppercase", letterSpacing: "0.05em" } }}
-                  >
-                    New
-                  </Badge>
-                </Link>
-              )
-            ) : link.external ? (
+            link.external ? (
               <a
                 key={link.href + link.label}
                 href={link.href}
@@ -222,14 +117,7 @@ export default function Header() {
               </Link>
             )
           )}
-          <Button
-            component="a"
-            target="_blank"
-            rel="noopener noreferrer"
-            variant="outline"
-            color="emerald"
-            fullWidth
-          >
+          <Button component="a" variant="outline" color="emerald" fullWidth disabled>
             My Atlas
           </Button>
         </Stack>
