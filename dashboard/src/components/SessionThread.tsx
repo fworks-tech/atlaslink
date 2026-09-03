@@ -3,6 +3,7 @@
 import { useMemo, useRef } from "react";
 import type { BridgeEvent, Session } from "@/lib/types";
 import { artifactsFor } from "@/lib/runProjection";
+import { Markdown } from "@/components/Markdown";
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function SessionThread({ session, events, members, onJump }: { session: Session | null; events: BridgeEvent[]; members?: Array<{ name: string }>; onJump?: (nodeId: string) => void }) {
@@ -24,7 +25,7 @@ export function SessionThread({ session, events, members, onJump }: { session: S
         {turns.map((t, i) => (
           <div key={i} className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${t.role === "user" ? "bg-raised ml-auto" : t.role === "atlas" ? "bg-accent/10 border border-accent/30" : "bg-white/5"}`}>
             <div className="text-[10px] uppercase tracking-widest text-muted">{t.role}{t.member ? ` · ${t.member}` : ""}</div>
-            <div className="mt-1 whitespace-pre-wrap leading-snug">{t.content.slice(0, 1000)}</div>
+            <Markdown text={t.content} className="mt-1 text-sm leading-snug" />
           </div>
         ))}
         {artifacts && artifacts.reasoning.length > 0 && (
