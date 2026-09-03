@@ -207,4 +207,94 @@ describe("SessionInspector selectedNode", () => {
     );
     expect(container.innerHTML).toBe("");
   });
+
+  it("shows a loading state instead of the fallback while context resolves", () => {
+    const { unmount } = render(
+      <SessionInspector
+        open
+        onClose={() => {}}
+        session={null}
+        contextLoading
+        events={[]}
+        selectedNode={{ id: "n-1", type: "tool", data: {} }}
+      />,
+    );
+    expect(screen.getByText("Loading session context…")).toBeDefined();
+    expect(screen.queryByText(/not loaded yet/)).toBeNull();
+    unmount();
+    render(
+      <SessionInspector
+        open
+        onClose={() => {}}
+        session={null}
+        events={[]}
+        selectedNode={{ id: "n-1", type: "tool", data: {} }}
+      />,
+    );
+    expect(screen.getByText(/not loaded yet/)).toBeDefined();
+  });
+
+  it("keeps the node payload visible above the loading state", () => {
+    render(
+      <SessionInspector
+        open
+        onClose={() => {}}
+        session={null}
+        contextLoading
+        events={[]}
+        selectedNode={{
+          id: "ses-1::reasoning::0",
+          type: "reasoning",
+          data: { sessionId: "ses-1", step: 0, events: [{ content: "sticky payload" }] as unknown as BridgeEvent[] },
+        }}
+      />,
+    );
+    expect(screen.getByText("sticky payload")).toBeDefined();
+    expect(screen.getByText("Loading session context…")).toBeDefined();
+  });
+
+  it("wraps long unbroken tool args", () => {
+    render(
+      <SessionInspector
+        open
+        onClose={() => {}}
+        session={session()}
+        events={[]}
+        selectedNode={{
+          id: "t-3",
+          type: "tool",
+          data: { pair: { called: { name: "grep", args: "x".repeat(600) }, result: null } },
+        }}
+      />,
+    );
+    const args = screen.getByText(
+      (content, el) => content.startsWith("args:") && (el?.className ?? "").includes("text-muted"),
+    );
+    expect(args.className).toContain("break-words");
+  });
+
+  it("contains a 2000-char payload inside a scrolling header", () => {
+    const payload = "p".repeat(2000);
+    const { container } = render(
+      <SessionInspector
+        open
+        onClose={() => {}}
+        session={session()}
+        events={[]}
+        selectedNode={{
+          id: "ses-1::reasoning::0",
+          type: "reasoning",
+          data: { sessionId: "ses-1", step: 0, events: [{ content: payload }] as unknown as BridgeEvent[] },
+        }}
+      />,
+    );
+    const drawer = container.firstElementChild as HTMLElement;
+    expect(drawer.className).toContain("max-w-[90vw]");
+    const body = screen.getByText(
+      (content, el) => content === payload && (el?.className ?? "").includes("whitespace-pre-wrap"),
+    );
+    expect(body.className).toContain("break-words");
+    const header = body.closest("section") as HTMLElement;
+    expect(header.className).toContain("overflow-y-auto");
+  });
 });

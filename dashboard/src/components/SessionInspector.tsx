@@ -38,7 +38,7 @@ function NodeDetail({ node }: { node: SelectedNode }) {
     return (
       <div className="space-y-1.5">
         <div className="text-xs text-muted">step {String(d.step ?? first.step ?? 0)} · {str(d.sessionId).slice(0, 14)}…</div>
-        <div className="rounded bg-raised p-2 text-xs leading-snug whitespace-pre-wrap">{content.slice(0, 2000)}</div>
+        <div className="rounded bg-raised p-2 text-xs leading-snug break-words whitespace-pre-wrap">{content.slice(0, 2000)}</div>
         {summary && <div className="text-xs text-muted">↳ {summary.slice(0, 500)}</div>}
         {events.length > 1 && <div className="text-[11px] text-muted">+{events.length - 1} more event(s) in this step</div>}
       </div>
@@ -51,9 +51,9 @@ function NodeDetail({ node }: { node: SelectedNode }) {
     return (
       <div className="space-y-1.5">
         <div className="text-xs font-medium text-foreground">{str(called.name, "tool")}</div>
-        <div className="text-[11px] text-muted">args: {JSON.stringify(called.args ?? called.arguments ?? "").slice(0, 500)}</div>
+        <div className="text-[11px] break-words text-muted">args: {JSON.stringify(called.args ?? called.arguments ?? "").slice(0, 500)}</div>
         {result ? (
-          <div className="mt-1 rounded bg-ok/5 p-1.5 text-xs whitespace-pre-wrap">↳ {str(result.output, str(result.result, JSON.stringify(result).slice(0, 500)))}</div>
+          <div className="mt-1 rounded bg-ok/5 p-1.5 text-xs break-words whitespace-pre-wrap">↳ {str(result.output, str(result.result, JSON.stringify(result).slice(0, 500)))}</div>
         ) : (
           <div className="text-xs text-amber-300">running…</div>
         )}
@@ -66,7 +66,7 @@ function NodeDetail({ node }: { node: SelectedNode }) {
     return (
       <div className="space-y-1.5">
         <div className="text-xs text-muted">decision · {str(event.decisionId, str(d.sessionId, "")).slice(0, 40)}</div>
-        <div className="rounded border border-violet-500/20 bg-violet-500/10 p-2 text-xs whitespace-pre-wrap">{outcome.slice(0, 1000)}</div>
+        <div className="rounded border border-violet-500/20 bg-violet-500/10 p-2 text-xs break-words whitespace-pre-wrap">{outcome.slice(0, 1000)}</div>
       </div>
     );
   }
@@ -89,7 +89,7 @@ function NodeDetail({ node }: { node: SelectedNode }) {
       </div>
     );
   }
-  return <div className="rounded bg-raised p-2 font-mono text-[11px] whitespace-pre-wrap">{JSON.stringify(node.data ?? {}).slice(0, 500)}</div>;
+  return <div className="rounded bg-raised p-2 font-mono text-[11px] break-words whitespace-pre-wrap">{JSON.stringify(node.data ?? {}).slice(0, 500)}</div>;
 }
 
 export function SessionInspector({
@@ -98,12 +98,14 @@ export function SessionInspector({
   session,
   events,
   selectedNode = null,
+  contextLoading = false,
 }: {
   open: boolean;
   onClose: () => void;
   session: Session | null;
   events: BridgeEvent[];
   selectedNode?: SelectedNode | null;
+  contextLoading?: boolean;
 }) {
   const [tab, setTab] = useState<InspectorTab>("overview");
   const [lastAutoId, setLastAutoId] = useState<string | null>(null);
@@ -129,7 +131,7 @@ export function SessionInspector({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-y-0 right-0 z-40 flex w-[380px] flex-col border-l border-white/10 bg-surface shadow-2xl">
+    <div className="fixed inset-y-0 right-0 z-40 flex w-[380px] max-w-[90vw] flex-col border-l border-white/10 bg-surface shadow-2xl">
       <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
         <div className="text-xs uppercase tracking-widest text-muted">inspector</div>
         <button onClick={onClose} className="rounded px-2 py-1 text-sm text-muted hover:bg-raised">
@@ -147,13 +149,13 @@ export function SessionInspector({
                 <span className="rounded bg-accent/20 px-1.5 py-0.5 font-mono text-[11px] text-accent">{selectedNode.type}</span>
               </div>
               <div className="mt-1 font-mono text-[11px] break-all text-muted">{selectedNode.id}</div>
-              <div className="mt-2">
+              <section aria-label="Selected node payload" className="mt-2 max-h-[45vh] min-h-0 overflow-y-auto">
                 <NodeDetail node={selectedNode} />
-              </div>
+              </section>
             </div>
           )}
           {!session ? (
-            <div className="p-4 text-xs text-muted">Session context not loaded yet — node payload shown above.</div>
+            <div className="p-4 text-xs text-muted">{contextLoading ? "Loading session context…" : "Session context not loaded yet — node payload shown above."}</div>
           ) : (
           <>
           <div className="flex gap-1 border-b border-white/5 px-2 py-1">
