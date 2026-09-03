@@ -55,13 +55,22 @@ describe("buildSocietyGraph full mode", () => {
   });
 
   function fullChain(): ReturnType<typeof buildSocietyGraph> {
-    const events: BridgeEvent[] = [
+    const ses1: BridgeEvent[] = [
       ev({ eventId: 1, type: "reasoning", step: 1, member: "the-debugger", content: "why" }),
-      ev({ eventId: 2, type: "tool.called", name: "grep", step: 1, member: "the-debugger" }),
-      ev({ eventId: 3, type: "tool.result", name: "grep", step: 1, member: "the-debugger" }),
-      ev({ eventId: 4, type: "decision.recorded", decisionId: "dec-1" }),
+      ev({ eventId: 2, type: "reasoning", step: 2, member: "the-debugger", content: "why not" }),
+      ev({ eventId: 3, type: "tool.called", name: "grep", step: 2, member: "the-debugger", pairId: "a" } as unknown as BridgeEvent),
+      ev({ eventId: 4, type: "tool.result", name: "grep", step: 2, member: "the-debugger", pairId: "a" } as unknown as BridgeEvent),
+      ev({ eventId: 5, type: "tool.called", name: "grep", step: 2, member: "the-debugger", pairId: "b" } as unknown as BridgeEvent),
+      ev({ eventId: 6, type: "decision.recorded", decisionId: "dec-1" }),
     ];
-    return buildSocietyGraph([sess("ses-1", "cor-1", "running")], events, { mode: "full" });
+    const ses2: BridgeEvent[] = [
+      ev({ eventId: 7, type: "tool.called", name: "sed", step: 1, member: "the-builder", correlationId: "cor-2", pairId: "c" } as unknown as BridgeEvent),
+    ];
+    return buildSocietyGraph(
+      [sess("ses-1", "cor-1", "running"), sess("ses-2", "cor-2", "running")],
+      [...ses1, ...ses2],
+      { mode: "full" },
+    );
   }
 
   it("separates consecutive full-DAG nodes by reserved heights + ranksep", () => {
@@ -71,15 +80,12 @@ describe("buildSocietyGraph full mode", () => {
       const kind = n.type as keyof typeof NODE_FOOTPRINTS;
       return n.position.y + NODE_FOOTPRINTS[kind].height / 2;
     };
-    const reasoning = "ses-1::reasoning::1";
-    const tool = graph.nodes.find((n) => n.type === "tool")!.id;
-    const decision = "ses-1::decision::dec-1";
-    expect(center(tool) - center(reasoning)).toBe(
-      (NODE_FOOTPRINTS.reasoning.height + NODE_FOOTPRINTS.tool.height) / 2 + 72,
-    );
-    expect(center(decision) - center(tool)).toBe(
-      (NODE_FOOTPRINTS.tool.height + NODE_FOOTPRINTS.decision.height) / 2 + 72,
-    );
+    const gap = (upper: string, lower: string): number => center(lower) - center(upper);
+    const size = (kind: keyof typeof NODE_FOOTPRINTS): number => NODE_FOOTPRINTS[kind].height;
+    expect(gap("ses-1::reasoning::1", "ses-1::reasoning::2")).toBe((size("reasoning") + size("reasoning")) / 2 + 72);
+    expect(gap("ses-1::reasoning::2", "ses-1::tool::pair::a")).toBe((size("reasoning") + size("tool")) / 2 + 72);
+    expect(gap("ses-1::tool::pair::a", "ses-1::tool::pair::b")).toBe((size("tool") + size("tool")) / 2 + 72);
+    expect(gap("ses-1::tool::pair::b", "ses-1::decision::dec-1")).toBe((size("tool") + size("decision")) / 2 + 72);
   });
 
   it("never overlaps full-DAG node footprints", () => {

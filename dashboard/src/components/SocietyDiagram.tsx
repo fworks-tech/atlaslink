@@ -112,14 +112,11 @@ export function SocietyDiagram({
   // nodes onto stale coordinates. The user still wins for size and selection
   // (so resize handles don't vanish on live updates). Edges are derived.
   useEffect(() => {
-    setNodes((current) => {
-      const merged = mergeNodesWithLayout(current, nextNodes, draggedRef.current);
-      const nextIds = new Set(nextNodes.map((n) => n.id));
-      for (const id of [...draggedRef.current]) {
-        if (!nextIds.has(id)) draggedRef.current.delete(id);
-      }
-      return merged;
-    });
+    const nextIds = new Set(nextNodes.map((n) => n.id));
+    for (const id of [...draggedRef.current]) {
+      if (!nextIds.has(id)) draggedRef.current.delete(id);
+    }
+    setNodes((current) => mergeNodesWithLayout(current, nextNodes, draggedRef.current));
   }, [nextNodes, setNodes]);
 
   useEffect(() => {
