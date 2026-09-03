@@ -309,4 +309,52 @@ describe("HomeClient room wiring", () => {
     render(<HomeClient />);
     expect(screen.getByText(/2 here/)).toBeDefined();
   });
+
+  it("chat failure shows a status-qualified error with retry and clears on edit", async () => {
+    seedRoom("session=ses-1");
+    chatMock.mockRejectedValueOnce(new Error("404 not found")).mockRejectedValueOnce(new Error("404 not found"));
+    render(<HomeClient />);
+    const input = screen.getByLabelText("Message the room");
+    fireEvent.change(input, { target: { value: "hi all" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await vi.waitFor(() => expect(screen.getByText("404 not found")).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(screen.getByText("404 not found")).toBeDefined());
+    fireEvent.change(input, { target: { value: "hi all!" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("posts exactly once on double submit", async () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    fireEvent.change(screen.getByLabelText("Message the room"), { target: { value: "hi all" } });
+    const send = screen.getByRole("button", { name: "Send" });
+    fireEvent.click(send);
+    fireEvent.click(send);
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("a failed list refresh does not mark a delivered chat as failed", async () => {
+    seedRoom("session=ses-1");
+    refreshMock.mockRejectedValueOnce(new Error("list down"));
+    render(<HomeClient />);
+    fireEvent.change(screen.getByLabelText("Message the room"), { target: { value: "hi all" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledWith("ses-1", "hi all"));
+    await vi.waitFor(() => expect(screen.getByLabelText("Message the room")).toHaveValue(""));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("renders the fallback text for non-Error chat rejections", async () => {
+    seedRoom("session=ses-1");
+    chatMock.mockRejectedValueOnce("plain string failure");
+    render(<HomeClient />);
+    fireEvent.change(screen.getByLabelText("Message the room"), { target: { value: "hi all" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await vi.waitFor(() => expect(screen.getByText(/Chat failed/)).toBeDefined());
+  });
 });
