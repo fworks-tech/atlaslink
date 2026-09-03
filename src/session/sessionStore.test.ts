@@ -59,6 +59,40 @@ test('rehydrate projects awaiting_input: status, nextStep and atlas interaction,
   assert.equal(b.interaction.at(-1)?.role, 'user')
 })
 
+test('rehydrate projects session.message as a user turn without changing status', () => {
+  const running: SessionEvent = { type: 'session.running', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:01Z' }
+  const msg: SessionEvent = { type: 'session.message', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:02Z', message: 'hello?' }
+  const s = rehydrate([created, running, msg])
+  assert.ok(s)
+  assert.equal(s.status, 'running')
+  assert.equal(s.version, 3)
+  assert.equal(s.nextStep, null)
+  assert.equal(s.interaction.length, 2)
+  assert.deepEqual(s.interaction.at(-1), { role: 'user', at: '2026-01-01T00:00:02Z', content: 'hello?' })
+})
+
+test('rehydrate keeps awaiting_input and its nextStep when a message lands', () => {
+  const awaiting: SessionEvent = { type: 'session.awaiting_input', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:03Z', question: 'continue?', member: 'atlas' }
+  const msg: SessionEvent = { type: 'session.message', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:04Z', message: 'one moment' }
+  const s = rehydrate([created, awaiting, msg])
+  assert.ok(s)
+  assert.equal(s.status, 'awaiting_input')
+  assert.deepEqual(s.nextStep, { awaiting_input: true, prompt: 'continue?', member: 'atlas' })
+  assert.equal(s.interaction.at(-1)?.role, 'user')
+  assert.equal(s.interaction.at(-1)?.content, 'one moment')
+})
+
+test('rehydrate projects session.steer as a user turn without changing status', () => {
+  const running: SessionEvent = { type: 'session.running', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:01Z' }
+  const steer: SessionEvent = { type: 'session.steer', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:02Z', message: 'prefer groq' }
+  const s = rehydrate([created, running, steer])
+  assert.ok(s)
+  assert.equal(s.status, 'running')
+  assert.equal(s.version, 3)
+  assert.equal(s.interaction.at(-1)?.role, 'user')
+  assert.equal(s.interaction.at(-1)?.content, 'prefer groq')
+})
+
 backendContract('SessionStore satisfies the backend contract', async () => new SessionStore())
 
 test('SessionStore: the snapshot cache serves the same aggregate until an append', async () => {

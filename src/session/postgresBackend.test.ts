@@ -33,6 +33,39 @@ async function backendWithMigrations(): Promise<PostgresBackend> {
   return new PostgresBackend(new PgliteDb(db))
 }
 
+test('PostgresBackend: trailing message/steer do not move list status', async () => {
+  const backend = await backendWithMigrations()
+  await backend.append({ ...created })
+  await backend.append({ ...running })
+  await backend.append({
+    type: 'session.message',
+    sessionId: 'ses-1',
+    correlationId: 'cor-1',
+    at: '2026-01-01T00:00:02Z',
+    message: 'ping',
+  })
+  await backend.append({
+    type: 'session.steer',
+    sessionId: 'ses-1',
+    correlationId: 'cor-1',
+    at: '2026-01-01T00:00:03Z',
+    message: 'steer left',
+  })
+
+  const runningList = await backend.list({ status: 'running', limit: 50, offset: 0 })
+  assert.deepEqual(
+    runningList.sessions.map((s) => s.sessionId),
+    ['ses-1']
+  )
+  const queuedList = await backend.list({ status: 'queued', limit: 50, offset: 0 })
+  assert.equal(queuedList.total, 0)
+
+  const s = await backend.get('ses-1')
+  assert.ok(s)
+  assert.equal(s.status, 'running')
+  assert.equal(s.interaction.at(-1)?.content, 'steer left')
+})
+
 test('migrations apply once and are idempotent on a fresh database', async () => {
   const db = new PGlite()
   const adapter = new PgliteDb(db)

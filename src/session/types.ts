@@ -9,6 +9,8 @@ export interface SessionEvent {
     | 'session.cancelled'
     | 'session.awaiting_input'
     | 'session.user_reply'
+    | 'session.message'
+    | 'session.steer'
   sessionId: string
   correlationId: string
   at: string
@@ -23,6 +25,8 @@ export interface SessionEvent {
   // awaiting_input / user_reply
   question?: string
   reply?: string
+  // session.message / session.steer human-authored text
+  message?: string
   iteration?: number
 }
 
@@ -65,6 +69,15 @@ export class VersionConflictError extends Error {
   ) {
     super(`version conflict for ${sessionId}: expected ${expected}, actual ${actual}`)
     this.name = 'VersionConflictError'
+  }
+}
+
+/** Thrown by a readModifyWrite mutator when the write-time aggregate is
+ * terminal — lets routes reject late writes that raced a cancel/finish. */
+export class SessionTerminatedError extends Error {
+  constructor(public readonly sessionId: string) {
+    super(`session already terminated: ${sessionId}`)
+    this.name = 'SessionTerminatedError'
   }
 }
 

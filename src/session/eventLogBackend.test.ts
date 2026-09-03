@@ -260,3 +260,30 @@ test('EventLogBackend: appending to a different session does not invalidate the 
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('EventLogBackend: message/steer append to history without moving status', async () => {
+  const { dir, backend } = await openBackend()
+  try {
+    await backend.append(created)
+    await backend.append({
+      type: 'session.message',
+      sessionId: 'ses-1',
+      correlationId: 'cor-1',
+      at: '2026-01-01T00:00:02Z',
+      message: 'ping',
+    })
+
+    const s = await backend.get('ses-1')
+    assert.ok(s)
+    assert.equal(s.status, 'queued')
+    assert.equal(s.version, 2)
+    assert.equal(s.interaction.length, 2)
+    assert.equal(s.interaction.at(-1)?.content, 'ping')
+
+    // the store allowlist must carry chat — otherwise list/get silently drop it
+    const queued = await backend.list({ status: 'queued', limit: 50, offset: 0 })
+    assert.equal(queued.sessions.some((x) => x.sessionId === 'ses-1'), true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

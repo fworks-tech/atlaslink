@@ -33,6 +33,14 @@ function parseEvent(raw: string | SessionEvent): SessionEvent {
   return typeof raw === 'string' ? (JSON.parse(raw) as SessionEvent) : raw
 }
 
+/** Chat/steer append to history without moving the lifecycle — the sessions
+ * directory keeps its status and only `updated_at` advances. Single source
+ * for both the directory projection and the ranked-CTE exclusion below. */
+const STATUS_PRESERVING_EVENTS: ReadonlySet<SessionEvent['type']> = new Set(['session.message', 'session.steer'])
+
+/** SQL literal list derived from STATUS_PRESERVING_EVENTS — never hand-edit. */
+const STATUS_PRESERVING_SQL = [...STATUS_PRESERVING_EVENTS].map((t) => `'${t}'`).join(', ')
+
 /**
  * The `SessionBackend` over Postgres event tables (ADR-006 Decisions 4–5).
  * Event append is the commit; `version` is the optimistic CAS token held inside
@@ -67,6 +75,52 @@ export class PostgresBackend implements SessionBackend {
     private readonly tenantId: string = DEFAULT_TENANT_ID
   ) {}
 
+  /** Sessions-directory projection for one committed event. Shared by append
+   * and readModifyWrite so the two paths cannot diverge on new event types. */
+  private async projectDirectory(
+    tx: { query: (text: string, params: unknown[]) => Promise<unknown> },
+    event: SessionEvent,
+    sessionId: string
+  ): Promise<void> {
+    if (event.type === 'session.created' && event.projectId) {
+      const title = (event.prompt ?? sessionId).slice(0, 500)
+      await tx.query(
+        `INSERT INTO sessions (tenant_id, session_id, project_id, title, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'queued', $5, $5)
+         ON CONFLICT (tenant_id, session_id) DO UPDATE SET
+           project_id = EXCLUDED.project_id,
+           title = EXCLUDED.title,
+           updated_at = EXCLUDED.updated_at`,
+        [this.tenantId, sessionId, event.projectId, title, event.at]
+      )
+    } else if (STATUS_PRESERVING_EVENTS.has(event.type)) {
+      await tx.query(
+        `UPDATE sessions SET updated_at = $3
+         WHERE tenant_id = $1 AND session_id = $2`,
+        [this.tenantId, sessionId, event.at]
+      )
+    } else if (event.type !== 'session.created') {
+      // status mapping is exhaustive; unknown types fail-fast to surface new SessionEvent variants
+      const statusMap: Record<string, string> = {
+        'session.running': 'running',
+        'session.succeeded': 'succeeded',
+        'session.failed': 'failed',
+        'session.cancelled': 'cancelled',
+        'session.awaiting_input': 'awaiting_input',
+        'session.user_reply': 'queued',
+      }
+      const status = statusMap[event.type]
+      if (!status) throw new Error(`unknown session event type for directory projection: ${event.type}`)
+      // For sessions not in the directory (no projectId), this UPDATE is a no-op
+      // but still touches the index; acceptable for expected scale (<1k sessions/project).
+      await tx.query(
+        `UPDATE sessions SET status = $3, updated_at = $4
+         WHERE tenant_id = $1 AND session_id = $2`,
+        [this.tenantId, sessionId, status, event.at]
+      )
+    }
+  }
+
   withTenant(tenantId: string): PostgresBackend {
     if (tenantId === this.tenantId) return this
     return new PostgresBackend(this.db, tenantId)
@@ -93,37 +147,7 @@ export class PostgresBackend implements SessionBackend {
       )
 
       // Maintain the sessions directory projection (transactionally consistent with event commit)
-      if (event.type === 'session.created' && event.projectId) {
-        const title = (event.prompt ?? event.sessionId).slice(0, 500)
-        await tx.query(
-          `INSERT INTO sessions (tenant_id, session_id, project_id, title, status, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, 'queued', $5, $5)
-           ON CONFLICT (tenant_id, session_id) DO UPDATE SET
-             project_id = EXCLUDED.project_id,
-             title = EXCLUDED.title,
-             updated_at = EXCLUDED.updated_at`,
-          [this.tenantId, event.sessionId, event.projectId, title, event.at]
-        )
-      } else if (event.type !== 'session.created') {
-        // status mapping is exhaustive; unknown types fail-fast to surface new SessionEvent variants
-        const statusMap: Record<string, string> = {
-          'session.running': 'running',
-          'session.succeeded': 'succeeded',
-          'session.failed': 'failed',
-          'session.cancelled': 'cancelled',
-          'session.awaiting_input': 'awaiting_input',
-          'session.user_reply': 'queued',
-        }
-        const status = statusMap[event.type]
-        if (!status) throw new Error(`unknown session event type for directory projection: ${event.type}`)
-        // For sessions not in the directory (no projectId), this UPDATE is a no-op
-        // but still touches the index; acceptable for expected scale (<1k sessions/project).
-        await tx.query(
-          `UPDATE sessions SET status = $3, updated_at = $4
-           WHERE tenant_id = $1 AND session_id = $2`,
-          [this.tenantId, event.sessionId, status, event.at]
-        )
-      }
+      await this.projectDirectory(tx, event, event.sessionId)
     })
     this.#snapshots.delete(event.sessionId)
     const prev = this.#versions.get(event.sessionId) ?? 0
@@ -195,34 +219,7 @@ export class PostgresBackend implements SessionBackend {
             [this.tenantId, sessionId, version, event.correlationId, event.at, JSON.stringify(event)]
           )
           // Maintain sessions directory for each delta (same logic as append)
-          if (event.type === 'session.created' && (event as SessionEvent).projectId) {
-            const title = ((event as SessionEvent).prompt ?? sessionId).slice(0, 500)
-            await tx.query(
-              `INSERT INTO sessions (tenant_id, session_id, project_id, title, status, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, 'queued', $5, $5)
-               ON CONFLICT (tenant_id, session_id) DO UPDATE SET
-                 project_id = EXCLUDED.project_id,
-                 title = EXCLUDED.title,
-                 updated_at = EXCLUDED.updated_at`,
-              [this.tenantId, sessionId, (event as SessionEvent).projectId!, title, event.at]
-            )
-          } else if (event.type !== 'session.created') {
-            const statusMap: Record<string, string> = {
-              'session.running': 'running',
-              'session.succeeded': 'succeeded',
-              'session.failed': 'failed',
-              'session.cancelled': 'cancelled',
-              'session.awaiting_input': 'awaiting_input',
-              'session.user_reply': 'queued',
-            }
-            const status = statusMap[event.type]
-            if (!status) throw new Error(`unknown session event type for directory projection: ${event.type}`)
-            await tx.query(
-              `UPDATE sessions SET status = $3, updated_at = $4
-               WHERE tenant_id = $1 AND session_id = $2`,
-              [this.tenantId, sessionId, status, event.at]
-            )
-          }
+          await this.projectDirectory(tx, event, sessionId)
         }
       })
       // Invalidate snapshot cache after successful commit (mirrors append)
@@ -381,7 +378,10 @@ export class PostgresBackend implements SessionBackend {
   }
 }
 
-/** Ranked rows carry each session's latest event type and first-event `at`. */
+/** Ranked rows carry each session's latest status-bearing event type and
+ * first-event `at`. Chat/steer never move the lifecycle, so they are excluded
+ * from the ranking — otherwise a trailing message would hide the session from
+ * every status filter. */
 function rankedSessionCte(): string {
   return `
     WITH ranked AS (
@@ -392,6 +392,7 @@ function rankedSessionCte(): string {
         ROW_NUMBER() OVER (PARTITION BY tenant_id, session_id ORDER BY version DESC) AS rn
       FROM session_events se
       WHERE tenant_id = $1
+        AND (event->>'type') NOT IN (${STATUS_PRESERVING_SQL})
     )`
 }
 

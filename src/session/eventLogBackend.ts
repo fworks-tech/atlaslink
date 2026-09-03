@@ -11,7 +11,7 @@ function tenantOfSession(session: Session | null): string {
 }
 
 /** The store vocabulary. The queue broadcasts `session.queued`/`session.started`
- * into the same log; only the five aggregate event types count as store events,
+ * into the same log; only the aggregate event types count as store events,
  * or list/get would inflate version with the bridge narration. */
 const STORE_EVENT_TYPES = new Set([
   'session.created',
@@ -21,6 +21,8 @@ const STORE_EVENT_TYPES = new Set([
   'session.cancelled',
   'session.awaiting_input',
   'session.user_reply',
+  'session.message',
+  'session.steer',
 ])
 
 function isStoreSessionEvent(type: unknown): type is string {
