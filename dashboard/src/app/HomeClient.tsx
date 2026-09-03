@@ -36,6 +36,8 @@ function HomeInner() {
   const { events } = useEvents();
   const { members } = useRoomPresence(selectedSessionId);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const copyTimer = useRef<number | null>(null);
   const [inspectorNode, setInspectorNode] = useState<{ id: string; type: string; data: unknown } | null>(null);
   const [replyContent, setReplyContent] = useState("");
   const [replyBusy, setReplyBusy] = useState(false);
@@ -119,6 +121,26 @@ function HomeInner() {
     params.delete("node");
     router.replace(`?${params.toString()}`, { scroll: false });
   }, [router, searchParams]);
+
+  // Copy feedback: clipboard denial (permissions, insecure context) surfaces
+  // as Copy failed instead of a silent no-op.
+  const handleCopyLink = useCallback(async () => {
+    if (!selectedSessionId) return;
+    const share = selectedProjectId ? canonicalUrl(selectedProjectId, selectedSessionId) : `?session=${selectedSessionId}`;
+    const q = encodeShareLink({ p: selectedProjectId, s: selectedSessionId, n: selectedNodeId ?? undefined, m: mode });
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}${share} or ${window.location.origin}/?q=${q}`);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+    if (copyTimer.current) window.clearTimeout(copyTimer.current);
+    copyTimer.current = window.setTimeout(() => setCopyState("idle"), 2000);
+  }, [selectedProjectId, selectedSessionId, selectedNodeId, mode]);
+
+  useEffect(() => () => {
+    if (copyTimer.current) window.clearTimeout(copyTimer.current);
+  }, []);
 
   const sendReply = useCallback(async (content: string) => {
     if (!selectedSessionId || !content.trim()) return;
@@ -255,7 +277,9 @@ function HomeInner() {
                 ← Back to composer
               </button>
               <span className="rounded bg-white/5 px-2 py-1 font-mono text-xs text-muted">{selectedSessionId.slice(0, 20)}…</span>
+              <label htmlFor="diagram-mode" className="text-xs text-muted">Diagram</label>
               <select
+                id="diagram-mode"
                 value={mode}
                 onChange={(e) => {
                   const p = new URLSearchParams(searchParams.toString());
@@ -263,21 +287,17 @@ function HomeInner() {
                   router.push(`?${p.toString()}`);
                 }}
                 className="rounded border border-white/10 bg-raised px-2 py-1 text-xs text-foreground"
-                aria-label="Diagram mode"
               >
                 <option value="chain">chain</option>
                 <option value="fanout">fanout</option>
                 <option value="full">full DAG</option>
               </select>
               <button
-                onClick={() => {
-                  const share = selectedProjectId ? canonicalUrl(selectedProjectId, selectedSessionId) : `?session=${selectedSessionId}`;
-                  const q = encodeShareLink({ p: selectedProjectId, s: selectedSessionId, n: selectedNodeId ?? undefined, m: mode });
-                  navigator.clipboard.writeText(`${window.location.origin}${share} or ${window.location.origin}/?q=${q}`);
-                }}
+                onClick={() => void handleCopyLink()}
+                aria-live="polite"
                 className="rounded bg-accent px-2 py-1 text-xs text-white hover:bg-accent/80"
               >
-                copy link
+                {copyState === "copied" ? "Copied!" : copyState === "failed" ? "Copy failed" : "copy link"}
               </button>
               {selectedProjectId && <span className="text-xs text-muted">project {selectedProjectId.slice(0, 8)}…</span>}
             </div>

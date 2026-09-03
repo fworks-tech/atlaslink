@@ -432,4 +432,28 @@ describe("HomeClient room wiring", () => {
     fireEvent.click(screen.getByTestId("click-node"));
     expect(screen.getByTestId("inspector").getAttribute("data-loading")).toBe("true");
   });
+
+  it("labels the diagram mode select", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(screen.getByLabelText("Diagram")).toBeDefined();
+  });
+
+  it("confirms link copies and reports failures", async () => {
+    seedRoom("session=ses-1");
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    try {
+      render(<HomeClient />);
+      fireEvent.click(screen.getByRole("button", { name: "copy link" }));
+      await vi.waitFor(() => expect(writeText).toHaveBeenCalled());
+      await vi.waitFor(() => expect(screen.getByRole("button", { name: "Copied!" })).toBeDefined());
+      writeText.mockRejectedValueOnce(new Error("denied"));
+      fireEvent.click(screen.getByRole("button", { name: "Copied!" }));
+      await vi.waitFor(() => expect(screen.getByRole("button", { name: "Copy failed" })).toBeDefined());
+    } finally {
+      // jsdom ships no clipboard — restore the absence
+      Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    }
+  });
 });
