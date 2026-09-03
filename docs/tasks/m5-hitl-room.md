@@ -12,6 +12,7 @@ closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 - #80 `feat/76-hitl-steer`=`fab26be` → stage-3 branch
 - #81 `feat/76-hitl-room-ws`=`6bb1c17` → stage-4 branch (room channel + roster read + dashboard UI; base `feat/76-hitl-steer`)
 - agenthood #502 merged to `main` (unified `AskHumanSignal.payload = {question, context?}`, 4000/1000 caps, `run.awaiting_input{question, context?, durationMs}`); dist rebuilt from `main`
+- `feat/76-hitl-spike` → `feat/76-hitl-room-ws` (spike + closeout, merges LAST — do not merge before the stack lands)
 - caveat: `npm run lint` fails on the stage-2/3 tips (prefer-const fixed only at stack tip `2cddbd9`); self-heals as the stack merges
 
 ## Stage 1 — message log API (off `feat/issue-76-hitl-room`) — DONE on `feat/76-hitl-message-log-api`
@@ -50,6 +51,6 @@ closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 - [x] feat(ui): multi-human thread (SSE-live chat/steer turns), presence headcount (5s roster poll), approval inbox (question + context + reply composer, no option pills), anytime chat composer, steer box + interrupt button
 - [x] test(ui): projection + subscription + presence-hook + room wiring suites (dashboard 116/116 pre-migration; recount after the composer rewrite)
 
-## Stage 6 — spike + close (parallel, merges last)
-- [ ] spike(runner): `fx acp` member-runner behind `createApp` seam (approval round-trip evidence)
-- [ ] docs: update README/PROGRESS, close #76 via PR
+## Stage 6 — spike + close (parallel, merges last) — DONE on `feat/76-hitl-spike`
+- [x] spike(runner): approval round-trip evidence — `src/daemon/approvalRoundtrip.test.ts` drives the REAL runner behind the `createApp` seam with the stubbed provider (`the-builder`, hermetic temp project dir, provider keys scrubbed): ask_human parks (`parked`, slot released, `run.awaiting_input{question, context?}` observed, listeners drained), reply spawns the linked follow-up on the interactive lane with the single-question fold, follow-up runs to SUCCEEDED
+- [x] docs: update README/PROGRESS, close #76 via PR

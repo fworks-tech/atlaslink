@@ -154,3 +154,9 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
 ### M4 — Live Dashboard
 9. [ ] Add a live dashboard UI rendering society provenance
        (ADR-002) with Atlas as the root node (ADR-003)
+
+### M5 — HITL collaboration room (#76, in flight)
+10. [~] Single-question `ask_human` → park → reply → linked resume; WS room
+       (`/sessions/:id/room`) + socketless roster read. Spec:
+       `docs/spec/m5-hitl-room.md`. Approval round-trip proven through the
+       real stubbed runner (`src/daemon/approvalRoundtrip.test.ts`).

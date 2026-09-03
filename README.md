@@ -35,6 +35,8 @@ Orchestrating multiple AI agents today means hand-written glue code, opaque exec
 - **M3 Task API** — bearer-gated `POST/GET /tasks`, `POST /tasks/:id/cancel|reply|diagram`, `GET /tasks?projectId&status` and `POST/GET /projects` over Postgres (`src/session/`, `src/api/`). See [spec](docs/spec/m3-task-api.md).
 - **M4 Live Dashboard** — `SocietyDiagram` (`chain|fanout|full` FULL DAG with hex/diamond/stadium/terminal), `SessionInspector`/`SessionThread`, `awaiting_input` ↔ `user_reply` loop and deep-links `/?session=&project=&node=&mode=full`, `/?q=<b64url>`, `/project/:p/session/:s`, `/s/:token` (`dashboard/`, [case studies](docs/diagrams/full-dag-case-studies.md)).
 
+- **M5 HITL collaboration room** (in flight, #76) — single-question `ask_human` → park → reply → linked resume; WS room (`/sessions/:id/room`) + socketless roster read. See [spec](docs/spec/m5-hitl-room.md).
+
 > **Architecture:** see [docs/architecture/README.md](docs/architecture/README.md) for the whole-system map, per-layer notes under `src/` and `dashboard/`, and the ADR index. Production dashboard at **https://atlas.flabs.tech** (Vercel `force-dynamic` `/?session` — see #64).
 
 ## Getting started
