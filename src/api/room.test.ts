@@ -652,3 +652,43 @@ test('room treats a non-numeric since cursor as no resume', async () => {
     cleanup(dir)
   }
 })
+
+test('room members exposes the live roster without an oracle', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await trackedServer(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' }, { 'x-tenant-id': 'tenant-a' })).body).session
+    const membersPath = (tenant?: string): string =>
+      `/sessions/${created.sessionId}/room/members${tenant ? `?tenant=${tenant}` : ''}`
+
+    // valid session, nobody joined: an empty roster, not a 404
+    const empty = await jsonRequest(srv.port, 'GET', membersPath('tenant-a'))
+    assert.equal(empty.status, 200)
+    assert.deepEqual(JSON.parse(empty.body), { ok: true, members: [] })
+
+    const a = await connect(srv.port, `/sessions/${created.sessionId}/room?name=Alice&tenant=tenant-a`)
+    await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
+    const one = JSON.parse((await jsonRequest(srv.port, 'GET', membersPath('tenant-a'))).body)
+    assert.deepEqual(
+      (one.members as Array<{ name: string }>).map((m) => m.name),
+      ['Alice']
+    )
+    a.ws.close()
+    await a.closed
+    // the server processes the leave asynchronously: poll until it drains
+    const deadline = Date.now() + 5000
+    for (;;) {
+      const drained = JSON.parse((await jsonRequest(srv.port, 'GET', membersPath('tenant-a'))).body)
+      if ((drained.members as unknown[]).length === 0) break
+      if (Date.now() > deadline) throw new Error('roster did not drain after leave')
+      await new Promise((r) => setTimeout(r, 5))
+    }
+
+    // unknown ids and other tenants read the same: 404, no oracle
+    assert.equal((await jsonRequest(srv.port, 'GET', '/sessions/ses-missing/room/members')).status, 404)
+    assert.equal((await jsonRequest(srv.port, 'GET', membersPath('tenant-b'))).status, 404)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})

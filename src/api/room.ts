@@ -83,6 +83,25 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): void {
     for (const client of rooms.get(sessionId)?.values() ?? []) client.send(frame)
   }
 
+  // Roster read for clients that cannot hold a socket (the dashboard BFF
+  // cannot proxy WS upgrades and the browser must never see the bearer):
+  // same tenant scoping as the upgrade, no existence oracle — a wrong tenant
+  // reads as unknown, and an empty room reads as an empty roster.
+  app.get<{ Params: { id: string } }>(
+    '/sessions/:id/room/members',
+    async (request, reply) => {
+      const query = (request.query ?? {}) as Record<string, unknown>
+      const tenantValue = firstQuery(query.tenant) ?? request.headers['x-tenant-id']
+      const tenantCtx = tenantBackendForRequest({ headers: { 'x-tenant-id': tenantValue } }, deps.backend)
+      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const aggregate = await tenantCtx.backend.get(request.params.id)
+      if (!aggregate || aggregate.tenantId !== tenantCtx.tenantId) {
+        return reply.code(404).send({ ok: false, error: 'unknown session' })
+      }
+      return { ok: true, members: rosterOf(request.params.id) }
+    }
+  )
+
   app.get<{ Params: { id: string } }>(
     '/sessions/:id/room',
     { websocket: true },
