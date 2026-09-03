@@ -61,12 +61,11 @@ export const LIFECYCLE_TRANSITIONS: Record<string, (patch: Partial<Session>, eve
   "session.steer": appendHumanTurn,
 };
 
-/** First fx question label; tolerates the legacy plain-string shape. */
+/** Single unified ask_human question; tolerates the legacy plain-string shape. */
 function firstQuestionLabel(question: unknown): string | undefined {
   if (typeof question === "string") return question;
-  const questions = (question as { questions?: Array<{ label?: unknown }> } | null)?.questions;
-  const label = questions?.[0]?.label;
-  return typeof label === "string" ? label : undefined;
+  const text = (question as { question?: unknown } | null)?.question;
+  return typeof text === "string" ? text : undefined;
 }
 
 export function formatDuration(session: Session): string {

@@ -13,23 +13,34 @@ approval inbox) — not a server. Two decisions block implementation: the
 realtime transport and the `question` payload shape.
 
 ## Decision
-(TBD in review — recommendation:)
 - Transport: WebSocket channel `/sessions/:id/room` for presence + fan-out;
   all state ingress still commits via the event-sourced `SessionBackend`
   (store is truth, WS/SSE are projections). SSE remains the read-only tail.
-- Question: fx-shaped `{questions:[{label,description,options}]}` with
-  plain-string `question` kept backwards compatible.
+- Question: unified single-question `{question: string, context?: string}`
+  (agenthood #502, `AskHumanSignal.payload`; caps
+  `ASK_HUMAN_MAX_QUESTION_LENGTH=4000` /
+  `ASK_HUMAN_MAX_CONTEXT_LENGTH=1000`). The park event is
+  `run.awaiting_input {question, context?, durationMs}`; the store seam
+  mirrors `session.awaiting_input {question, context?}` and keeps
+  `nextStep.prompt` as the question string; the resume fold is the
+  single-question `<human_reply question="…" context="…">`. No
+  questions-array, no labels/options, no string back-compat — this supersedes
+  the fx-shaped recommendation below.
 
 ## Alternatives Considered
 | Option | Pros | Cons | Why Rejected |
 |--------|------|------|-------------|
 | SSE+POST only, no WS | No new protocol; matches current stack | No presence/typing; multi-human fan-out is polling | Rejected per #76 (WS room chosen) |
 | WS as source of truth | Lower latency | Splits truth from event log; breaks ADR-002/004 | Rejected — store stays the commit |
-| String-only question | Simplest | Cannot render fx-style option pickers | Rejected — keep compat, add shape |
+| String-only question | Simplest | Cannot carry context threading | Rejected — unified shape carries both |
 | Full fx embed now | Inherits tools/MCP/skills | Zig/WASM ops, no Windows addon, SDK churn | Deferred to parallel spike |
 
 ## Consequences
-Easier: true mid-run collaboration with tenant-scoped realtime. Harder: new
+Easier: true mid-run collaboration with tenant-scoped realtime; one question
+shape end to end (`ask_human` → `run.awaiting_input` → `session.awaiting_input`
+→ room snapshot/inbox → `session.user_reply` → linked follow-up fold), so the
+dashboard inbox is question + context + composer with no option-picker branch.
+Harder: new
 protocol surface (auth, rate-limit, ordering), lane scheduling, parked-worker
 accounting (wait-forever policy). Lanes land before park (Stage 2 before
 Stage 3), and park releases the pump slot with reply re-queueing — so

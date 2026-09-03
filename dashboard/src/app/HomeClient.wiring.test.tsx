@@ -147,7 +147,7 @@ function seedRoom(params: string) {
         version: 2,
         task: { member: "the-architect", prompt: "plan" },
         nextStep: { awaiting_input: true, prompt: "Ship it?", member: "the-architect" },
-        question: { questions: [{ label: "Ship it?", options: ["yes", "no"] }] },
+        question: { question: "Ship it?", context: "plan context" },
       },
       {
         sessionId: "ses-7",
@@ -218,11 +218,18 @@ describe("HomeClient room wiring", () => {
     await vi.waitFor(() => expect(screen.getByLabelText("Message the room")).toHaveValue(""));
   });
 
-  it("question options send the option text as the reply and follow the follow-up", async () => {
+  it("approval inbox renders the question plus context and replies via the composer", async () => {
     seedRoom("session=ses-9");
     render(<HomeClient />);
-    fireEvent.click(screen.getByRole("button", { name: "yes" }));
-    await vi.waitFor(() => expect(replyMock).toHaveBeenCalledWith("ses-9", "yes"));
+    expect(screen.getByText(/Ship it\?/)).toBeDefined();
+    expect(screen.getByText("plan context")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "yes" })).toBeNull();
+    const replyInput = screen.getByPlaceholderText("Type your reply…");
+    fireEvent.change(replyInput, { target: { value: "go ahead" } });
+    const sendBtn = replyInput.parentElement?.querySelector("button");
+    expect(sendBtn).not.toBeNull();
+    fireEvent.click(sendBtn as HTMLButtonElement);
+    await vi.waitFor(() => expect(replyMock).toHaveBeenCalledWith("ses-9", "go ahead"));
     await vi.waitFor(() => expect(routerPush).toHaveBeenCalledWith(expect.stringContaining("ses-10")));
   });
 

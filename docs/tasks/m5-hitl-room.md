@@ -5,13 +5,13 @@ its parent. Stages 1–5 merge without closing #76; only the final stage
 closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 `71fadc1`; code stages stack off that branch.)
 
-## PR stack (all `Part of #76`, merge top-down; nothing merged yet)
+## PR stack (all `Part of #76`, merge top-down; stack realigned)
 - #77 `feat/76-hitl-message-log-api` → `main` (CI full green)
 - #78 `feat/76-hitl-lanes` → stage-1 branch (Vercel only; repo CI runs on PRs to `main`)
-- #79 `feat/76-hitl-ask-park` → stage-2 branch (needs agenthood #496 on `main` before its CI goes green)
-- #80 `feat/76-hitl-steer` → stage-3 branch (same agenthood dependency)
-- #81 `feat/76-hitl-room-ws` → stage-4 branch (room channel + roster read + dashboard UI)
-- agenthood: `feat/issue-496-ask-human-park@099d4b0` (ask_human tool + signal + redacted emit; no PR — merge first)
+- #79 `feat/76-hitl-ask-park`=`29b15db` (unified-API migration) → stage-2 branch
+- #80 `feat/76-hitl-steer`=`fab26be` → stage-3 branch
+- #81 `feat/76-hitl-room-ws`=`6bb1c17` → stage-4 branch (room channel + roster read + dashboard UI; base `feat/76-hitl-steer`)
+- agenthood #502 merged to `main` (unified `AskHumanSignal.payload = {question, context?}`, 4000/1000 caps, `run.awaiting_input{question, context?, durationMs}`); dist rebuilt from `main`
 - caveat: `npm run lint` fails on the stage-2/3 tips (prefer-const fixed only at stack tip `2cddbd9`); self-heals as the stack merges
 
 ## Stage 1 — message log API (off `feat/issue-76-hitl-room`) — DONE on `feat/76-hitl-message-log-api`
@@ -25,15 +25,15 @@ closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 - [x] test(queue): lane priority, fairness bound + reset, idle/interactive-only drains, re-entrant declare, late arrival, cancelled-standard skip, per-lane pending; `waitFor` drains instead of fixed sleeps
 - deferred (pre-existing, all stages): runner-throw strands the queue until next declare — follow-up issue
 
-## Stage 3 — agent ask + park (`feat/76-hitl-ask-park` off stage 2) — DONE (`fad462f`; agenthood side uncommitted)
-- [x] agenthood: `ask_human` tool + `AskHumanSignal` (rethrown by `ReActLoop`, translated to `run.awaiting_input` + rethrow by `MemberRunner`) — sibling repo, uncommitted, dist rebuilt
+## Stage 3 — agent ask + park (`feat/76-hitl-ask-park` off stage 2) — DONE (`fad462f`; agenthood #502 merged, dist rebuilt from `main`)
+- [x] agenthood: `ask_human` tool + `AskHumanSignal` (`payload = {question, context?}`, 4000/1000 caps; rethrown by `ReActLoop`, translated to `run.awaiting_input{question, context?, durationMs}` + rethrow by `MemberRunner`) — sibling repo, merged
 - [x] feat(runner): `registry.park()` (`PARKED`, terminal for original) + `runSession` park catch (slot released, no orphan) + server-seam `awaiting_input` mirror
 - [x] feat(api): `POST …/reply` records reply on parked original (stays `awaiting_input`) + spawns linked follow-up (`resumeOf`, Q&A folded into prompt) on the interactive lane; blank-content 400
-- [x] test: park→reply→resume round-trip, parked holds no slot + cancellable (registry + API), no-orphan (settled runner), queue-spy lane assertion, fx question projection, dashboard projection + follow-resumed
-- [x] feat(ui): reply composer follows the resumed session; awaiting node unchanged (first-label prompt)
-- [x] review hardening: single-reply-per-park (409 `session already answered`), delimited+capped fold, tweaks/provider passthrough, post-commit failure compensation, question shape validation + live `awaiting_input` fan-out, tool size caps + park redaction (agenthood), PGlite reply-status / CAS-retry / tenant-passthrough / oversize / queue-parked-continues / seam-validation tests, composer refresh + error state
-- [x] society review (reviewer/warden/auditor): fold now neutralizes `</human_reply` in both halves + strips markup/newlines from the attribute; seam caps questions/labels/options; `MAX_SESSION_MESSAGES` (500) bounds the chat log; cancel fans out `session.cancelled` SSE; pump emits `session.parked` to close `started`; reply route extracted to `spawnResumeFollowup`; dismissed after verification — concurrent-reply race (CAS retry re-runs guard), park-mirror race (conflict-drop), cancel-misses-PARKED (flows via `registry.cancel`); deferred as pre-existing/out-of-scope — `x-tenant-id` trust, unfiltered global `/events`, member/team tweaks never consumed by runner, per-route throttle, resume-chain depth
-- decisions locked: cooperative agenthood change; fx-style question object (no string back-compat); linked-session resume; reply double-delta fixed in-branch
+- [x] test: park→reply→resume round-trip, parked holds no slot + cancellable (registry + API), no-orphan (settled runner), queue-spy lane assertion, unified question projection, dashboard projection + follow-resumed
+- [x] feat(ui): reply composer follows the resumed session; awaiting node unchanged (question-text prompt)
+- [x] review hardening: single-reply-per-park (409 `session already answered`), delimited+capped fold, tweaks/provider passthrough, post-commit failure compensation, single-question shape validation + live `awaiting_input` fan-out, tool size caps (4000/1000) + park redaction (agenthood), PGlite reply-status / CAS-retry / tenant-passthrough / oversize / queue-parked-continues / seam-validation tests, composer refresh + error state
+- [x] society review (reviewer/warden/auditor): fold now neutralizes `</human_reply` in all three halves + strips markup/newlines from the attributes; seam caps question/context (4000/1000); `MAX_SESSION_MESSAGES` (500) bounds the chat log; cancel fans out `session.cancelled` SSE; pump emits `session.parked` to close `started`; reply route extracted to `spawnResumeFollowup`; dismissed after verification — concurrent-reply race (CAS retry re-runs guard), park-mirror race (conflict-drop), cancel-misses-PARKED (flows via `registry.cancel`); deferred as pre-existing/out-of-scope — `x-tenant-id` trust, unfiltered global `/events`, member/team tweaks never consumed by runner, per-route throttle, resume-chain depth
+- decisions locked: cooperative agenthood change; unified single-question payload (no string back-compat); linked-session resume; reply double-delta fixed in-branch
 - accepted residuals: no per-route reply throttle (global rate limit + single-reply bound); no resume-chain depth cap; store keeps raw human text (escape-at-render contract)
 
 ## Stage 4 — steer / interrupt (`feat/76-hitl-steer` off stage 3) — DONE- [x] feat(api): `POST /tasks/:sessionId/steer` — queued → registry reprompt + CAS `session.steer` (rehydrate rewrites prompt) with rollback; running → abort-first + CAS `user_reply`, 201 `interrupted: true`; awaiting_input/terminal 409s
@@ -47,8 +47,8 @@ closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 - [x] feat(ws): bearer + tenant auth, rate limit, SSE stays read-only projection
 - [x] test(ws): two-client live test, tenant isolation, reconnect/resume
 - [x] feat(ws): `GET /sessions/:id/room/members` roster read (tenant-scoped, no oracle) for clients that cannot hold a socket
-- [x] feat(ui): multi-human thread (SSE-live chat/steer turns), presence headcount (5s roster poll), approval inbox (option buttons + composer), anytime chat composer, steer box + interrupt button
-- [x] test(ui): projection + subscription + presence-hook + room wiring suites (dashboard 116/116)
+- [x] feat(ui): multi-human thread (SSE-live chat/steer turns), presence headcount (5s roster poll), approval inbox (question + context + reply composer, no option pills), anytime chat composer, steer box + interrupt button
+- [x] test(ui): projection + subscription + presence-hook + room wiring suites (dashboard 116/116 pre-migration; recount after the composer rewrite)
 
 ## Stage 6 — spike + close (parallel, merges last)
 - [ ] spike(runner): `fx acp` member-runner behind `createApp` seam (approval round-trip evidence)

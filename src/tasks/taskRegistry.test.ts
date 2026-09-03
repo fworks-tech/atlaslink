@@ -77,12 +77,12 @@ test('park moves a running session to parked with its question', () => {
   const registry = new TaskRegistry()
   const session = registry.create({ member: 'the-architect', prompt: 'plan' })
   registry.start(session.id)
-  const questions = { questions: [{ label: 'Ship it?' }] }
+  const question = { question: 'Ship it?' }
 
-  const parked = registry.park(session.id, { question: questions })
+  const parked = registry.park(session.id, { question })
 
   assert.equal(parked.status, SessionStatus.PARKED)
-  assert.deepEqual(parked.question, questions)
+  assert.deepEqual(parked.question, question)
 })
 
 test('park rejects sessions that are not running', () => {

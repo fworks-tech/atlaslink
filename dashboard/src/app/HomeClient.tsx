@@ -50,7 +50,6 @@ function HomeInner() {
   const selectedSession = useMemo(() => sessions.find((s) => s.sessionId === selectedSessionId) ?? null, [sessions, selectedSessionId]);
   const isTerminal = selectedSession?.status === "succeeded" || selectedSession?.status === "failed" || selectedSession?.status === "cancelled";
   const isSteerable = selectedSession?.status === "queued" || selectedSession?.status === "running";
-  const questionOptions = selectedSession?.question?.questions?.[0]?.options ?? [];
 
   const handleSelectSession = useCallback(
     (id: string) => {
@@ -285,13 +284,9 @@ function HomeInner() {
               ) : null}
               {selectedSession?.nextStep?.awaiting_input ? (
                 <div className="rounded-xl border border-accent/30 bg-accent/10 p-4">
-                  <div className="text-sm font-medium text-accent">Atlas asks · {selectedSession.nextStep.prompt}</div>
-                  {questionOptions.length > 0 ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {questionOptions.map((option) => (
-                        <button key={option} onClick={() => void sendReply(option)} disabled={replyBusy} className="rounded-full border border-accent/40 px-3 py-1 text-xs text-accent disabled:opacity-50">{option}</button>
-                      ))}
-                    </div>
+                  <div className="text-sm font-medium text-accent">Atlas asks · {selectedSession.question?.question ?? selectedSession.nextStep.prompt}</div>
+                  {selectedSession.question?.context ? (
+                    <div className="mt-1 text-xs text-muted">{selectedSession.question.context}</div>
                   ) : null}
                   <div className="mt-3 flex gap-2">
                     <input value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Type your reply…" className="flex-1 rounded border border-white/10 bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted" />
@@ -301,13 +296,9 @@ function HomeInner() {
                 </div>
               ) : selectedSession?.status === "awaiting_input" ? (
                 <div className="rounded-xl border border-accent/30 bg-accent/10 p-4">
-                  <div className="text-sm font-medium text-accent">Awaiting input</div>
-                  {questionOptions.length > 0 ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {questionOptions.map((option) => (
-                        <button key={option} onClick={() => void sendReply(option)} disabled={replyBusy} className="rounded-full border border-accent/40 px-3 py-1 text-xs text-accent disabled:opacity-50">{option}</button>
-                      ))}
-                    </div>
+                  <div className="text-sm font-medium text-accent">Awaiting input{selectedSession.question?.question ? ` · ${selectedSession.question.question}` : ""}</div>
+                  {selectedSession.question?.context ? (
+                    <div className="mt-1 text-xs text-muted">{selectedSession.question.context}</div>
                   ) : null}
                   <div className="mt-3 flex gap-2">
                     <input value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Reply to continue…" className="flex-1 rounded border border-white/10 bg-surface px-3 py-2 text-sm" />

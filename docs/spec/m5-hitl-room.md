@@ -57,33 +57,36 @@ reviewable, stacked branches):
    consecutive interactive runs it takes one standard run if any (Architect
    to finalize the exact bound).
 3. **Agent asks (fx `ask_user_question` mirror) — DONE.** `ask_human
-   {questions:[{label,description?,options?}]}` tool auto-registered by
+   {question: string, context?: string}` tool auto-registered by
    `MemberRunner` for every member run (agenthood; bypasses the
    permission-profile gate by design — it asks, never touches state).
-   `execute` throws `AskHumanSignal`, which `ReActLoop` rethrows instead of
-   stringifying; `MemberRunner` translates it to a `run.awaiting_input` bus
-   event and rethrows. `runSession` catches the signal, records
+   `execute` throws `AskHumanSignal` (`payload = {question, context?}`),
+   which `ReActLoop` rethrows instead of stringifying; `MemberRunner`
+   translates it to a `run.awaiting_input {question, context?, durationMs}`
+   bus event and rethrows. `runSession` catches the signal, records
    `registry.park()` (new `PARKED` registry state, terminal for the original),
    and returns — the pump slot is free, no orphan. The server seam mirrors
-   `session.awaiting_input` (store + SSE) with the fx question object;
-   `nextStep.prompt` keeps the first label (string) so the thread path is
+   `session.awaiting_input` (store + SSE) with the single-question payload;
+   `nextStep.prompt` keeps the question string so the thread path is
    unchanged. `POST …/reply` appends `session.user_reply` to the parked
    original (which stays `awaiting_input`, still cancellable) and spawns a
    **linked follow-up session** (`resumeOf`, original prompt + Q&A folded in),
    created + enqueued to the interactive lane. Reply rules: **single reply per
    park** (second reply 409s — multi-turn works via the follow-up parking and
-   asking again); the fold is `<human_reply question="…">…</human_reply>` with
-   length caps; the provider override rides into the resumed run while the full
+   asking again); the fold is `<human_reply question="…" context="…">…</human_reply>`
+   with length caps (4000 question / 1000 context / 4000 reply); the provider
+   override rides into the resumed run while the full
    `tweaks` object persists on the follow-up store entry (member/team tweaks
    are stored but not consumed by the runner — pre-existing gap shared with
    the create route, out of scope); a declare failure after the
    follow-up commit cancels the follow-up instead of orphaning it. The seam
-   validates the fx shape before mirroring and fans `session.awaiting_input`
+   validates the single-question shape before mirroring and fans `session.awaiting_input`
    out live on SSE (store stays truth). Question size caps live in the tool
-   schema + `execute` (10 questions, 500-char labels); park emits are redacted
+   schema + `execute` (`ASK_HUMAN_MAX_QUESTION_LENGTH=4000` /
+   `ASK_HUMAN_MAX_CONTEXT_LENGTH=1000`); park emits are redacted
    like any model text. Society-review hardening: the fold neutralizes
-   `</human_reply` in reply and labels and strips markup/newlines from the
-   attribute half; the seam enforces the same caps (10/500/10×200) so a
+   `</human_reply` in reply, question, and context and strips markup/newlines
+   from the attribute halves; the seam enforces the same caps (4000/1000) so a
    compromised runner cannot park unbounded input; the chat log is bounded at
    500 messages; cancel fans out `session.cancelled` SSE; the pump emits
    `session.parked` so queue watchers see the slot release. Park policy per
@@ -130,7 +133,8 @@ migration details (lands with backend branch).
 - [ ] Human posts to a running session via WS/POST; appears in
   `interaction[]` (asserted in-process on a hermetic backend, <1s bound);
   second human sees it live.
-- [ ] Agent `ask_human` parks to `awaiting_input` holding no pump slot;
+- [ ] Agent `ask_human {question, context?}` parks to `awaiting_input`
+  (4000/1000 caps, single-question fold) holding no pump slot;
   diagram shows awaiting node; human reply re-queues and resumes the run
   and a new exchange card is appended to the DAG.
 - [ ] Steer on queued rewrites prompt via CAS; steer on running is consumed
@@ -156,7 +160,7 @@ Coverage: new suites per endpoint/hook; existing suites stay green.
 
 ## Open Questions
 - WS stack: native `ws` vs Fastify plugin — decided in ADR-007.
-- `question` payload: fx-style object — decided in Stage 3 (no string back-compat).
+- `question` payload: unified `{question, context?}` — decided in Stage 3 (no string back-compat).
 - Lane fairness bound constant — finalized at 3 (`MAX_CONSECUTIVE_INTERACTIVE`).
 - agenthood runner API: `ask_human`/permission-hook support and
   `run.interrupted` emission — verify before Stage 3; fallback is

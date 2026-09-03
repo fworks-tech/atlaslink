@@ -99,7 +99,7 @@ async function parkSession(backend: SessionBackend, sessionId: string, correlati
     correlationId,
     at,
     member: 'the-architect',
-    question: { questions: [{ label: 'Ship it?', options: ['yes', 'no'] }] },
+    question: { question: 'Ship it?', context: 'plan context' },
   })
 }
 
@@ -151,13 +151,13 @@ test('snapshotOf bounds history and passes optional fields through', async () =>
   const full = snapshotOf(
     unitSession({
       projectId: 'proj-1',
-      question: { questions: [{ label: 'Go?', options: ['y', 'n'] }] },
+      question: { question: 'Go?', context: 'why' },
       resumeOf: 'ses-0',
     })
   )
   assert.equal(full.projectId, 'proj-1')
   assert.equal(full.resumeOf, 'ses-0')
-  assert.deepEqual((full.question as { questions: Array<{ label: string }> }).questions[0]!.label, 'Go?')
+  assert.deepEqual((full.question as { question: string }).question, 'Go?')
 })
 
 test('room join delivers snapshot; two clients see each other chat live', async () => {
@@ -308,10 +308,10 @@ test('room approval inbox: parked question in snapshot, reply frame resumes', as
 
     const a = await connect(srv.port, `/sessions/${created.sessionId}/room`)
     const snapshot = await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
-    const snap = snapshot.session as { status: string; nextStep: { awaiting_input: boolean; prompt: string }; question: { questions: Array<{ label: string; options: string[] }> } }
+    const snap = snapshot.session as { status: string; nextStep: { awaiting_input: boolean; prompt: string }; question: { question: string; context?: string } }
     assert.equal(snap.status, 'awaiting_input')
     assert.equal(snap.nextStep.prompt, 'Ship it?')
-    assert.deepEqual(snap.question.questions[0]!.options, ['yes', 'no'])
+    assert.deepEqual([snap.question.question, snap.question.context], ['Ship it?', 'plan context'])
 
     a.ws.send(JSON.stringify({ id: 'r1', type: 'reply', content: 'yes' }))
     const ack = await waitForFrame(a.frames, (f) => f.type === 'ack' && f.id === 'r1', 'reply ack')
