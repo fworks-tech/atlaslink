@@ -634,7 +634,7 @@ test('room honors the tenant upgrade header, not just the query', async () => {
   }
 })
 
-test('room treats a non-numeric since cursor as no resume', async () => {
+test('room rejects a non-numeric since cursor with an explicit error', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
@@ -642,8 +642,8 @@ test('room treats a non-numeric since cursor as no resume', async () => {
 
     const a = await connect(srv.port, `/sessions/${created.sessionId}/room?since=not-a-number`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
-    // resume frames are sent synchronously at join: none by now means none ever
-    await new Promise((r) => setTimeout(r, 150))
+    const err = await waitForFrame(a.frames, (f) => f.type === 'error', 'invalid-since error')
+    assert.match(err.error as string, /invalid since/)
     assert.ok(!a.frames.some((f) => f.type === 'backlog' || f.type === 'gap'), 'no resume frames for a bad cursor')
     a.ws.close()
     await a.closed

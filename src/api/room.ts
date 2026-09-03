@@ -167,7 +167,11 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): void {
         const sinceRaw = firstQuery(query.since)
         if (sinceRaw !== undefined) {
           const since = Number.parseInt(sinceRaw, 10)
-          if (!Number.isNaN(since)) {
+          if (Number.isNaN(since)) {
+            // explicit over silent: the client can fix its cursor instead
+            // of wondering why no backlog arrived
+            send({ type: 'error', error: 'invalid since cursor' })
+          } else {
             const oldest = deps.log.oldestId
             if (oldest !== undefined && since < oldest) {
               send({ type: 'gap', requested: since, oldest })
