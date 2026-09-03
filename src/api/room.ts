@@ -62,7 +62,8 @@ interface RoomClient {
 function sanitizeName(raw: unknown): string {
   if (typeof raw !== 'string') return 'anonymous'
   // display-only: strip control chars, bound length, never trust it further
-  const clean = raw.replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  // match control chars without hex escapes (eslint no-control-regex)
+  const clean = raw.replace(/\p{Cc}/gu, '').trim()
   return clean.length === 0 ? 'anonymous' : clean.slice(0, MAX_ROOM_NAME_LENGTH)
 }
 
