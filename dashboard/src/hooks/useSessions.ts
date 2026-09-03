@@ -42,10 +42,16 @@ export function useSessions() {
   }, []);
 
   const refresh = useCallback(async () => {
-    const res = await getTasks();
-    setSessions(res.sessions);
-    setTotal(res.total);
-    setError(null);
+    try {
+      const res = await getTasks();
+      setSessions(res.sessions);
+      setTotal(res.total);
+      setError(null);
+    } catch (err) {
+      // keep the last good list — a failed poll must not blank the UI or
+      // reject into a send flow that already succeeded
+      setError(err instanceof Error ? err.message : "failed to load sessions");
+    }
   }, []);
 
   // Deep-link hydration: the list is a one-shot page (limit 50), so a shared
