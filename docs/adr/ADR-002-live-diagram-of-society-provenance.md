@@ -69,8 +69,8 @@ The projection contract is the spine connecting them: the Event Bridge delivers 
 
 ## References
 
-- Atlaslink [README.md](../README.md) — roadmap M1–M4, "live diagram-flow UI" goal.
-- Atlaslink [CONTRIBUTING.md](../CONTRIBUTING.md) — branch/commit/PR conventions governing implementation of this decision.
+- Atlaslink [README.md](../../README.md) — roadmap M1–M5, "live diagram-flow UI" goal.
+- Atlaslink [CONTRIBUTING.md](../../CONTRIBUTING.md) — branch/commit/PR conventions governing implementation of this decision.
 - Atlaslink issue #5 — "resolve ADR-001 event persistence decision" (pending): governs how runtime events are persisted/replayed; the layer this ADR's projection consumes once written.
 - Agenthood **ADR-021** — the read-only PROJECTION CONTRACT (nodes, directed edges, node color / gate status, click-to-drill into `.agenthood/traces`, provenance, decision files).
 - Agenthood `.agenthood/traces`, `.agenthood/provenance`, `.agenthood/decisions` — the record files the drill-down reads.
