@@ -33,6 +33,10 @@ function parseEvent(raw: string | SessionEvent): SessionEvent {
   return typeof raw === 'string' ? (JSON.parse(raw) as SessionEvent) : raw
 }
 
+/** Chat/steer append to history without moving the lifecycle — the sessions
+ * directory keeps its status and only `updated_at` advances. */
+const STATUS_PRESERVING_EVENTS = new Set(['session.message', 'session.steer'])
+
 /**
  * The `SessionBackend` over Postgres event tables (ADR-006 Decisions 4–5).
  * Event append is the commit; `version` is the optimistic CAS token held inside
@@ -103,6 +107,12 @@ export class PostgresBackend implements SessionBackend {
              title = EXCLUDED.title,
              updated_at = EXCLUDED.updated_at`,
           [this.tenantId, event.sessionId, event.projectId, title, event.at]
+        )
+      } else if (STATUS_PRESERVING_EVENTS.has(event.type)) {
+        await tx.query(
+          `UPDATE sessions SET updated_at = $3
+           WHERE tenant_id = $1 AND session_id = $2`,
+          [this.tenantId, event.sessionId, event.at]
         )
       } else if (event.type !== 'session.created') {
         // status mapping is exhaustive; unknown types fail-fast to surface new SessionEvent variants
@@ -205,6 +215,12 @@ export class PostgresBackend implements SessionBackend {
                  title = EXCLUDED.title,
                  updated_at = EXCLUDED.updated_at`,
               [this.tenantId, sessionId, (event as SessionEvent).projectId!, title, event.at]
+            )
+          } else if (STATUS_PRESERVING_EVENTS.has(event.type)) {
+            await tx.query(
+              `UPDATE sessions SET updated_at = $3
+               WHERE tenant_id = $1 AND session_id = $2`,
+              [this.tenantId, sessionId, event.at]
             )
           } else if (event.type !== 'session.created') {
             const statusMap: Record<string, string> = {
@@ -381,7 +397,10 @@ export class PostgresBackend implements SessionBackend {
   }
 }
 
-/** Ranked rows carry each session's latest event type and first-event `at`. */
+/** Ranked rows carry each session's latest status-bearing event type and
+ * first-event `at`. Chat/steer never move the lifecycle, so they are excluded
+ * from the ranking — otherwise a trailing message would hide the session from
+ * every status filter. */
 function rankedSessionCte(): string {
   return `
     WITH ranked AS (
@@ -392,6 +411,7 @@ function rankedSessionCte(): string {
         ROW_NUMBER() OVER (PARTITION BY tenant_id, session_id ORDER BY version DESC) AS rn
       FROM session_events se
       WHERE tenant_id = $1
+        AND (event->>'type') NOT IN ('session.message', 'session.steer')
     )`
 }
 

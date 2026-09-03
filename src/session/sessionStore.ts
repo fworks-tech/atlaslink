@@ -112,6 +112,10 @@ export function rehydrate(events: SessionEvent[]): Session | null {
         session.nextStep = null
         session.interaction.push({ role: 'user', at: e.at, content: e.reply ?? '' })
         break
+      case 'session.message':
+      case 'session.steer':
+        session.interaction.push({ role: 'user', at: e.at, content: e.message ?? '' })
+        break
     }
   }
 

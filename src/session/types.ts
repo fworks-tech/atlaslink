@@ -9,6 +9,8 @@ export interface SessionEvent {
     | 'session.cancelled'
     | 'session.awaiting_input'
     | 'session.user_reply'
+    | 'session.message'
+    | 'session.steer'
   sessionId: string
   correlationId: string
   at: string
@@ -23,6 +25,8 @@ export interface SessionEvent {
   // awaiting_input / user_reply
   question?: string
   reply?: string
+  // session.message / session.steer human-authored text
+  message?: string
   iteration?: number
 }
 
