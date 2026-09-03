@@ -27,16 +27,19 @@ export async function fetchJSON<T>(
 ): Promise<T> {
   const { timeoutMs, ...rest } = (init ?? {}) as RequestInit & { timeoutMs?: number };
   const headers = new Headers(rest.headers);
-  if (rest.body) headers.set("Content-Type", "application/json");
+  // a caller-provided content type wins over the JSON default
+  if (rest.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
 
   let signal = rest.signal ?? undefined;
   if (timeoutMs) {
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
-    if (signal) {
-      const anyFn = (AbortSignal as unknown as { any?: (s: AbortSignal[]) => AbortSignal }).any;
-      signal = anyFn ? anyFn([signal, timeoutSignal]) : timeoutSignal;
+    const anyFn = (AbortSignal as unknown as { any?: (s: AbortSignal[]) => AbortSignal }).any;
+    if (signal && anyFn) {
+      signal = anyFn([signal, timeoutSignal]);
     } else {
-      signal = timeoutSignal;
+      // without AbortSignal.any the two cannot be combined — keep the caller
+      // signal and forgo the timeout rather than silently dropping the abort
+      signal = signal ?? timeoutSignal;
     }
   }
 
@@ -44,10 +47,9 @@ export async function fetchJSON<T>(
   try {
     res = await fetch(`${API_BASE}${path}`, { ...rest, headers, signal });
   } catch (err) {
-    if (
-      err instanceof DOMException &&
-      (err.name === "TimeoutError" || err.name === "AbortError")
-    ) {
+    // only our own timeout means "backend unreachable or waking" — a caller
+    // abort or a network failure propagates unchanged for the caller to handle
+    if (err instanceof DOMException && err.name === "TimeoutError") {
       throw new ApiError(504, "Server is starting — please wait");
     }
     throw err;
@@ -66,7 +68,11 @@ export async function fetchJSON<T>(
     const qualified = message.startsWith(String(res.status)) ? message : `${res.status} ${message}`;
     throw new ApiError(res.status, qualified.trim());
   }
-  return (await res.json()) as T;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new ApiError(res.status, `${res.status} invalid JSON response`);
+  }
 }
 
 export function getTasks(limit = 50, offset = 0, projectId?: string): Promise<TaskListResponse> {
