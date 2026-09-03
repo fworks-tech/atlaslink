@@ -20,9 +20,12 @@ One branch per issue:
 type/issue-NUMBER-short-description
 ```
 
+The `issue-` prefix may be omitted — bare `type/NUMBER-short-description`
+(e.g. `feat/76-hitl-room-ws`) is the established repo practice and is equally accepted.
+
 - Branch names are **lowercase**, hyphenated, no spaces.
 - Never commit directly to `main`.
-- Example: `fix/issue-12-bridge-timeout-retry`
+- Example: `fix/issue-12-bridge-timeout-retry` or `fix/12-bridge-timeout-retry`
 
 Types: `feat`, `fix`, `docs`, `refactor`, `test`, `ci`, `chore`, `revert`.
 
