@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { BridgeEvent, Session } from "@/lib/types";
 import { artifactsFor } from "@/lib/runProjection";
 import { pairTools } from "@/lib/eventPairing";
@@ -101,15 +101,21 @@ export function SessionInspector({
   const artifacts = useMemo(() => (session ? artifactsFor(session.correlationId, events) : null), [session, events]);
 
   // Auto-select the relevant tab when a new node is clicked; manual tab
-  // switches are preserved until the next node selection (render-phase
-  // derived state, intentionally not in an effect).
-  if (selectedNode && selectedNode.id !== lastAutoId) {
-    setLastAutoId(selectedNode.id);
-    if (selectedNode.type === "reasoning") setTab("reasoning");
-    else if (selectedNode.type === "tool") setTab("tools");
-    else if (selectedNode.type === "decision") setTab("decisions");
-    else setTab("overview");
-  }
+  // switches are preserved until the next node selection. Clearing the
+  // selection resets the latch so reopening the same node auto-switches again.
+  useEffect(() => {
+    if (!selectedNode) {
+      setLastAutoId(null);
+      return;
+    }
+    if (selectedNode.id !== lastAutoId) {
+      setLastAutoId(selectedNode.id);
+      if (selectedNode.type === "reasoning") setTab("reasoning");
+      else if (selectedNode.type === "tool") setTab("tools");
+      else if (selectedNode.type === "decision") setTab("decisions");
+      else setTab("overview");
+    }
+  }, [selectedNode, lastAutoId]);
 
   if (!open) return null;
   return (

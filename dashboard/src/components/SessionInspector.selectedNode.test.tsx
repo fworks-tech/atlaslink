@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { SessionInspector } from "./SessionInspector";
 import type { BridgeEvent, Session } from "@/lib/types";
 
@@ -67,5 +67,32 @@ describe("SessionInspector selectedNode", () => {
       />,
     );
     expect(screen.getByText(/"foo"/)).toBeDefined();
+  });
+
+  it("auto-switches tab on node click, preserves manual tab, re-autos after close", () => {
+    const node = {
+      id: "ses-1::reasoning::0",
+      type: "reasoning",
+      data: {
+        sessionId: "ses-1",
+        step: 0,
+        events: [{ content: "Happy to route that" } as unknown as BridgeEvent],
+      },
+    };
+    const props = { open: true, onClose: () => {}, session: session(), events: [] as BridgeEvent[] };
+    const { rerender } = render(<SessionInspector {...props} selectedNode={node} />);
+    // New node selection auto-switches away from overview.
+    expect(screen.getByText("No reasoning yet — mediator has not streamed.")).toBeDefined();
+
+    // Manual tab switches survive re-renders with the same node.
+    fireEvent.click(screen.getByRole("button", { name: "overview" }));
+    expect(screen.getByText("review PR")).toBeDefined();
+    rerender(<SessionInspector {...props} selectedNode={node} />);
+    expect(screen.getByText("review PR")).toBeDefined();
+
+    // Closing (null) resets the latch so reopening re-autos.
+    rerender(<SessionInspector {...props} selectedNode={null} />);
+    rerender(<SessionInspector {...props} selectedNode={node} />);
+    expect(screen.getByText("No reasoning yet — mediator has not streamed.")).toBeDefined();
   });
 });

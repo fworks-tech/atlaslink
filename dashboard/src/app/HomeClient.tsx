@@ -47,7 +47,10 @@ function HomeInner() {
       params.set("session", id);
       if (projectOfSession) params.set("project", projectOfSession);
       params.delete("q");
+      // The inspector shows another session's node payload otherwise.
+      params.delete("node");
       router.push(`?${params.toString()}`);
+      setInspectorNode(null);
       setMobileSidebarOpen(false);
     },
     [router, searchParams, sessions]
