@@ -314,6 +314,34 @@ export function buildSocietyGraph(
   return { nodes, edges };
 }
 
+/**
+ * Reconcile a fresh dagre layout with live canvas state. The projection wins
+ * for data and membership (departed ids are pruned); the layout wins for
+ * position except ids the user dragged, which keep their canvas position so
+ * live rebuilds self-heal instead of stacking on stale coordinates.
+ */
+export function mergeNodesWithLayout(current: Node[], next: Node[], pinnedIds: ReadonlySet<string>): Node[] {
+  const byId = new Map(current.map((n) => [n.id, n]));
+  const merged: Node[] = [];
+  for (const n of next) {
+    const existing = byId.get(n.id);
+    if (!existing) {
+      merged.push(n);
+      continue;
+    }
+    merged.push({
+      ...n,
+      position: pinnedIds.has(n.id) ? existing.position : n.position,
+      width: existing.width ?? n.width,
+      height: existing.height ?? n.height,
+      selected: existing.selected ?? n.selected,
+      style: existing.style ?? n.style,
+      measured: existing.measured ?? n.measured,
+    });
+  }
+  return merged;
+}
+
 function memberId(sessionId: string, member: string): string {
   return `${sessionId}::${member}`;
 }

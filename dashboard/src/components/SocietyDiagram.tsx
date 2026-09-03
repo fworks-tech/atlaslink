@@ -9,11 +9,12 @@ import {
   useNodesState,
   useEdgesState,
   type NodeTypes,
+  type OnNodesChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useSessions } from "@/hooks/useSessions";
 import { useEvents } from "@/hooks/useEvents";
-import { buildSocietyGraph } from "@/lib/graph";
+import { buildSocietyGraph, mergeNodesWithLayout } from "@/lib/graph";
 import { AtlasNode } from "@/components/AtlasNode";
 import { SessionNode } from "@/components/SessionNode";
 import { MemberNode } from "@/components/MemberNode";
@@ -93,34 +94,31 @@ export function SocietyDiagram({
   const [nodes, setNodes, onNodesChange] = useNodesState(nextNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(nextEdges);
 
+  // Ids the user positioned by hand — the only nodes that keep canvas
+  // positions across rebuilds; everything else follows the fresh layout.
+  const draggedRef = useRef(new Set<string>());
+  const handleNodesChange: OnNodesChange = (changes) => {
+    for (const c of changes) {
+      if (c.type === "position" && c.dragging) draggedRef.current.add(c.id);
+      if (c.type === "remove") draggedRef.current.delete(c.id);
+    }
+    onNodesChange(changes);
+  };
+
   // The projection wins for data (a session's status/members move on) and for
   // membership (nodes the projection no longer yields are pruned — a wrapped
-  // event buffer drops an early chain); the user wins for position, size, and
-  // selection (so resize handles don't vanish on live updates).
-  // Edges are derived, so fully replaced.
+  // event buffer drops an early chain); the layout wins for position except
+  // user-dragged nodes, so live rebuilds self-heal instead of stacking new
+  // nodes onto stale coordinates. The user still wins for size and selection
+  // (so resize handles don't vanish on live updates). Edges are derived.
   useEffect(() => {
     setNodes((current) => {
-      const byId = new Map(current.map((n) => [n.id, n]));
-      for (const next of nextNodes) {
-        const existing = byId.get(next.id);
-        byId.set(
-          next.id,
-          existing
-            ? {
-                ...next,
-                position: existing.position,
-                selected: existing.selected ?? next.selected,
-                style: existing.style ?? next.style,
-                measured: existing.measured ?? next.measured,
-              }
-            : next,
-        );
-      }
+      const merged = mergeNodesWithLayout(current, nextNodes, draggedRef.current);
       const nextIds = new Set(nextNodes.map((n) => n.id));
-      for (const id of byId.keys()) {
-        if (!nextIds.has(id)) byId.delete(id);
+      for (const id of [...draggedRef.current]) {
+        if (!nextIds.has(id)) draggedRef.current.delete(id);
       }
-      return [...byId.values()];
+      return merged;
     });
   }, [nextNodes, setNodes]);
 
@@ -151,7 +149,7 @@ export function SocietyDiagram({
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={onNodesChange}
+        onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => onNodeClick?.(node.id, node.type ?? "unknown", node.data)}
         nodeTypes={nodeTypes}

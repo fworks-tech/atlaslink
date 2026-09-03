@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { NODE_FOOTPRINTS, buildSocietyGraph } from "@/lib/graph";
+import { NODE_FOOTPRINTS, buildSocietyGraph, mergeNodesWithLayout } from "@/lib/graph";
 import type { Session, BridgeEvent } from "@/lib/types";
 
 function sess(id: string, cor: string, status: Session["status"] = "running"): Session {
@@ -97,5 +97,31 @@ describe("buildSocietyGraph full mode", () => {
         expect(overlap, `${a.id} overlaps ${b.id}`).toBe(false);
       }
     }
+  });
+});
+
+describe("mergeNodesWithLayout", () => {
+  const node = (id: string, x: number, y: number) => ({ id, position: { x, y }, data: {} });
+  it("heals stale positions for unpinned nodes and lands fresh ids on the layout", () => {
+    const merged = mergeNodesWithLayout(
+      [node("a", 0, 0)],
+      [node("a", 0, 500), node("b", 0, 600)],
+      new Set(),
+    );
+    expect(merged.find((n) => n.id === "a")!.position).toEqual({ x: 0, y: 500 });
+    expect(merged.find((n) => n.id === "b")!.position).toEqual({ x: 0, y: 600 });
+  });
+  it("keeps user-dragged positions and prunes departed ids", () => {
+    const merged = mergeNodesWithLayout(
+      [
+        { ...node("a", 10, 10), selected: true },
+        node("gone", 0, 0),
+      ],
+      [{ ...node("a", 0, 500), selected: false }],
+      new Set(["a"]),
+    );
+    expect(merged).toHaveLength(1);
+    expect(merged[0].position).toEqual({ x: 10, y: 10 });
+    expect(merged[0].selected).toBe(true);
   });
 });
