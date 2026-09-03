@@ -41,10 +41,12 @@ export function SocietyDiagram({
   selectedSessionId,
   mode = "full",
   onNodeClick,
+  selectedNodeId,
 }: {
   selectedSessionId: string;
   mode?: GraphMode;
   onNodeClick?: (nodeId: string, type: string, data: unknown) => void;
+  selectedNodeId?: string;
 }) {
   const { sessions, loading } = useSessions();
   const { events } = useEvents();
@@ -113,6 +115,19 @@ export function SocietyDiagram({
   useEffect(() => {
     setEdges(nextEdges);
   }, [nextEdges, setEdges]);
+
+  // Deep-link hydration: when ?node= names a node that exists in the built
+  // graph, surface its payload via onNodeClick once per id so reload restores
+  // the same inspector detail without requiring a second click.
+  const hydratedRef = useState(() => new Set<string>())[0];
+  useEffect(() => {
+    if (!selectedNodeId || !onNodeClick || hydratedRef.has(selectedNodeId)) return;
+    const match = nodes.find((n) => n.id === selectedNodeId);
+    if (match) {
+      hydratedRef.add(selectedNodeId);
+      onNodeClick(match.id, match.type ?? "unknown", match.data);
+    }
+  }, [selectedNodeId, nodes, onNodeClick, hydratedRef]);
 
   if (loading) {
     return <p className="py-12 text-center text-sm text-muted">Loading diagram…</p>;
