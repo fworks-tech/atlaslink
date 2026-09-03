@@ -10,7 +10,7 @@ export function ToolNode(props: NodeProps) {
   const hasResult = data.pair.result !== null;
   return (
     <>
-      <NodeResizer isVisible={props.selected} minWidth={140} minHeight={46} color="#38bdf8" />
+      <NodeResizer isVisible={props.selected} minWidth={160} minHeight={76} color="#38bdf8" />
       <div className="w-full min-w-[160px] overflow-hidden border border-sky-400/30 bg-sky-500/10 p-2.5 shadow-lg" style={{ clipPath: "polygon(10% 0,100% 0,90% 100%,0 100%)" }}>
         <Handle type="target" position={Position.Top} className="!bg-white/30" />
         <div className="flex items-center justify-between">
