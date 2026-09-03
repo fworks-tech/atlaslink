@@ -34,48 +34,60 @@ reviewable, stacked branches):
    inside the existing `SessionBackend` — no external service, no extra
    cost. Tenant-scoped via `tenantBackendForRequest`, bearer
    gate + rate limit unchanged.
-2. **Agent asks (fx `ask_user_question` mirror).** New `ask_human
+2. **Queue lanes (before park, so wait-forever cannot deadlock the pump).**
+   Interactive (`awaiting_input`-capable) sessions get a priority lane — the
+   serial FIFO pump would otherwise stall behind one parked session or long
+   runs. Fairness bound: the pump drains the interactive lane first; after 3
+   consecutive interactive runs it takes one standard run if any (Architect
+   to finalize the exact bound).
+3. **Agent asks (fx `ask_user_question` mirror).** New `ask_human
    {question, options?}` tool / permission hook in the runner closure
    (`src/server.ts:224`, `src/daemon/runTask.ts`). Emits
-   `session.awaiting_input` (store + SSE), parks the worker polling
-   `backend.get` with heartbeat, resumes on `POST …/reply` (existing endpoint
-   + wake). Question payload mirrors fx shape
-   `{questions:[{label,description,options}]}` while keeping plain-string
-   `question` backwards compatible. Park policy per decision: **wait forever**;
-   parked session stays `awaiting_input` and is always cancellable.
-3. **Human steer / interrupt.** `POST …/message?mode=steer`: queued →
+   `session.awaiting_input` (store + SSE), then parks: the worker releases
+   the pump slot (no slot is held while parked). `POST …/reply` (existing
+   endpoint) appends `session.user_reply` — which already returns the
+   aggregate to `queued` (`src/session/sessionStore.ts:111`) — and re-queues
+   the session to the front of the interactive lane; the pump picks it up
+   and the runner resumes with full `interaction[]` history. Question payload
+   mirrors fx shape `{questions:[{label,description,options}]}` while keeping
+   plain-string `question` backwards compatible. Park policy per decision:
+   **wait forever**; a parked session holds no pump slot and is always
+   cancellable.
+4. **Human steer / interrupt.** `POST /tasks/:id/steer`: queued →
    CAS prompt rewrite; running → append `session.user_reply` + interrupt flag
    the runner polls between steps. Harden `cancel` (`src/api/tasks.ts:154`)
    with `AbortSignal` into `runMemberTask`; runner emits terminal status
    (new `run.interrupted` event on the agenthood side). Dashboard gets an
    interrupt button (Esc-equivalent) + inline steer box during `running`.
-4. **Room transport.** WS channel `/sessions/:id/room` with presence/typing,
-   multi-human fan-out, and approval inbox (fx ctrl+X equivalent). SSE stays
+5. **Room transport.** WS channel `/sessions/:id/room` with presence,
+   multi-human fan-out, and approval inbox (fx ctrl+X equivalent). Typing
+   indicators are deferred polish (see Out of Scope). SSE stays
    the read-only projection; all ingress via POST/WS (ADR-002 upheld).
-5. **Queue lanes.** Interactive (`awaiting_input`-capable) sessions get a
-   priority lane — the serial FIFO pump otherwise blocks HITL behind long
-   runs. fx `acp` runner spike proceeds in parallel behind the `createApp` seam,
-   not gating this slice.
+   In parallel, non-gating: fx `acp` runner spike behind the `createApp` seam.
 
 ## Out of Scope
 Nothing deferred by request (#76 discussion: keep all in) — but ship order
-above is the review order. Recommended follow-up if throughput bites:
-presence/typing polish, `auto` reviewer policy (fx-style billed review),
-Postgres message-log migration details (lands with backend branch).
+above is the review order. Stages 1–5 merge without closing #76; only the
+final stage closes it. Deferred polish after #76 closes: typing indicators,
+`auto` reviewer policy (fx-style billed review), Postgres message-log
+migration details (lands with backend branch).
 
 ## Acceptance Criteria
 - [ ] Human posts to a running session via WS/POST; appears in
-  `interaction[]` <1s; second human sees it live.
-- [ ] Agent `ask_human` parks to `awaiting_input`; diagram shows awaiting
-  node; human reply resumes the same worker; diagram grows.
+  `interaction[]` (asserted in-process on a hermetic backend, <1s bound);
+  second human sees it live.
+- [ ] Agent `ask_human` parks to `awaiting_input` holding no pump slot;
+  diagram shows awaiting node; human reply re-queues and resumes the run
+  and a new exchange card is appended to the DAG.
 - [ ] Steer on queued rewrites prompt via CAS; steer on running is consumed
   before the next tool step.
 - [ ] Interrupt/cancel of a running session aborts `runMemberTask`, emits a
   terminal event, leaves no orphan worker.
 - [ ] Tenant A cannot read/write tenant B room (store + WS); unauthenticated
   ingress rejected per bearer gate.
-- [ ] Parked-forever session is cancellable and listed as `awaiting_input`
-  without starving other interactive sessions (lanes).
+- [ ] A parked-forever session holds no pump slot and is cancellable; with
+  the fairness bound, interactive sessions drain first and standard sessions
+  still progress.
 
 ## Testing Strategy
 Unit: `rehydrate` for `session.message`/`session.steer`, CAS paths on
@@ -88,7 +100,10 @@ Coverage: new suites per endpoint/hook; existing suites stay green.
 ## Open Questions
 - WS stack: native `ws` vs Fastify plugin — decided in ADR-007.
 - `question` object shape versioning (string vs fx-shaped object) — ADR-007.
-- Lane scheduling fairness bounds — deferred to implementation, noted here.
+- Lane fairness bound constant (proposed 3:1) — Architect finalizes.
+- agenthood runner API: `ask_human`/permission-hook support and
+  `run.interrupted` emission — verify before Stage 3; fallback is
+  poll-based park with zero runner cooperation.
 
 ## References
 - Issue #76 — M5 HITL collaboration room.

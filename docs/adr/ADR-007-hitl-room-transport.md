@@ -31,7 +31,9 @@ realtime transport and the `question` payload shape.
 ## Consequences
 Easier: true mid-run collaboration with tenant-scoped realtime. Harder: new
 protocol surface (auth, rate-limit, ordering), lane scheduling, parked-worker
-accounting (wait-forever policy). Risks: serial-queue starvation without lanes;
+accounting (wait-forever policy). Lanes land before park (Stage 2 before
+Stage 3), and park releases the pump slot with reply re-queueing — so
+wait-forever cannot deadlock the serial pump. Risks: serial-queue starvation without lanes;
 WS reconnect/resume semantics; interrupt partial-output semantics (needs
 agenthood `run.interrupted` event).
 
