@@ -243,6 +243,55 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     }
   )
 
+  // Anytime human↔human chat: appends to interaction[] without moving the
+  // lifecycle (no status gate — terminal sessions still conflict).
+  app.post<{ Params: { sessionId: string }; Body: { content: string } }>(
+    '/tasks/:sessionId/message',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['content'],
+          properties: {
+            content: { type: 'string', minLength: 1, maxLength: 10000 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const tenantCtx = tenantBackendForRequest(request, deps.backend)
+      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const backend = tenantCtx.backend
+      const sessionId = request.params.sessionId
+      const { content } = request.body
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const current = await backend.get(sessionId)
+        if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
+        if ((TERMINAL_STATUSES as readonly string[]).includes(current.status)) {
+          return reply.code(409).send({ ok: false, error: 'session already terminated' })
+        }
+        try {
+          await backend.readModifyWrite(sessionId, current.version, () => [
+            { type: 'session.message', correlationId: current.correlationId, at: new Date().toISOString(), message: content },
+          ])
+          const after = await backend.get(sessionId)
+          // also fan out on SSE so live room views update without polling
+          // (store is truth; SSE is best-effort projection)
+          try {
+            const eventId = after?.version ?? current.version + 1
+            deps.sse.broadcaster.emit({ eventId, type: 'session.message', sessionId, correlationId: current.correlationId, at: new Date().toISOString(), message: content } as unknown as { eventId: number; type: string } & Record<string, unknown>)
+          } catch {}
+          return reply.code(201).send({ ok: true, session: sessionToWire(after!) })
+        } catch (err) {
+          if (err instanceof VersionConflictError) continue
+          throw err
+        }
+      }
+      return reply.code(409).send({ ok: false, error: 'session state changed' })
+    }
+  )
+
   // Persist editor drag positions (ephemeral) — diagram is a projection, but user wins position
   app.post<{ Params: { sessionId: string }; Body: { diagram: { nodes: { id: string; type: string; position: { x: number; y: number } }[]; edges: { id: string; source: string; target: string }[]; mode: string } } }>(
     '/tasks/:sessionId/diagram',
