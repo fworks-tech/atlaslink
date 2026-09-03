@@ -1,7 +1,7 @@
 # ADR-007: HITL room transport and question shape
 
 **Date:** 2026-09-03
-**Status:** Proposed
+**Status:** Accepted (Stage 5 shipped; question object decided in Stage 3 with no string back-compat — supersedes the "keep compatible" recommendation below)
 
 ## Context
 M5 (#76) adds a multi-human realtime room per session: anytime chat, agent
@@ -36,6 +36,11 @@ Stage 3), and park releases the pump slot with reply re-queueing — so
 wait-forever cannot deadlock the serial pump. Risks: serial-queue starvation without lanes;
 WS reconnect/resume semantics; interrupt partial-output semantics (needs
 agenthood `run.interrupted` event).
+Dashboard corollary (Stage 5): the browser holds no room socket — the bearer
+stays server-side in the BFF and route handlers cannot proxy upgrades — so
+the dashboard joins over POST ingress + SSE projection with presence as a
+short poll of `GET /sessions/:id/room/members`. No token ever reaches the
+client bundle; no new protocol for the dashboard to speak.
 
 ## References
 - Issue #76; `docs/spec/m5-hitl-room.md`; `docs/tasks/m5-hitl-room.md`.

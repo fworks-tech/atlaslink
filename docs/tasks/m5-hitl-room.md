@@ -10,6 +10,7 @@ closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 - #78 `feat/76-hitl-lanes` → stage-1 branch (Vercel only; repo CI runs on PRs to `main`)
 - #79 `feat/76-hitl-ask-park` → stage-2 branch (needs agenthood #496 on `main` before its CI goes green)
 - #80 `feat/76-hitl-steer` → stage-3 branch (same agenthood dependency)
+- #81 `feat/76-hitl-room-ws` → stage-4 branch (room channel + roster read + dashboard UI)
 - agenthood: `feat/issue-496-ask-human-park@099d4b0` (ask_human tool + signal + redacted emit; no PR — merge first)
 - caveat: `npm run lint` fails on the stage-2/3 tips (prefer-const fixed only at stack tip `2cddbd9`); self-heals as the stack merges
 
@@ -42,10 +43,12 @@ closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 - deferred: interrupt button + inline steer box → Stage 5 UI
 
 ## Stage 5 — room transport (`feat/76-hitl-room-ws` off stage 4)
-- [ ] feat(ws): `/sessions/:id/room` channel (presence, multi-human fan-out, approval inbox; no typing indicators)
-- [ ] feat(ws): bearer + tenant auth, rate limit, SSE stays read-only projection
-- [ ] test(ws): two-client live test, tenant isolation, reconnect/resume
-- [ ] feat(ui): multi-human thread, presence, approval inbox
+- [x] feat(ws): `/sessions/:id/room` channel (presence, multi-human fan-out, approval inbox; no typing indicators)
+- [x] feat(ws): bearer + tenant auth, rate limit, SSE stays read-only projection
+- [x] test(ws): two-client live test, tenant isolation, reconnect/resume
+- [x] feat(ws): `GET /sessions/:id/room/members` roster read (tenant-scoped, no oracle) for clients that cannot hold a socket
+- [x] feat(ui): multi-human thread (SSE-live chat/steer turns), presence headcount (5s roster poll), approval inbox (option buttons + composer), anytime chat composer, steer box + interrupt button
+- [x] test(ui): projection + subscription + presence-hook + room wiring suites (dashboard 116/116)
 
 ## Stage 6 — spike + close (parallel, merges last)
 - [ ] spike(runner): `fx acp` member-runner behind `createApp` seam (approval round-trip evidence)

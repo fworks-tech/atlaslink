@@ -105,3 +105,30 @@ describe("withLiveUpdates awaiting_input flow", () => {
     expect((afterReply[0] as unknown as { nextStep: unknown }).nextStep).toMatchObject({ awaiting_input: true, prompt: "continue?" });
   });
 });
+
+describe("withLiveUpdates room chat flow", () => {
+  it("appends session.message and session.steer as user turns without moving status", () => {
+    const base = session({ status: "running", interaction: [] });
+    const out = withLiveUpdates(
+      [base],
+      [ev("session.message", { message: "hello room" }), ev("session.steer", { message: "pivot" })]
+    );
+    expect(out[0].status).toBe("running");
+    expect(out[0].interaction).toMatchObject([
+      { role: "user", content: "hello room" },
+      { role: "user", content: "pivot" },
+    ]);
+  });
+
+  it("ignores chat events without text and caps the thread at the server bound", () => {
+    const full = session({
+      interaction: Array.from({ length: 500 }, (_, i) => ({ role: "user" as const, at: "t", content: `m${i}` })),
+    });
+    const out = withLiveUpdates(
+      [full],
+      [ev("session.message", {}), ev("session.message", { message: "one more" })]
+    );
+    expect(out[0].interaction).toHaveLength(500);
+    expect(out[0].interaction?.[499]?.content).toBe("one more");
+  });
+});

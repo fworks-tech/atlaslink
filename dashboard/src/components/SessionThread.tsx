@@ -5,17 +5,20 @@ import type { BridgeEvent, Session } from "@/lib/types";
 import { artifactsFor } from "@/lib/runProjection";
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function SessionThread({ session, events, onJump }: { session: Session | null; events: BridgeEvent[]; onJump?: (nodeId: string) => void }) {
+export function SessionThread({ session, events, members, onJump }: { session: Session | null; events: BridgeEvent[]; members?: Array<{ name: string }>; onJump?: (nodeId: string) => void }) {
   const artifacts = useMemo(() => (session ? artifactsFor(session.correlationId, events) : null), [session, events]);
   const listRef = useRef<HTMLDivElement>(null);
 
   if (!session) return <div className="rounded-xl border border-white/5 bg-surface p-4 text-sm text-muted">Select a session to see its thread.</div>;
 
   const turns = [...(session.interaction ?? [])].sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  const here = members ?? [];
 
   return (
     <div className="flex h-[480px] flex-col overflow-hidden rounded-xl border border-white/5 bg-surface">
-      <div className="border-b border-white/5 px-3 py-2 text-xs uppercase tracking-widest text-muted">thread · {session.sessionId.slice(0, 8)}…</div>
+      <div className="border-b border-white/5 px-3 py-2 text-xs uppercase tracking-widest text-muted" title={here.map((m) => m.name).join(", ")}>
+        thread · {session.sessionId.slice(0, 8)}…{here.length > 0 ? ` · ${here.length} here` : ""}
+      </div>
       <div ref={listRef} className="flex-1 space-y-2 overflow-auto p-3">
         {turns.length === 0 && <div className="text-xs text-muted">No turns yet.</div>}
         {turns.map((t, i) => (

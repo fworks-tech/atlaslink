@@ -106,10 +106,17 @@ reviewable, stacked branches):
    suppressed. Seam mirrors `session.cancelled`; pump emits it to close
    `started`. Follow-up (not this stage): true provider-side abort.
    Dashboard interrupt button + inline steer box deferred to Stage 5 UI.
-5. **Room transport.** WS channel `/sessions/:id/room` with presence,
+5. **Room transport — DONE.** WS channel `/sessions/:id/room` with presence,
    multi-human fan-out, and approval inbox (fx ctrl+X equivalent). Typing
    indicators are deferred polish (see Out of Scope). SSE stays
    the read-only projection; all ingress via POST/WS (ADR-002 upheld).
+   Dashboard note: the browser holds no socket — the gate token stays
+   server-side in the BFF and route handlers cannot proxy WS upgrades — so
+   the dashboard joins the room over POST ingress + SSE projection
+   (chat/steer/reply/steer-callbacks through the BFF, live thread turns via
+   `session.message`/`session.steer` events) with presence as a 5s poll of
+   `GET /sessions/:id/room/members`. Stage 4's deferred interrupt button +
+   inline steer box shipped here too.
    In parallel, non-gating: fx `acp` runner spike behind the `createApp` seam.
 
 ## Out of Scope

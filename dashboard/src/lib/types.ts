@@ -16,6 +16,10 @@ export interface Session {
   durationMs?: number;
   interaction?: { role: "user" | "atlas" | "member"; member?: string; at: string; content: string }[];
   nextStep?: { awaiting_input: boolean; prompt?: string; member?: string } | null;
+  // fx question payload behind nextStep.prompt (Stage 3+); drives the inbox option picker
+  question?: { questions: Array<{ label: string; description?: string; options?: string[] }> };
+  // parked session this follow-up continues (linked-session resume)
+  resumeOf?: string;
   diagram?: { nodes: { id: string; type: string; position: { x: number; y: number } }[]; edges: { id: string; source: string; target: string }[]; mode: string } | null;
 }
 
