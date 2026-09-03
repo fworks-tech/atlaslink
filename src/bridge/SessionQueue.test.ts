@@ -483,8 +483,7 @@ test('re-entrant declare from inside the runner is picked up', async () => {
     const store = await EventLogStore.open(dir)
     const broadcaster = new EventBroadcaster(store)
     const order: string[] = []
-    let queue!: SessionQueue
-    queue = new SessionQueue({
+    const queue = new SessionQueue({
       broadcaster,
       registry: makeRegistry({
         a: SessionStatus.SUCCEEDED,
