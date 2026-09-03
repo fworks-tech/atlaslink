@@ -33,6 +33,7 @@ export interface ServerHarness {
   broadcaster: EventBroadcaster
   sse: SseHandler
   backend: SessionStore
+  registry: TaskRegistry
   close: () => Promise<void>
 }
 
@@ -53,11 +54,12 @@ export async function startServer(dir: string, opts: HarnessOptions = {}): Promi
   let broadcaster: EventBroadcaster
   let sse: SseHandler
   let backend: SessionStore
+  let registry: TaskRegistry
   try {
     const log = await EventLogStore.open(dir)
     broadcaster = new EventBroadcaster(log)
     sse = new SseHandler(log, broadcaster)
-    const registry = new TaskRegistry()
+    registry = new TaskRegistry()
     const queue = new SessionQueue({ broadcaster, registry, runner: async () => {} })
     backend = new SessionStore()
     const app = await createAppServer({
@@ -80,6 +82,7 @@ export async function startServer(dir: string, opts: HarnessOptions = {}): Promi
     broadcaster,
     sse,
     backend,
+    registry,
     close: () =>
       new Promise<void>((resolve) => {
         httpServer!.closeAllConnections?.()

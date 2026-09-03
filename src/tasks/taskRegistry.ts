@@ -23,6 +23,7 @@ export function msg(error: unknown): string {
  */
 export class TaskRegistry {
   #sessions = new Map<string, Session>()
+  #abortControllers = new Map<string, AbortController>()
 
   static #assert(status: SessionStatusType, step: string): void {
     if (status !== SessionStatus.QUEUED) {
@@ -99,16 +100,22 @@ export class TaskRegistry {
   }
 
   /**
-   * Cancel a queued session so the pump skips it, or a parked session whose
-   * human never replies (parked-forever stays cancellable). Only legal from
-   * QUEUED or PARKED; a running/terminal session is untouched (the queue calls
-   * this only after the store commit succeeded, which the pump drains before
-   * starting).
+   * Cancel a queued session so the pump skips it, a parked session whose
+   * human never replies (parked-forever stays cancellable), or a running
+   * session whose in-flight run was steered/interrupted (the abort path in
+   * runSession finalizes here once the race resolves). Only legal from
+   * QUEUED, PARKED, or RUNNING; a terminal session is untouched (the queue
+   * calls this only after the store commit succeeded, which the pump drains
+   * before starting).
    */
   cancel(id: string): Session {
     const session = this.#sessions.get(id)
     if (!session) throw new Error(`unknown session "${id}"`)
-    if (session.status !== SessionStatus.QUEUED && session.status !== SessionStatus.PARKED) {
+    if (
+      session.status !== SessionStatus.QUEUED &&
+      session.status !== SessionStatus.PARKED &&
+      session.status !== SessionStatus.RUNNING
+    ) {
       throw new Error(`cannot cancel session in status "${session.status}"`)
     }
     session.status = SessionStatus.CANCELLED
@@ -116,8 +123,49 @@ export class TaskRegistry {
     return session
   }
 
-  succeed(id: string, { output, durationMs }: { output: string; durationMs?: number }): Session {
+  /**
+   * Rewrite the prompt of a queued session (human steer before the run
+   * starts). Only legal from QUEUED — the pump reads the registry copy when
+   * the run starts, so the store CAS in the steer route commits second with
+   * a registry rollback on failure.
+   */
+  reprompt(id: string, prompt: string): Session {
     const session = this.#sessions.get(id)
+    if (!session) throw new Error(`unknown session "${id}"`)
+    if (session.status !== SessionStatus.QUEUED) {
+      throw new Error(`cannot reprompt session in status "${session.status}"`)
+    }
+    session.task.prompt = prompt
+    return session
+  }
+
+  /**
+   * Interrupt a running session: flags it and fires the AbortController the
+   * run attached at start. Returns false when no live run exists (already
+   * finalized or never started) — the caller must not record anything.
+   * runSession races the in-flight call against the signal and finalizes
+   * CANCELLED the moment it fires; the orphaned provider call completes in
+   * the background with its output discarded (true provider-side abort is a
+   * follow-up — the OpenAI SDK path has no signal support).
+   */
+  abort(id: string): boolean {
+    const session = this.#sessions.get(id)
+    if (!session || session.status !== SessionStatus.RUNNING || !this.#abortControllers.has(id)) return false
+    this.#abortControllers.get(id)?.abort()
+    return true
+  }
+
+  /** Attach the run's AbortController (sync at run start, before any await). */
+  attachAbort(id: string, controller: AbortController): void {
+    this.#abortControllers.set(id, controller)
+  }
+
+  /** Release the run's AbortController once the run finalized. */
+  untrackAbort(id: string): void {
+    this.#abortControllers.delete(id)
+  }
+
+  succeed(id: string, { output, durationMs }: { output: string; durationMs?: number }): Session {    const session = this.#sessions.get(id)
     if (!session) throw new Error(`unknown session "${id}"`)
     if (session.status !== SessionStatus.RUNNING) {
       throw new Error(`cannot succeed session in status "${session.status}"`)

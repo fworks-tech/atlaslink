@@ -280,6 +280,10 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
           await mirror({ type: 'session.succeeded', correlationId: final.correlationId, at: at(), output: final.output, durationMs: final.durationMs })
         } else if (final.status === 'failed') {
           await mirror({ type: 'session.failed', correlationId: final.correlationId, at: at(), error: final.error, durationMs: final.durationMs })
+        } else if (final.status === 'cancelled') {
+          // a steered/interrupted run: the abort race finalized CANCELLED and
+          // freed the slot — mirror it so the aggregate stops reading running
+          await mirror({ type: 'session.cancelled', correlationId: final.correlationId, at: at() })
         } else if (final.status === 'parked') {
           // the worker returned on AskHumanSignal — slot free, question in hand.
           // Park is the most time-sensitive transition, so it fans out live

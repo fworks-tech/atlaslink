@@ -27,11 +27,12 @@ closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 - decisions locked: cooperative agenthood change; fx-style question object (no string back-compat); linked-session resume; reply double-delta fixed in-branch
 - accepted residuals: no per-route reply throttle (global rate limit + single-reply bound); no resume-chain depth cap; store keeps raw human text (escape-at-render contract)
 
-## Stage 4 — steer / interrupt (`feat/76-hitl-steer` off stage 3)
-- [ ] feat(api): `POST /tasks/:sessionId/steer` (queued CAS rewrite; running interrupt flag)
-- [ ] feat(runner): honor interrupt flag between steps; `AbortSignal` into `runMemberTask`; emit terminal
-- [ ] test(e2e): steer queued vs running, interrupt running to terminal
-- [ ] feat(ui): interrupt button + inline steer box during `running`
+## Stage 4 — steer / interrupt (`feat/76-hitl-steer` off stage 3) — DONE
+- [x] feat(api): `POST /tasks/:sessionId/steer` — queued → registry reprompt + CAS `session.steer` (rehydrate rewrites prompt) with rollback; running → abort-first + CAS `user_reply`, 201 `interrupted: true`; awaiting_input/terminal 409s
+- [x] feat(runner): registry `abort`/`attachAbort`/`untrackAbort` + `cancel` from RUNNING; runSession abort race finalizes CANCELLED, suppresses orphan finalize; cancel-running fires abort; seam mirrors + pump emits `session.cancelled`
+- [x] test: steer queued rewrite (store+registry+SSE+re-steer), steer running interrupt, all 409s, cancel fires abort, abort-race + late-signal suppression, reprompt/abort registry units, steer rehydrate, queue cancelled close-out
+- deviation: no step-polling / agenthood `run.interrupted` — single-shot runner + SDK without signal support; orphaned provider call finishes in background, output discarded; true provider abort is a follow-up
+- deferred: interrupt button + inline steer box → Stage 5 UI
 
 ## Stage 5 — room transport (`feat/76-hitl-room-ws` off stage 4)
 - [ ] feat(ws): `/sessions/:id/room` channel (presence, multi-human fan-out, approval inbox; no typing indicators)

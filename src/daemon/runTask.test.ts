@@ -169,3 +169,54 @@ test('runSession parks the session on AskHumanSignal and releases the slot', asy
   assert.equal(finished.output, undefined)
   assert.equal(app.listenerCount(), 0)
 })
+
+test('runSession finalizes CANCELLED the moment a steer aborts the in-flight run', async () => {
+  const registry = new TaskRegistry()
+  const session = baseSession(registry)
+  let releaseOrphan!: (value: { output: string; durationMs: number }) => void
+  const orphan = new Promise<{ output: string; durationMs: number }>((resolve) => {
+    releaseOrphan = resolve
+  })
+  const app = fakeApp({})
+  app.runner.runMemberTask = () => orphan
+
+  const run = runSession({ registry, session, config: {}, createApp: async () => app })
+  // let the run attach its controller, then steer mid-flight
+  await new Promise((r) => setTimeout(r, 10))
+  assert.equal(registry.abort(session.id), true)
+
+  const finished = await run
+  assert.equal(finished.status, 'cancelled')
+  assert.ok(finished.finishedAt)
+  assert.equal(app.listenerCount(), 0)
+
+  // the orphaned provider call completes later — its output is discarded and
+  // the terminal state stands (no late succeed, no unhandled rejection)
+  releaseOrphan({ output: 'too late', durationMs: 1 })
+  await new Promise((r) => setTimeout(r, 10))
+  assert.equal(registry.get(session.id)!.status, 'cancelled')
+  assert.equal(registry.get(session.id)!.output, undefined)
+})
+
+test('runSession suppresses a late AskHumanSignal from the aborted orphan', async () => {
+  const registry = new TaskRegistry()
+  const session = baseSession(registry)
+  let rejectOrphan!: (err: unknown) => void
+  const orphan = new Promise<{ output: string; durationMs: number }>((_, reject) => {
+    rejectOrphan = reject
+  })
+  const app = fakeApp({})
+  app.runner.runMemberTask = () => orphan
+
+  const run = runSession({ registry, session, config: {}, createApp: async () => app })
+  await new Promise((r) => setTimeout(r, 10))
+  registry.abort(session.id)
+  assert.equal((await run).status, 'cancelled')
+
+  // the orphan parks into the void — a late park must not resurrect a
+  // cancelled session, and the rejection must not go unhandled
+  rejectOrphan(new AskHumanSignal({ question: 'Late?' }))
+  await new Promise((r) => setTimeout(r, 10))
+  assert.equal(registry.get(session.id)!.status, 'cancelled')
+  assert.equal(registry.get(session.id)!.question, undefined)
+})

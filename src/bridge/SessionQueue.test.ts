@@ -618,3 +618,47 @@ test('a parked worker releases the slot: drain continues, started closed by sess
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('an interrupted run finalizes cancelled and closes started with session.cancelled', async () => {
+  const dir = tmpDataDir()
+  const store = await EventLogStore.open(dir)
+  const broadcaster = new EventBroadcaster(store)
+  const seen: BridgeEnvelope[] = []
+  broadcaster.subscribe((e) => seen.push(e), { replay: false })
+  try {
+    // i1 is live at skip-check time and CANCELLED when its runner returns —
+    // that is exactly what the abort race leaves behind for the pump to read
+    const statuses = new Map<string, string>([
+      ['i1', SessionStatus.RUNNING],
+      ['s2', SessionStatus.RUNNING],
+    ])
+    const registry = {
+      get: (id: string) => {
+        const status = statuses.get(id)
+        return status === undefined
+          ? undefined
+          : { id, correlationId: `cor-${id}`, task: { member: 'm' }, status }
+      },
+    }
+    const order: string[] = []
+    const queue = new SessionQueue({
+      broadcaster,
+      registry,
+      runner: async (id) => {
+        order.push(id)
+        statuses.set(id, id === 'i1' ? SessionStatus.CANCELLED : SessionStatus.SUCCEEDED)
+      },
+    })
+
+    queue.declareSession({ id: 'i1', correlationId: 'c-i1', task: { member: 'm' } })
+    queue.declareSession({ id: 's2', correlationId: 'c-s2', task: { member: 'm' } })
+    await waitFor(() => order.length === 2, 'both sessions to run')
+
+    assert.deepEqual(order, ['i1', 's2'])
+    assert.ok(seen.some((e) => e.type === 'session.started' && e.sessionId === 'i1'))
+    assert.ok(seen.some((e) => e.type === 'session.cancelled' && e.sessionId === 'i1'))
+    assert.ok(seen.some((e) => e.type === 'session.succeeded' && e.sessionId === 's2'))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

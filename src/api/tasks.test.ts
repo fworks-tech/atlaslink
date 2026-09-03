@@ -896,6 +896,141 @@ test('POST /tasks/:id/reply cancels the follow-up instead of orphaning it when d
   }
 })
 
+test('POST /tasks/:id/steer rewrites a queued session prompt in store and registry', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'old mission' })).body).session
+
+    const seen: BridgeEnvelope[] = []
+    const unsubscribe = srv.broadcaster.subscribe((envelope) => {
+      seen.push(envelope)
+    })
+    try {
+      const res = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/steer`, { content: 'new mission' })
+      assert.equal(res.status, 201)
+    } finally {
+      unsubscribe()
+    }
+    const steered = JSON.parse((await jsonRequest(srv.port, 'GET', `/tasks/${created.sessionId}`)).body).session
+    assert.equal(steered.status, 'queued')
+    assert.equal(steered.task.prompt, 'new mission')
+    assert.equal(steered.interaction.at(-1).content, 'new mission')
+    // the pump reads the registry copy at start — it must move with the store
+    assert.equal(srv.registry.get(created.sessionId)!.task.prompt, 'new mission')
+    const envelope = seen.find((e) => e.type === 'session.steer')
+    assert.ok(envelope)
+    assert.equal(envelope.message, 'new mission')
+
+    // re-steer while still queued rewrites again
+    const again = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/steer`, { content: 'newer mission' })
+    assert.equal(again.status, 201)
+    assert.equal(JSON.parse(again.body).session.task.prompt, 'newer mission')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/steer on a started session records the direction and aborts the run', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'old mission' })).body).session
+    // fabricate the live run: registry started, controller attached, store running
+    srv.registry.start(created.sessionId)
+    const controller = new AbortController()
+    srv.registry.attachAbort(created.sessionId, controller)
+    await srv.backend.append({
+      type: 'session.running',
+      sessionId: created.sessionId,
+      correlationId: created.correlationId,
+      at: new Date().toISOString(),
+    })
+
+    const res = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/steer`, { content: 'pivot to groq' })
+    assert.equal(res.status, 201)
+    const parsed = JSON.parse(res.body)
+    assert.equal(parsed.interrupted, true)
+    assert.equal(parsed.session.interaction.at(-1).content, 'pivot to groq')
+    // abort fired synchronously — runSession (or its test double) finalizes CANCELLED
+    assert.equal(controller.signal.aborted, true)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/steer rejects unknown, terminal, awaiting, blank and already-started sessions', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const missing = await jsonRequest(srv.port, 'POST', '/tasks/ses-missing/steer', { content: 'x' })
+    assert.equal(missing.status, 404)
+
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    const blank = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/steer`, { content: '   ' })
+    assert.equal(blank.status, 400)
+
+    // the registry moved on (run started) while the store still reads queued
+    srv.registry.start(created.sessionId)
+    const started = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/steer`, { content: 'too late' })
+    assert.equal(started.status, 409)
+    assert.equal(JSON.parse(started.body).error, 'session already started')
+    // ...and without a live controller there is nothing to interrupt either
+    await srv.backend.append({
+      type: 'session.running',
+      sessionId: created.sessionId,
+      correlationId: created.correlationId,
+      at: new Date().toISOString(),
+    })
+    const noRun = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/steer`, { content: 'pivot' })
+    assert.equal(noRun.status, 409)
+    assert.equal(JSON.parse(noRun.body).error, 'session not running')
+
+    await parkSession(srv.backend, created.sessionId, created.correlationId)
+    const parked = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/steer`, { content: 'pivot' })
+    assert.equal(parked.status, 409)
+    assert.equal(JSON.parse(parked.body).error, 'session awaiting input; reply instead of steering')
+
+    await srv.backend.append({
+      type: 'session.cancelled',
+      sessionId: created.sessionId,
+      correlationId: created.correlationId,
+      at: new Date().toISOString(),
+    })
+    const terminal = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/steer`, { content: 'pivot' })
+    assert.equal(terminal.status, 409)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/cancel on a tracked run fires its abort controller', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    srv.registry.start(created.sessionId)
+    const controller = new AbortController()
+    srv.registry.attachAbort(created.sessionId, controller)
+    await srv.backend.append({
+      type: 'session.running',
+      sessionId: created.sessionId,
+      correlationId: created.correlationId,
+      at: new Date().toISOString(),
+    })
+
+    const res = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/cancel`, {})
+    assert.equal(res.status, 202)
+    assert.equal(controller.signal.aborted, true)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
 test('foldReplyPrompt delimits the human text and caps hostile lengths', () => {
   const folded = foldReplyPrompt('plan the release', 'Ship it?', 'release vote', 'yes, ship it')
   assert.equal(folded, 'plan the release\n\n<human_reply question="Ship it?" context="release vote">\nyes, ship it\n</human_reply>')

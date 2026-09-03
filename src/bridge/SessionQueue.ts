@@ -26,6 +26,7 @@ import { SessionStatus } from '../tasks/taskRegistry'
  *   session.succeeded — same, status 'succeeded'
  *   session.failed    — same, status 'failed'
  *   session.parked    — same, status 'parked' (slot released, run awaiting human)
+ *   session.cancelled — same, status 'cancelled' (slot released, run interrupted)
 
 /** Fairness bound: at most this many interactive runs before a waiting standard session is served. */
 export const MAX_CONSECUTIVE_INTERACTIVE = 3
@@ -98,6 +99,10 @@ export class SessionQueue {
           // a parked run releases its slot without a terminal registry state —
           // close the started event so queue watchers never see it running-forever
           this.#emit('session.parked', sessionId, final, SessionStatus.PARKED)
+        } else if (final.status === SessionStatus.CANCELLED) {
+          // a steered/interrupted run finalized CANCELLED by the abort race —
+          // same slot-release close-out as a park
+          this.#emit('session.cancelled', sessionId, final, SessionStatus.CANCELLED)
         }
       }
     } finally {
