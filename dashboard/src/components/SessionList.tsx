@@ -91,25 +91,19 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
           </thead>
           <tbody>
             {live.map((session) => (
-              <tr
-                key={session.sessionId}
-                role={onSelect ? "button" : undefined}
-                tabIndex={onSelect ? 0 : undefined}
-                onClick={onSelect ? () => onSelect(session.sessionId) : undefined}
-                onKeyDown={
-                  onSelect
-                    ? (e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          onSelect(session.sessionId);
-                        }
-                      }
-                    : undefined
-                }
-                className={`border-b border-white/5 last:border-0 ${onSelect ? "cursor-pointer hover:bg-raised/60 focus-visible:outline-none focus-visible:bg-raised/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" : ""}`}
-              >
+              <tr key={session.sessionId} className="border-b border-white/5 last:border-0">
                 <td className="max-w-xs truncate px-4 py-3 pr-8">
-                  <div className="truncate text-foreground">{session.task.prompt}</div>
+                  {onSelect ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelect(session.sessionId)}
+                      className="block w-full truncate text-left text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      {session.task.prompt}
+                    </button>
+                  ) : (
+                    <div className="truncate text-foreground">{session.task.prompt}</div>
+                  )}
                   <div className="mt-0.5 font-mono text-xs text-muted">{session.sessionId}</div>
                 </td>
                 <td className="px-4 py-3 text-foreground">{session.task.member}</td>
@@ -166,26 +160,19 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
               </tr>
             )}
             {slice.map((session) => (
-              <tr
-                key={session.sessionId}
-                role={onSelect ? "button" : undefined}
-                tabIndex={onSelect ? 0 : undefined}
-                onClick={onSelect ? () => onSelect(session.sessionId) : undefined}
-                onKeyDown={
-                  onSelect
-                    ? (e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          onSelect(session.sessionId);
-                        }
-                      }
-                    : undefined
-                }
-                style={{ height: ROW_HEIGHT }}
-                className={`border-b border-white/5 last:border-0 ${onSelect ? "cursor-pointer hover:bg-raised/60 focus-visible:outline-none focus-visible:bg-raised/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" : ""}`}
-              >
+              <tr key={session.sessionId} style={{ height: ROW_HEIGHT }} className="border-b border-white/5 last:border-0">
                 <td className="max-w-xs truncate px-4 py-3 pr-8">
-                  <div className="truncate text-foreground">{session.task.prompt}</div>
+                  {onSelect ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelect(session.sessionId)}
+                      className="block w-full truncate text-left text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    >
+                      {session.task.prompt}
+                    </button>
+                  ) : (
+                    <div className="truncate text-foreground">{session.task.prompt}</div>
+                  )}
                   <div className="mt-0.5 font-mono text-xs text-muted">{session.sessionId}</div>
                 </td>
                 <td className="px-4 py-3 text-foreground">{session.task.member}</td>

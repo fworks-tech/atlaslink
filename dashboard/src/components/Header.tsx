@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { track } from "@vercel/analytics";
-import { Burger, Button, Drawer, Group, Stack } from "@mantine/core";
+import { Burger, Drawer, Group, Stack } from "@mantine/core";
 
 interface NavLink {
   href: string;
@@ -61,9 +61,6 @@ export default function Header() {
               </Link>
             )
           )}
-          <Button component="a" variant="outline" size="sm" disabled>
-            My Atlas
-          </Button>
         </Group>
 
         <Burger
@@ -117,9 +114,6 @@ export default function Header() {
               </Link>
             )
           )}
-          <Button component="a" variant="outline" color="emerald" fullWidth disabled>
-            My Atlas
-          </Button>
         </Stack>
       </Drawer>
     </nav>

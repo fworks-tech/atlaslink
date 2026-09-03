@@ -47,6 +47,16 @@ describe("SessionList", () => {
     expect(document.querySelectorAll('[aria-hidden="true"]')).toHaveLength(0);
   });
 
+  it("selects rows through a real button with valid table semantics", () => {
+    sessionsMock.mockReturnValue({ sessions: [session("ses-1", 1)], loading: false, error: null, refresh: vi.fn() });
+    eventsMock.mockReturnValue({ events: [] });
+    const onSelect = vi.fn();
+    const { container } = render(<SessionList onSelect={onSelect} />);
+    expect(container.querySelector('[role="button"]')).toBeNull();
+    screen.getByRole("button", { name: "prompt 1" }).click();
+    expect(onSelect).toHaveBeenCalledWith("ses-1");
+  });
+
   it("virtualizes large lists with spacers", () => {
     const many = Array.from({ length: VIRTUALIZE_AT + 20 }, (_, i) => session(`ses-${i}`, i));
     sessionsMock.mockReturnValue({ sessions: many, loading: false, error: null, refresh: vi.fn() });

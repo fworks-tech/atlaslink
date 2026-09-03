@@ -36,6 +36,8 @@ function HomeInner() {
   const { events } = useEvents();
   const { members } = useRoomPresence(selectedSessionId);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const copyTimer = useRef<number | null>(null);
   const [inspectorNode, setInspectorNode] = useState<{ id: string; type: string; data: unknown } | null>(null);
   const [replyContent, setReplyContent] = useState("");
   const [replyBusy, setReplyBusy] = useState(false);
@@ -55,8 +57,13 @@ function HomeInner() {
   // list is loading or an unresolved deep link has no error yet — a reported
   // error means resolution failed and the fallback applies.
   const inspectorContextLoading = sessionsLoading || (!!selectedSessionId && !selectedSession && !sessionsError);
-  const isTerminal = selectedSession?.status === "succeeded" || selectedSession?.status === "failed" || selectedSession?.status === "cancelled";
   const isSteerable = selectedSession?.status === "queued" || selectedSession?.status === "running";
+  // One contextual composer, reply > steer > chat: the awaiting question
+  // accepts the reply, a live run accepts a steer, anything else chats.
+  const awaitingQuestion = selectedSession?.nextStep?.awaiting_input || selectedSession?.status === "awaiting_input"
+    ? { prompt: selectedSession.question?.question ?? selectedSession.nextStep?.prompt ?? "Awaiting input", context: selectedSession.question?.context }
+    : null;
+  const composerMode = awaitingQuestion ? "reply" : isSteerable ? "steer" : "chat";
 
   // Deep-link hydration: a shared ?session= id may sit beyond the one-shot
   // list page, so fetch the single row instead of leaving context empty.
@@ -112,6 +119,26 @@ function HomeInner() {
     params.delete("node");
     router.replace(`?${params.toString()}`, { scroll: false });
   }, [router, searchParams]);
+
+  // Copy feedback: clipboard denial (permissions, insecure context) surfaces
+  // as Copy failed instead of a silent no-op.
+  const handleCopyLink = useCallback(async () => {
+    if (!selectedSessionId) return;
+    const share = selectedProjectId ? canonicalUrl(selectedProjectId, selectedSessionId) : `?session=${selectedSessionId}`;
+    const q = encodeShareLink({ p: selectedProjectId, s: selectedSessionId, n: selectedNodeId ?? undefined, m: mode });
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}${share} or ${window.location.origin}/?q=${q}`);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+    if (copyTimer.current) window.clearTimeout(copyTimer.current);
+    copyTimer.current = window.setTimeout(() => setCopyState("idle"), 2000);
+  }, [selectedProjectId, selectedSessionId, selectedNodeId, mode]);
+
+  useEffect(() => () => {
+    if (copyTimer.current) window.clearTimeout(copyTimer.current);
+  }, []);
 
   const sendReply = useCallback(async (content: string) => {
     if (!selectedSessionId || !content.trim()) return;
@@ -219,7 +246,7 @@ function HomeInner() {
         </ErrorBoundary>
       </aside>
 }
-      <main className="flex-1 overflow-y-auto overflow-x-hidden">
+      <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-white/5 bg-background px-4 py-2 md:hidden">
           <button
             type="button"
@@ -248,7 +275,9 @@ function HomeInner() {
                 ← Back to composer
               </button>
               <span className="rounded bg-white/5 px-2 py-1 font-mono text-xs text-muted">{selectedSessionId.slice(0, 20)}…</span>
+              <label htmlFor="diagram-mode" className="text-xs text-muted">Diagram</label>
               <select
+                id="diagram-mode"
                 value={mode}
                 onChange={(e) => {
                   const p = new URLSearchParams(searchParams.toString());
@@ -256,22 +285,20 @@ function HomeInner() {
                   router.push(`?${p.toString()}`);
                 }}
                 className="rounded border border-white/10 bg-raised px-2 py-1 text-xs text-foreground"
-                aria-label="Diagram mode"
               >
                 <option value="chain">chain</option>
                 <option value="fanout">fanout</option>
                 <option value="full">full DAG</option>
               </select>
               <button
-                onClick={() => {
-                  const share = selectedProjectId ? canonicalUrl(selectedProjectId, selectedSessionId) : `?session=${selectedSessionId}`;
-                  const q = encodeShareLink({ p: selectedProjectId, s: selectedSessionId, n: selectedNodeId ?? undefined, m: mode });
-                  navigator.clipboard.writeText(`${window.location.origin}${share} or ${window.location.origin}/?q=${q}`);
-                }}
+                onClick={() => void handleCopyLink()}
                 className="rounded bg-accent px-2 py-1 text-xs text-white hover:bg-accent/80"
               >
                 copy link
               </button>
+              <span role="status" aria-live="polite" className="text-xs text-muted">
+                {copyState === "copied" ? "Copied!" : copyState === "failed" ? "Copy failed" : ""}
+              </span>
               {selectedProjectId && <span className="text-xs text-muted">project {selectedProjectId.slice(0, 8)}…</span>}
             </div>
             <header className="mb-6">
@@ -292,7 +319,31 @@ function HomeInner() {
                 <SessionList onSelect={handleSelectSession} />
                 <SessionThread session={selectedSession} events={events} members={members} onJump={(id) => handleNodeClick(id, "thread", {})} />
               </div>
-              {!isTerminal ? (
+              {composerMode === "reply" && awaitingQuestion ? (
+                <div className="rounded-xl border border-accent/30 bg-accent/10 p-4">
+                  <div className="text-sm font-medium text-accent">Atlas asks · {awaitingQuestion.prompt}</div>
+                  {awaitingQuestion.context ? (
+                    <div className="mt-1 text-xs text-muted">{awaitingQuestion.context}</div>
+                  ) : null}
+                  <form onSubmit={(e) => { e.preventDefault(); handleReply(); }} className="mt-3 flex gap-2">
+                    <input value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Type your reply…" aria-label="Reply to Atlas" className="flex-1 rounded border border-white/10 bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted" />
+                    <button type="submit" disabled={replyBusy || !replyContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
+                  </form>
+                  {replyError ? <div role="alert" className="mt-2 text-xs text-red-400">{replyError}</div> : null}
+                </div>
+              ) : null}
+              {composerMode === "steer" ? (
+                <div className="rounded-xl border border-white/10 bg-surface p-4">
+                  <div className="text-sm font-medium text-foreground">Steer {selectedSession?.status === "running" ? "· interrupts the live run first" : "· rewrites the queued prompt"}</div>
+                  <form onSubmit={(e) => { e.preventDefault(); void handleSteer(); }} className="mt-3 flex gap-2">
+                    <input value={steerContent} onChange={(e) => setSteerContent(e.target.value)} placeholder="Redirect this session…" aria-label="Redirect this session" className="flex-1 rounded border border-white/10 bg-raised px-3 py-2 text-sm text-foreground placeholder:text-muted" />
+                    <button type="submit" disabled={steerBusy || !steerContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Steer</button>
+                    <button type="button" onClick={handleInterrupt} disabled={steerBusy} className="rounded border border-red-400/40 px-4 py-2 text-sm text-red-300 disabled:opacity-50">Interrupt</button>
+                  </form>
+                  {steerError ? <div role="alert" className="mt-2 text-xs text-red-400">{steerError}</div> : null}
+                </div>
+              ) : null}
+              {composerMode === "chat" ? (
                 <div className="rounded-xl border border-white/10 bg-surface p-4">
                   <div className="text-sm font-medium text-foreground">Room chat · visible to everyone here{members.length > 0 ? ` · ${members.length} here` : ""}</div>
                   <form onSubmit={(e) => { e.preventDefault(); void handleChat(); }} className="mt-3 flex gap-2">
@@ -305,42 +356,6 @@ function HomeInner() {
                       <button type="button" onClick={() => void handleChat()} disabled={chatBusy} className="underline hover:text-red-300 disabled:opacity-50">Retry</button>
                     </div>
                   ) : null}
-                </div>
-              ) : null}
-              {isSteerable ? (
-                <div className="rounded-xl border border-white/10 bg-surface p-4">
-                  <div className="text-sm font-medium text-foreground">Steer {selectedSession?.status === "running" ? "· interrupts the live run first" : "· rewrites the queued prompt"}</div>
-                  <div className="mt-3 flex gap-2">
-                    <input value={steerContent} onChange={(e) => setSteerContent(e.target.value)} placeholder="Redirect this session…" aria-label="Redirect this session" className="flex-1 rounded border border-white/10 bg-raised px-3 py-2 text-sm text-foreground placeholder:text-muted" />
-                    <button onClick={handleSteer} disabled={steerBusy || !steerContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Steer</button>
-                    <button onClick={handleInterrupt} disabled={steerBusy} className="rounded border border-red-400/40 px-4 py-2 text-sm text-red-300 disabled:opacity-50">Interrupt</button>
-                  </div>
-                  {steerError ? <div className="mt-2 text-xs text-red-400">{steerError}</div> : null}
-                </div>
-              ) : null}
-              {selectedSession?.nextStep?.awaiting_input ? (
-                <div className="rounded-xl border border-accent/30 bg-accent/10 p-4">
-                  <div className="text-sm font-medium text-accent">Atlas asks · {selectedSession.question?.question ?? selectedSession.nextStep.prompt}</div>
-                  {selectedSession.question?.context ? (
-                    <div className="mt-1 text-xs text-muted">{selectedSession.question.context}</div>
-                  ) : null}
-                  <div className="mt-3 flex gap-2">
-                    <input value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Type your reply…" className="flex-1 rounded border border-white/10 bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted" />
-                    <button onClick={handleReply} disabled={replyBusy || !replyContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
-                  </div>
-                  {replyError ? <div className="mt-2 text-xs text-red-400">{replyError}</div> : null}
-                </div>
-              ) : selectedSession?.status === "awaiting_input" ? (
-                <div className="rounded-xl border border-accent/30 bg-accent/10 p-4">
-                  <div className="text-sm font-medium text-accent">Awaiting input{selectedSession.question?.question ? ` · ${selectedSession.question.question}` : ""}</div>
-                  {selectedSession.question?.context ? (
-                    <div className="mt-1 text-xs text-muted">{selectedSession.question.context}</div>
-                  ) : null}
-                  <div className="mt-3 flex gap-2">
-                    <input value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Reply to continue…" className="flex-1 rounded border border-white/10 bg-surface px-3 py-2 text-sm" />
-                    <button onClick={handleReply} disabled={replyBusy || !replyContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
-                  </div>
-                  {replyError ? <div className="mt-2 text-xs text-red-400">{replyError}</div> : null}
                 </div>
               ) : null}
             </div>
