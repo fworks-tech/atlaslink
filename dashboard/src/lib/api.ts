@@ -60,7 +60,11 @@ export async function fetchJSON<T>(
     } catch {
       // non-JSON error body (e.g. proxy 404) — keep the status text
     }
-    throw new ApiError(res.status, message);
+    // Qualify with the status so a daemon 404 ("not found") is never shown
+    // bare — callers and users can tell it apart from domain errors like
+    // "unknown session".
+    const qualified = message.startsWith(String(res.status)) ? message : `${res.status} ${message}`;
+    throw new ApiError(res.status, qualified.trim());
   }
   return (await res.json()) as T;
 }
