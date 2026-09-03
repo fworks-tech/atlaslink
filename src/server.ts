@@ -20,8 +20,10 @@ import type { BridgeEnvelope } from './bridge/EventLogStore'
 import { VersionConflictError } from './session/types'
 import { registerTaskRoutes } from './api/tasks'
 import { registerProjectRoutes } from './api/projects'
+import { registerRoomRoutes } from './api/room'
 import { registerTokenGate } from './api/auth'
 import rateLimit from '@fastify/rate-limit'
+import websocket from '@fastify/websocket'
 import cors from '@fastify/cors'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
@@ -147,6 +149,11 @@ export async function createAppServer(params: {
   // gate (OPTIONS never needs a bearer token). Allowlist only.
   await app.register(cors, { origin: corsOrigins })
 
+  // WS room channels (Stage 5): upgrade support for the gated scope below.
+  // The handshake passes the same bearer gate + root rate limit as any route;
+  // per-message auth/tenant is enforced in the room handler itself.
+  await app.register(websocket)
+
   app.addHook('onResponse', (request, reply, done) => {
     // long-lived SSE streams do not emit a request envelope (same as pre-Fastify)
     const route = request.routeOptions.url
@@ -210,6 +217,9 @@ export async function createAppServer(params: {
 
     // --- M3 Task API (spec §3/§7): token-gated, store-backed, queue-driven ---
     registerTaskRoutes(api, { backend, registry, queue, sse })
+
+    // --- M5 room channel (spec §5): WS per-session room, same gate ---
+    registerRoomRoutes(api, { backend, registry, queue, broadcaster: sse.broadcaster, log })
   })
 
   app.setNotFoundHandler((_request, reply) => {
