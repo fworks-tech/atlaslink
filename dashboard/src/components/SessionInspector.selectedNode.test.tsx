@@ -207,4 +207,29 @@ describe("SessionInspector selectedNode", () => {
     );
     expect(container.innerHTML).toBe("");
   });
+
+  it("contains a 2000-char payload inside a scrolling header", () => {
+    const payload = "p".repeat(2000);
+    const { container } = render(
+      <SessionInspector
+        open
+        onClose={() => {}}
+        session={session()}
+        events={[]}
+        selectedNode={{
+          id: "ses-1::reasoning::0",
+          type: "reasoning",
+          data: { sessionId: "ses-1", step: 0, events: [{ content: payload }] as unknown as BridgeEvent[] },
+        }}
+      />,
+    );
+    const drawer = container.firstElementChild as HTMLElement;
+    expect(drawer.className).toContain("max-w-[90vw]");
+    const body = screen.getByText(
+      (content, el) => content === payload && (el?.className ?? "").includes("whitespace-pre-wrap"),
+    );
+    expect(body.className).toContain("break-words");
+    const header = body.closest("section") as HTMLElement;
+    expect(header.className).toContain("overflow-y-auto");
+  });
 });
