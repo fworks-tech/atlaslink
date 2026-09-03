@@ -406,4 +406,15 @@ describe("HomeClient room wiring", () => {
     expect(inspector.getAttribute("data-session")).toBe("");
     expect(inspector.getAttribute("data-loading")).toBe("false");
   });
+
+  it("marks inspector context loading while the list loads", () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    sessionsMock.mockReturnValue({ sessions: [], loading: true, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
+    eventsMock.mockReturnValue({ events: [] });
+    render(<HomeClient />);
+    fireEvent.click(screen.getByTestId("click-node"));
+    expect(screen.getByTestId("inspector").getAttribute("data-loading")).toBe("true");
+  });
 });
