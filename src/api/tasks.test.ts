@@ -369,3 +369,108 @@ test('DELETE /projects/:id removes the project and its sessions', async () => {
     cleanup(dir)
   }
 })
+
+test('POST /tasks/:id/message appends chat without changing status', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+
+    const res = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: 'hello?' })
+    assert.equal(res.status, 201)
+    const parsed = JSON.parse(res.body)
+    assert.equal(parsed.ok, true)
+    assert.equal(parsed.session.status, 'queued')
+    assert.equal(parsed.session.version, 2)
+    assert.equal(parsed.session.interaction.length, 2)
+    assert.equal(parsed.session.interaction.at(-1).role, 'user')
+    assert.equal(parsed.session.interaction.at(-1).content, 'hello?')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/message on a running session keeps it running', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    const id = created.sessionId
+    await srv.backend.append({ type: 'session.running', sessionId: id, correlationId: created.correlationId, at: new Date().toISOString() })
+
+    const res = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: 'ping' })
+    assert.equal(res.status, 201)
+    const parsed = JSON.parse(res.body)
+    assert.equal(parsed.session.status, 'running')
+    assert.equal(parsed.session.interaction.at(-1).content, 'ping')
+
+    // the session still lists under its lifecycle status, not under chat noise
+    const running = JSON.parse((await jsonRequest(srv.port, 'GET', '/tasks?status=running')).body)
+    assert.equal(running.sessions.some((s: { sessionId: string }) => s.sessionId === id), true)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/message is tenant-isolated', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const id = JSON.parse(
+      (await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' }, { 'x-tenant-id': 'tenant-a' })).body
+    ).session.sessionId
+
+    const foreign = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: 'hi' }, { 'x-tenant-id': 'tenant-b' })
+    assert.equal(foreign.status, 404)
+    assert.equal(JSON.parse(foreign.body).error, 'unknown session')
+
+    const foreignGet = await jsonRequest(srv.port, 'GET', `/tasks/${id}`, undefined, { 'x-tenant-id': 'tenant-b' })
+    assert.equal(foreignGet.status, 404)
+
+    const own = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: 'hi' }, { 'x-tenant-id': 'tenant-a' })
+    assert.equal(own.status, 201)
+    assert.equal(JSON.parse(own.body).session.interaction.at(-1).content, 'hi')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/message 404s unknown sessions and 409s terminal ones', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const missing = await jsonRequest(srv.port, 'POST', '/tasks/ses-nope/message', { content: 'hi' })
+    assert.equal(missing.status, 404)
+    assert.equal(JSON.parse(missing.body).error, 'unknown session')
+
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+    await jsonRequest(srv.port, 'POST', `/tasks/${id}/cancel`)
+    const terminal = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: 'late' })
+    assert.equal(terminal.status, 409)
+    assert.equal(JSON.parse(terminal.body).error, 'session already terminated')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/message rejects missing or empty content with the error envelope', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+
+    const missing = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, {})
+    assert.equal(missing.status, 400)
+    assert.equal(JSON.parse(missing.body).ok, false)
+
+    const empty = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: '' })
+    assert.equal(empty.status, 400)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
