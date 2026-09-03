@@ -224,11 +224,11 @@ describe("HomeClient room wiring", () => {
   });
 
   it("chat composer posts to the room, clears, and refreshes", async () => {
-    seedRoom("session=ses-1");
+    seedRoom("session=ses-7");
     render(<HomeClient />);
     fireEvent.change(screen.getByLabelText("Message the room"), { target: { value: "hi all" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledWith("ses-1", "hi all"));
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledWith("ses-7", "hi all"));
     await vi.waitFor(() => expect(refreshMock).toHaveBeenCalled());
     // the clear lands on a later flush than the refresh call — wait for the DOM
     await vi.waitFor(() => expect(screen.getByLabelText("Message the room")).toHaveValue(""));
@@ -261,12 +261,27 @@ describe("HomeClient room wiring", () => {
     await vi.waitFor(() => expect(cancelMock).toHaveBeenCalledWith("ses-1"));
   });
 
-  it("terminal sessions hide the chat composer and the steer box", () => {
+  it("terminal sessions show the chat-only composer", () => {
     seedRoom("session=ses-7");
     render(<HomeClient />);
-    expect(screen.queryByLabelText("Message the room")).toBeNull();
+    expect(screen.getByLabelText("Message the room")).toBeDefined();
     expect(screen.queryByLabelText("Redirect this session")).toBeNull();
     expect(screen.queryByRole("button", { name: "Interrupt" })).toBeNull();
+    expect(screen.queryByPlaceholderText("Type your reply…")).toBeNull();
+  });
+
+  it("shows one contextual composer per session state", () => {
+    seedRoom("session=ses-9");
+    const { unmount } = render(<HomeClient />);
+    expect(screen.getByPlaceholderText("Type your reply…")).toBeDefined();
+    expect(screen.queryByLabelText("Message the room")).toBeNull();
+    expect(screen.queryByLabelText("Redirect this session")).toBeNull();
+    unmount();
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(screen.getByLabelText("Redirect this session")).toBeDefined();
+    expect(screen.queryByLabelText("Message the room")).toBeNull();
+    expect(screen.queryByPlaceholderText("Type your reply…")).toBeNull();
   });
 
   it("hydrates a deep-linked session missing from the list", async () => {
@@ -297,25 +312,25 @@ describe("HomeClient room wiring", () => {
   });
 
   it("Enter submits the chat form", async () => {
-    seedRoom("session=ses-1");
+    seedRoom("session=ses-7");
     render(<HomeClient />);
     const input = screen.getByLabelText("Message the room");
     fireEvent.change(input, { target: { value: "hi all" } });
     const form = input.closest("form");
     expect(form).not.toBeNull();
     fireEvent.submit(form as HTMLFormElement);
-    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledWith("ses-1", "hi all"));
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledWith("ses-7", "hi all"));
   });
 
   it("shows the room presence count in the chat header", () => {
-    seedRoom("session=ses-1");
+    seedRoom("session=ses-7");
     presenceMock.mockReturnValue({ members: [{ name: "a" }, { name: "b" }] });
     render(<HomeClient />);
     expect(screen.getByText(/2 here/)).toBeDefined();
   });
 
   it("chat failure shows a status-qualified error with retry and clears on edit", async () => {
-    seedRoom("session=ses-1");
+    seedRoom("session=ses-7");
     chatMock.mockRejectedValueOnce(new Error("404 not found")).mockRejectedValueOnce(new Error("404 not found"));
     render(<HomeClient />);
     const input = screen.getByLabelText("Message the room");
@@ -333,7 +348,7 @@ describe("HomeClient room wiring", () => {
   });
 
   it("posts exactly once on double submit", async () => {
-    seedRoom("session=ses-1");
+    seedRoom("session=ses-7");
     render(<HomeClient />);
     fireEvent.change(screen.getByLabelText("Message the room"), { target: { value: "hi all" } });
     const send = screen.getByRole("button", { name: "Send" });
@@ -343,18 +358,18 @@ describe("HomeClient room wiring", () => {
   });
 
   it("a failed list refresh does not mark a delivered chat as failed", async () => {
-    seedRoom("session=ses-1");
+    seedRoom("session=ses-7");
     refreshMock.mockRejectedValueOnce(new Error("list down"));
     render(<HomeClient />);
     fireEvent.change(screen.getByLabelText("Message the room"), { target: { value: "hi all" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledWith("ses-1", "hi all"));
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledWith("ses-7", "hi all"));
     await vi.waitFor(() => expect(screen.getByLabelText("Message the room")).toHaveValue(""));
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("renders the fallback text for non-Error chat rejections", async () => {
-    seedRoom("session=ses-1");
+    seedRoom("session=ses-7");
     chatMock.mockRejectedValueOnce("plain string failure");
     render(<HomeClient />);
     fireEvent.change(screen.getByLabelText("Message the room"), { target: { value: "hi all" } });
