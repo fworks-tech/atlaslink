@@ -74,14 +74,18 @@ vi.mock("@/components/SessionInspector", () => ({
   SessionInspector: ({
     open,
     selectedNode,
+    session,
+    contextLoading,
     onClose,
   }: {
     open: boolean;
     selectedNode?: { id: string } | null;
+    session?: { sessionId: string } | null;
+    contextLoading?: boolean;
     onClose: () => void;
   }) =>
     open ? (
-      <div data-testid="inspector" data-selected={selectedNode?.id ?? ""}>
+      <div data-testid="inspector" data-selected={selectedNode?.id ?? ""} data-session={session?.sessionId ?? ""} data-loading={contextLoading ? "true" : "false"}>
         <button data-testid="close-inspector" onClick={onClose}>
           close
         </button>
@@ -368,5 +372,38 @@ describe("HomeClient room wiring", () => {
     expect(screen.getByText(/Couldn't load sessions/)).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await vi.waitFor(() => expect(refreshMock).toHaveBeenCalled());
+  });
+
+  it("resolves inspector context after deep-link hydration", async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    const hydrated = { sessionId: "ses-9", correlationId: "cor-9", status: "running", version: 1, task: { member: "m", prompt: "p" } };
+    hydrateMock.mockResolvedValue(hydrated);
+    sessionsMock.mockReturnValue({ sessions: [], loading: false, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
+    eventsMock.mockReturnValue({ events: [] });
+    const { rerender } = render(<HomeClient />);
+    await vi.waitFor(() => expect(hydrateMock).toHaveBeenCalledWith("ses-9"));
+    fireEvent.click(screen.getByTestId("click-node"));
+    const inspector = screen.getByTestId("inspector");
+    expect(inspector.getAttribute("data-session")).toBe("");
+    expect(inspector.getAttribute("data-loading")).toBe("true");
+    // the hydrated row lands in the list — the inspector gets its context
+    sessionsMock.mockReturnValue({ sessions: [hydrated], loading: false, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
+    rerender(<HomeClient />);
+    await vi.waitFor(() => expect(screen.getByTestId("inspector").getAttribute("data-session")).toBe("ses-9"));
+  });
+
+  it("stops the inspector loading state when the list reports an error", () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    sessionsMock.mockReturnValue({ sessions: [], loading: false, error: "boom", refresh: refreshMock, hydrateSession: hydrateMock });
+    eventsMock.mockReturnValue({ events: [] });
+    render(<HomeClient />);
+    fireEvent.click(screen.getByTestId("click-node"));
+    const inspector = screen.getByTestId("inspector");
+    expect(inspector.getAttribute("data-session")).toBe("");
+    expect(inspector.getAttribute("data-loading")).toBe("false");
   });
 });

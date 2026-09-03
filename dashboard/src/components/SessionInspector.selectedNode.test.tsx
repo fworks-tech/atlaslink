@@ -208,6 +208,32 @@ describe("SessionInspector selectedNode", () => {
     expect(container.innerHTML).toBe("");
   });
 
+  it("shows a loading state instead of the fallback while context resolves", () => {
+    const { unmount } = render(
+      <SessionInspector
+        open
+        onClose={() => {}}
+        session={null}
+        contextLoading
+        events={[]}
+        selectedNode={{ id: "n-1", type: "tool", data: {} }}
+      />,
+    );
+    expect(screen.getByText("Loading session context…")).toBeDefined();
+    expect(screen.queryByText(/not loaded yet/)).toBeNull();
+    unmount();
+    render(
+      <SessionInspector
+        open
+        onClose={() => {}}
+        session={null}
+        events={[]}
+        selectedNode={{ id: "n-1", type: "tool", data: {} }}
+      />,
+    );
+    expect(screen.getByText(/not loaded yet/)).toBeDefined();
+  });
+
   it("contains a 2000-char payload inside a scrolling header", () => {
     const payload = "p".repeat(2000);
     const { container } = render(

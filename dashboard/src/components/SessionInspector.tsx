@@ -98,12 +98,14 @@ export function SessionInspector({
   session,
   events,
   selectedNode = null,
+  contextLoading = false,
 }: {
   open: boolean;
   onClose: () => void;
   session: Session | null;
   events: BridgeEvent[];
   selectedNode?: SelectedNode | null;
+  contextLoading?: boolean;
 }) {
   const [tab, setTab] = useState<InspectorTab>("overview");
   const [lastAutoId, setLastAutoId] = useState<string | null>(null);
@@ -153,7 +155,7 @@ export function SessionInspector({
             </div>
           )}
           {!session ? (
-            <div className="p-4 text-xs text-muted">Session context not loaded yet — node payload shown above.</div>
+            <div className="p-4 text-xs text-muted">{contextLoading ? "Loading session context…" : "Session context not loaded yet — node payload shown above."}</div>
           ) : (
           <>
           <div className="flex gap-1 border-b border-white/5 px-2 py-1">

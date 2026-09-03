@@ -51,6 +51,10 @@ function HomeInner() {
   const [steerError, setSteerError] = useState<string | null>(null);
 
   const selectedSession = useMemo(() => sessions.find((s) => s.sessionId === selectedSessionId) ?? null, [sessions, selectedSessionId]);
+  // The inspector fallback must be transient-only: still resolving means the
+  // list is loading or an unresolved deep link has no error yet — a reported
+  // error means resolution failed and the fallback applies.
+  const inspectorContextLoading = sessionsLoading || (!!selectedSessionId && !selectedSession && !sessionsError);
   const isTerminal = selectedSession?.status === "succeeded" || selectedSession?.status === "failed" || selectedSession?.status === "cancelled";
   const isSteerable = selectedSession?.status === "queued" || selectedSession?.status === "running";
 
@@ -340,7 +344,7 @@ function HomeInner() {
                 </div>
               ) : null}
             </div>
-            <SessionInspector open={Boolean(inspectorNode)} onClose={handleCloseInspector} session={selectedSession} events={events} selectedNode={inspectorNode} />
+            <SessionInspector open={Boolean(inspectorNode)} onClose={handleCloseInspector} session={selectedSession} events={events} selectedNode={inspectorNode} contextLoading={inspectorContextLoading} />
           </div>
         ) : (
           <ErrorBoundary>
