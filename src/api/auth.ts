@@ -31,12 +31,19 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1'])
  * (the reject trail below records the pathname only for exactly this reason).
  * Query bearers are honored ONLY on the room upgrade path (see gate below);
  * every HTTP route stays header-only.
+ *
+ * The expected bearer is a parameter, not ambient env: callers pass the
+ * registration-time token because request-time env is unreliable (test
+ * harnesses scope it to boot; only the daemon holds it for life).
  */
-export function checkBearer(authorization: unknown, queryToken: unknown): boolean {
-  const token = process.env.ATLASLINK_API_TOKEN
-  if (!token) return true
-  if (typeof authorization === 'string' && safeEqual(authorization, `Bearer ${token}`)) return true
-  if (typeof queryToken === 'string' && safeEqual(queryToken, token)) return true
+export function checkBearer(
+  authorization: unknown,
+  queryToken: unknown,
+  expected: string | undefined = process.env.ATLASLINK_API_TOKEN
+): boolean {
+  if (!expected) return true
+  if (typeof authorization === 'string' && safeEqual(authorization, `Bearer ${expected}`)) return true
+  if (typeof queryToken === 'string' && safeEqual(queryToken, expected)) return true
   return false
 }
 
@@ -83,7 +90,8 @@ export function registerTokenGate(app: FastifyInstance, opts?: { bindHost?: stri
   app.addHook('preHandler', (request, reply, done) => {
     // HTTP routes stay header-only; a WS room upgrade may carry the same
     // bearer as ?token= (browsers cannot set upgrade headers) — and only there.
-    if (checkBearer(request.headers.authorization, roomUpgradeToken(request))) {
+    // `token` is the registration-time capture, not request-time env.
+    if (checkBearer(request.headers.authorization, roomUpgradeToken(request), token)) {
       done()
       return
     }
