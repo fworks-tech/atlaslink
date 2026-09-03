@@ -14,6 +14,8 @@ const replyMock = vi.fn();
 const chatMock = vi.fn();
 const steerMock = vi.fn();
 const cancelMock = vi.fn();
+const presenceMock = vi.fn();
+const hydrateMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush, replace: routerReplace }),
@@ -33,7 +35,7 @@ vi.mock("@/hooks/useEvents", () => ({
 }));
 
 vi.mock("@/hooks/useRoomPresence", () => ({
-  useRoomPresence: () => ({ members: [] }),
+  useRoomPresence: () => presenceMock(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -102,8 +104,13 @@ vi.mock("@/components/ErrorBoundary", () => ({
 
 function seed(params: string) {
   searchParamsMock.mockReturnValue(new URLSearchParams(params));
+  presenceMock.mockReturnValue({ members: [] });
+  hydrateMock.mockResolvedValue({ sessionId: "ses-hydrated" });
   projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
   sessionsMock.mockReturnValue({
+    loading: false,
+    error: null,
+    hydrateSession: hydrateMock,
     sessions: [
       {
         sessionId: "ses-1",
@@ -129,8 +136,13 @@ function seed(params: string) {
 
 function seedRoom(params: string) {
   searchParamsMock.mockReturnValue(new URLSearchParams(params));
+  presenceMock.mockReturnValue({ members: [] });
+  hydrateMock.mockResolvedValue({ sessionId: "ses-hydrated" });
   projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
   sessionsMock.mockReturnValue({
+    loading: false,
+    error: null,
+    hydrateSession: hydrateMock,
     sessions: [
       {
         sessionId: "ses-1",
@@ -251,5 +263,32 @@ describe("HomeClient room wiring", () => {
     expect(screen.queryByLabelText("Message the room")).toBeNull();
     expect(screen.queryByLabelText("Redirect this session")).toBeNull();
     expect(screen.queryByRole("button", { name: "Interrupt" })).toBeNull();
+  });
+
+  it("hydrates a deep-linked session missing from the list", async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    hydrateMock.mockResolvedValue({ sessionId: "ses-9" });
+    sessionsMock.mockReturnValue({ sessions: [], loading: false, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
+    eventsMock.mockReturnValue({ events: [] });
+    render(<HomeClient />);
+    await vi.waitFor(() => expect(hydrateMock).toHaveBeenCalledWith("ses-9"));
+  });
+
+  it("does not hydrate a session already in the list", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(hydrateMock).not.toHaveBeenCalled();
+  });
+
+  it("does not hydrate while the list is still loading", () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    sessionsMock.mockReturnValue({ sessions: [], loading: true, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
+    eventsMock.mockReturnValue({ events: [] });
+    render(<HomeClient />);
+    expect(hydrateMock).not.toHaveBeenCalled();
   });
 });

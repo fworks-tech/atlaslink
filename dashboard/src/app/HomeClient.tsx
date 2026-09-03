@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useMemo, useCallback } from "react";
+import { Suspense, useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { SessionComposer } from "@/components/SessionComposer";
@@ -32,7 +32,7 @@ function HomeInner() {
   const rawMode = (searchParams.get("mode") ?? (decoded?.m as string) ?? "full") as GraphMode;
   const mode: GraphMode = (["chain", "fanout", "full"].includes(rawMode) ? rawMode : "full") as GraphMode;
   const { projects, loading: projectsLoading, error: projectsError, addProject } = useProjects();
-  const { sessions, refresh: refreshSessions } = useSessions();
+  const { sessions, loading: sessionsLoading, error: sessionsError, refresh: refreshSessions, hydrateSession } = useSessions();
   const { events } = useEvents();
   const { members } = useRoomPresence(selectedSessionId);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -50,6 +50,17 @@ function HomeInner() {
   const selectedSession = useMemo(() => sessions.find((s) => s.sessionId === selectedSessionId) ?? null, [sessions, selectedSessionId]);
   const isTerminal = selectedSession?.status === "succeeded" || selectedSession?.status === "failed" || selectedSession?.status === "cancelled";
   const isSteerable = selectedSession?.status === "queued" || selectedSession?.status === "running";
+
+  // Deep-link hydration: a shared ?session= id may sit beyond the one-shot
+  // list page, so fetch the single row instead of leaving context empty.
+  // hydrateSession records failures in the sessions error state, which the
+  // banner below renders while no session is selected.
+  useEffect(() => {
+    if (!selectedSessionId || selectedSession || sessionsLoading) return;
+    hydrateSession(selectedSessionId).catch(() => {
+      // error state carries the failure — nothing to do here
+    });
+  }, [selectedSessionId, selectedSession, sessionsLoading, hydrateSession]);
 
   const handleSelectSession = useCallback(
     (id: string) => {
