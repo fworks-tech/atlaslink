@@ -172,6 +172,13 @@ function seedRoom(params: string) {
         version: 3,
         task: { member: "the-builder", prompt: "done work" },
       },
+      {
+        sessionId: "ses-2",
+        correlationId: "cor-2",
+        status: "queued",
+        version: 1,
+        task: { member: "the-mediator", prompt: "queued work" },
+      },
     ],
     refresh: refreshMock,
   });
@@ -282,6 +289,84 @@ describe("HomeClient room wiring", () => {
     expect(screen.getByLabelText("Redirect this session")).toBeDefined();
     expect(screen.queryByLabelText("Message the room")).toBeNull();
     expect(screen.queryByPlaceholderText("Type your reply…")).toBeNull();
+  });
+
+  it("prefers the reply composer when a live run also awaits input", () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-8"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    sessionsMock.mockReturnValue({
+      sessions: [
+        {
+          sessionId: "ses-8",
+          correlationId: "cor-8",
+          status: "running",
+          version: 1,
+          task: { member: "the-mediator", prompt: "conflict" },
+          nextStep: { awaiting_input: true, prompt: "Proceed?" },
+          question: { question: "Proceed with deploy?", context: "all green" },
+        },
+      ],
+      loading: false,
+      error: null,
+      refresh: refreshMock,
+      hydrateSession: hydrateMock,
+    });
+    eventsMock.mockReturnValue({ events: [] });
+    render(<HomeClient />);
+    expect(screen.getByText(/Proceed with deploy\?/)).toBeDefined();
+    expect(screen.getByPlaceholderText("Type your reply…")).toBeDefined();
+    expect(screen.queryByLabelText("Redirect this session")).toBeNull();
+  });
+
+  it("replies to legacy awaiting sessions without a next step", () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-6"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    sessionsMock.mockReturnValue({
+      sessions: [
+        {
+          sessionId: "ses-6",
+          correlationId: "cor-6",
+          status: "awaiting_input",
+          version: 1,
+          task: { member: "the-mediator", prompt: "old wait" },
+          question: { question: "Legacy ask?", context: "legacy context" },
+        },
+      ],
+      loading: false,
+      error: null,
+      refresh: refreshMock,
+      hydrateSession: hydrateMock,
+    });
+    eventsMock.mockReturnValue({ events: [] });
+    render(<HomeClient />);
+    expect(screen.getByText(/Legacy ask\?/)).toBeDefined();
+    expect(screen.getByPlaceholderText("Type your reply…")).toBeDefined();
+  });
+
+  it("steers queued sessions", () => {
+    seedRoom("session=ses-2");
+    render(<HomeClient />);
+    expect(screen.getByLabelText("Redirect this session")).toBeDefined();
+    expect(screen.queryByLabelText("Message the room")).toBeNull();
+  });
+
+  it("submits the reply composer with Enter", async () => {
+    seedRoom("session=ses-9");
+    render(<HomeClient />);
+    const input = screen.getByPlaceholderText("Type your reply…");
+    fireEvent.change(input, { target: { value: "go ahead" } });
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
+    await vi.waitFor(() => expect(replyMock).toHaveBeenCalledWith("ses-9", "go ahead"));
+  });
+
+  it("keeps a single page scrollbar on the main scroller", () => {
+    seedRoom("session=ses-1");
+    const { container } = render(<HomeClient />);
+    const main = container.querySelector("main") as HTMLElement;
+    expect(main.className).toContain("min-h-0");
+    expect(main.className).toContain("overflow-y-auto");
   });
 
   it("hydrates a deep-linked session missing from the list", async () => {
@@ -447,10 +532,10 @@ describe("HomeClient room wiring", () => {
       render(<HomeClient />);
       fireEvent.click(screen.getByRole("button", { name: "copy link" }));
       await vi.waitFor(() => expect(writeText).toHaveBeenCalled());
-      await vi.waitFor(() => expect(screen.getByRole("button", { name: "Copied!" })).toBeDefined());
+      await vi.waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Copied!"));
       writeText.mockRejectedValueOnce(new Error("denied"));
-      fireEvent.click(screen.getByRole("button", { name: "Copied!" }));
-      await vi.waitFor(() => expect(screen.getByRole("button", { name: "Copy failed" })).toBeDefined());
+      fireEvent.click(screen.getByRole("button", { name: "copy link" }));
+      await vi.waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Copy failed"));
     } finally {
       // jsdom ships no clipboard — restore the absence
       Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });

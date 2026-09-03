@@ -60,11 +60,9 @@ function HomeInner() {
   const isSteerable = selectedSession?.status === "queued" || selectedSession?.status === "running";
   // One contextual composer, reply > steer > chat: the awaiting question
   // accepts the reply, a live run accepts a steer, anything else chats.
-  const awaitingQuestion = selectedSession?.nextStep?.awaiting_input
-    ? { prompt: selectedSession.nextStep.prompt, context: selectedSession.question?.context }
-    : selectedSession?.status === "awaiting_input"
-      ? { prompt: selectedSession.question?.question ?? "Awaiting input", context: selectedSession.question?.context }
-      : null;
+  const awaitingQuestion = selectedSession?.nextStep?.awaiting_input || selectedSession?.status === "awaiting_input"
+    ? { prompt: selectedSession.question?.question ?? selectedSession.nextStep?.prompt ?? "Awaiting input", context: selectedSession.question?.context }
+    : null;
   const composerMode = awaitingQuestion ? "reply" : isSteerable ? "steer" : "chat";
 
   // Deep-link hydration: a shared ?session= id may sit beyond the one-shot
@@ -294,11 +292,13 @@ function HomeInner() {
               </select>
               <button
                 onClick={() => void handleCopyLink()}
-                aria-live="polite"
                 className="rounded bg-accent px-2 py-1 text-xs text-white hover:bg-accent/80"
               >
-                {copyState === "copied" ? "Copied!" : copyState === "failed" ? "Copy failed" : "copy link"}
+                copy link
               </button>
+              <span role="status" aria-live="polite" className="text-xs text-muted">
+                {copyState === "copied" ? "Copied!" : copyState === "failed" ? "Copy failed" : ""}
+              </span>
               {selectedProjectId && <span className="text-xs text-muted">project {selectedProjectId.slice(0, 8)}…</span>}
             </div>
             <header className="mb-6">
@@ -325,22 +325,22 @@ function HomeInner() {
                   {awaitingQuestion.context ? (
                     <div className="mt-1 text-xs text-muted">{awaitingQuestion.context}</div>
                   ) : null}
-                  <div className="mt-3 flex gap-2">
+                  <form onSubmit={(e) => { e.preventDefault(); handleReply(); }} className="mt-3 flex gap-2">
                     <input value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Type your reply…" aria-label="Reply to Atlas" className="flex-1 rounded border border-white/10 bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted" />
-                    <button onClick={handleReply} disabled={replyBusy || !replyContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
-                  </div>
-                  {replyError ? <div className="mt-2 text-xs text-red-400">{replyError}</div> : null}
+                    <button type="submit" disabled={replyBusy || !replyContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
+                  </form>
+                  {replyError ? <div role="alert" className="mt-2 text-xs text-red-400">{replyError}</div> : null}
                 </div>
               ) : null}
               {composerMode === "steer" ? (
                 <div className="rounded-xl border border-white/10 bg-surface p-4">
                   <div className="text-sm font-medium text-foreground">Steer {selectedSession?.status === "running" ? "· interrupts the live run first" : "· rewrites the queued prompt"}</div>
-                  <div className="mt-3 flex gap-2">
+                  <form onSubmit={(e) => { e.preventDefault(); void handleSteer(); }} className="mt-3 flex gap-2">
                     <input value={steerContent} onChange={(e) => setSteerContent(e.target.value)} placeholder="Redirect this session…" aria-label="Redirect this session" className="flex-1 rounded border border-white/10 bg-raised px-3 py-2 text-sm text-foreground placeholder:text-muted" />
-                    <button onClick={handleSteer} disabled={steerBusy || !steerContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Steer</button>
-                    <button onClick={handleInterrupt} disabled={steerBusy} className="rounded border border-red-400/40 px-4 py-2 text-sm text-red-300 disabled:opacity-50">Interrupt</button>
-                  </div>
-                  {steerError ? <div className="mt-2 text-xs text-red-400">{steerError}</div> : null}
+                    <button type="submit" disabled={steerBusy || !steerContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Steer</button>
+                    <button type="button" onClick={handleInterrupt} disabled={steerBusy} className="rounded border border-red-400/40 px-4 py-2 text-sm text-red-300 disabled:opacity-50">Interrupt</button>
+                  </form>
+                  {steerError ? <div role="alert" className="mt-2 text-xs text-red-400">{steerError}</div> : null}
                 </div>
               ) : null}
               {composerMode === "chat" ? (
