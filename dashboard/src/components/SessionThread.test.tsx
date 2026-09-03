@@ -33,4 +33,11 @@ describe("SessionThread presence", () => {
     render(<SessionThread session={s} events={[]} members={[]} />);
     expect(screen.getByText("summary").tagName).toBe("STRONG");
   });
+
+  it("bounds the thread height so the page keeps one scrollbar", () => {
+    const { container } = render(<SessionThread session={session()} events={[]} members={[]} />);
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).toContain("min-h-[320px]");
+    expect(root.className).toContain("max-h-[60vh]");
+  });
 });

@@ -16,7 +16,7 @@ export function SessionThread({ session, events, members, onJump }: { session: S
   const here = members ?? [];
 
   return (
-    <div className="flex h-[480px] flex-col overflow-hidden rounded-xl border border-white/5 bg-surface">
+    <div className="flex h-[480px] max-h-[60vh] min-h-[320px] flex-col overflow-hidden rounded-xl border border-white/5 bg-surface">
       <div className="border-b border-white/5 px-3 py-2 text-xs uppercase tracking-widest text-muted" title={here.map((m) => m.name).join(", ")}>
         thread · {session.sessionId.slice(0, 8)}…{here.length > 0 ? ` · ${here.length} here` : ""}
       </div>

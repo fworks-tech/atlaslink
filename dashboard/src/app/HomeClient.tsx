@@ -219,7 +219,7 @@ function HomeInner() {
         </ErrorBoundary>
       </aside>
 }
-      <main className="flex-1 overflow-y-auto overflow-x-hidden">
+      <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-white/5 bg-background px-4 py-2 md:hidden">
           <button
             type="button"
