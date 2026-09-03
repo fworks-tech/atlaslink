@@ -11,9 +11,10 @@ closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 - [x] test(api): unit + integration tests for message ingress, tenant isolation, 409/404 paths
 - [x] review follow-ups: shared CAS-append helper (reply + message), write-time terminal re-check, blank-content 400, single store/SSE timestamp, Postgres `projectDirectory` helper + single-source CTE exclusion, PGlite listing / 409-variants / nextStep / SSE-emit / CAS-retry / oversize / allowlist / stored-raw tests
 
-## Stage 2 — queue lanes (`feat/76-hitl-lanes` off stage 1)
-- [ ] feat(queue): priority lane for interactive sessions + fairness bound (drain interactive first; 1 standard run per 3 interactive)
-- [ ] test(queue): parked/long sessions never starve the other lane; fairness bound asserted
+## Stage 2 — queue lanes (`feat/76-hitl-lanes` off stage 1) — DONE
+- [x] feat(queue): priority lane for interactive sessions + fairness bound (drain interactive first; 1 standard run per 3 interactive; counter resets on idle drain; skips consume nothing)
+- [x] test(queue): lane priority, fairness bound + reset, idle/interactive-only drains, re-entrant declare, late arrival, cancelled-standard skip, per-lane pending; `waitFor` drains instead of fixed sleeps
+- deferred (pre-existing, all stages): runner-throw strands the queue until next declare — follow-up issue
 
 ## Stage 3 — agent ask + park (`feat/76-hitl-ask-park` off stage 2)
 - [ ] chore(spike): verify agenthood runner API for `ask_human`/permission hook + `run.interrupted`; confirm fallback if absent
