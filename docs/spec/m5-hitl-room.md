@@ -1,7 +1,7 @@
 # Spec: M5 HITL collaboration room for live sessions
 
 **Date:** 2026-09-03
-**Status:** Proposed — draft for review
+**Status:** Accepted — shipped (#76 closed 2026-09-03 via #77–#81 + #83, tip `7dbbf32`)
 **Issue:** #76
 
 Derived from the fx.sh study (single-agent Zig harness; reusable patterns are
@@ -130,20 +130,20 @@ final stage closes it. Deferred polish after #76 closes: typing indicators,
 migration details (lands with backend branch).
 
 ## Acceptance Criteria
-- [ ] Human posts to a running session via WS/POST; appears in
+- [x] Human posts to a running session via WS/POST; appears in
   `interaction[]` (asserted in-process on a hermetic backend, <1s bound);
   second human sees it live.
-- [ ] Agent `ask_human {question, context?}` parks to `awaiting_input`
+- [x] Agent `ask_human {question, context?}` parks to `awaiting_input`
   (4000/1000 caps, single-question fold) holding no pump slot;
   diagram shows awaiting node; human reply re-queues and resumes the run
   and a new exchange card is appended to the DAG.
-- [ ] Steer on queued rewrites prompt via CAS; steer on running is consumed
+- [x] Steer on queued rewrites prompt via CAS; steer on running is consumed
   before the next tool step.
-- [ ] Interrupt/cancel of a running session aborts `runMemberTask`, emits a
+- [x] Interrupt/cancel of a running session aborts `runMemberTask`, emits a
   terminal event, leaves no orphan worker.
-- [ ] Tenant A cannot read/write tenant B room (store + WS); unauthenticated
+- [x] Tenant A cannot read/write tenant B room (store + WS); unauthenticated
   ingress rejected per bearer gate.
-- [ ] A parked-forever session holds no pump slot and is cancellable; with
+- [x] A parked-forever session holds no pump slot and is cancellable; with
   the fairness bound, interactive sessions drain first and standard sessions
   still progress.
 

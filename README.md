@@ -1,6 +1,6 @@
 # Atlaslink
 
-> **Status: M1–M4 shipped — Daemon, Event Bridge, Task API and Live Dashboard (FULL DAG `chain|fanout|full`, deep-links `/project/:p/session/:s` + `/s/:token` + `?q=<b64url>`) on `main` (#58 #63 #64, Vercel https://atlas.flabs.tech).**
+> **Status: M1–M5 shipped — Daemon, Event Bridge, Task API, Live Dashboard (FULL DAG `chain|fanout|full`, deep-links `/project/:p/session/:s` + `/s/:token` + `?q=<b64url>`) and HITL collaboration room (single-question `ask_human` → park → reply → linked resume, WS room + socketless roster) on `main` (#76 via #77–#81 + #83, Vercel https://atlas.flabs.tech).**
 
 Multi-agent orchestrator, Agenthood proof-of-concept, and modern UI to integrate agents through gorgeous, easy-to-use, live diagram flows.
 
@@ -28,14 +28,14 @@ Orchestrating multiple AI agents today means hand-written glue code, opaque exec
 
 ## What runs today
 
-**M1 Daemon + M2 Event Bridge + M3 Task API + M4 Live Dashboard** are shipped on `main`:
+**M1 Daemon + M2 Event Bridge + M3 Task API + M4 Live Dashboard + M5 HITL room** are shipped on `main`:
 
 - **M1 Daemon** — long-running Fastify server that validates the LLM provider config up front, hosts an `ApplicationContext` per task and subscribes to its `RunEventBus` (`/health` + `src/daemon/`).
 - **M2 Event Bridge** — NDJSON `EventLogStore` → `EventBroadcaster` → SSE (`GET /events`, `GET /events/:sessionId`, `GET /projects/:projectId/events`) with `Last-Event-ID` resume, `bridge.gap`/`bridge.shutdown` and 15 s ping (`src/bridge/`).
 - **M3 Task API** — bearer-gated `POST/GET /tasks`, `POST /tasks/:id/cancel|reply|diagram`, `GET /tasks?projectId&status` and `POST/GET /projects` over Postgres (`src/session/`, `src/api/`). See [spec](docs/spec/m3-task-api.md).
 - **M4 Live Dashboard** — `SocietyDiagram` (`chain|fanout|full` FULL DAG with hex/diamond/stadium/terminal), `SessionInspector`/`SessionThread`, `awaiting_input` ↔ `user_reply` loop and deep-links `/?session=&project=&node=&mode=full`, `/?q=<b64url>`, `/project/:p/session/:s`, `/s/:token` (`dashboard/`, [case studies](docs/diagrams/full-dag-case-studies.md)).
 
-- **M5 HITL collaboration room** (in flight, #76) — single-question `ask_human` → park → reply → linked resume; WS room (`/sessions/:id/room`) + socketless roster read. See [spec](docs/spec/m5-hitl-room.md).
+- **M5 HITL collaboration room** (shipped, #76 closed via #77–#81 + #83) — single-question `ask_human` → park → reply → linked resume; WS room (`/sessions/:id/room`) + socketless roster read. See [spec](docs/spec/m5-hitl-room.md).
 
 > **Architecture:** see [docs/architecture/README.md](docs/architecture/README.md) for the whole-system map, per-layer notes under `src/` and `dashboard/`, and the ADR index. Production dashboard at **https://atlas.flabs.tech** (Vercel `force-dynamic` `/?session` — see #64).
 
@@ -170,7 +170,8 @@ failure paths stay silent by design) are recorded in
 | **M1 — Daemon Core** | Long-running daemon, agent runtime hosting | Shipped |
 | **M2 — Event Bridge** | Real-time event feed bridged to the browser | Shipped |
 | **M3 — Task API** | HTTP surface for driving the orchestrator (Fastify + Postgres, bearer gate, `POST/GET /tasks`, cancel, per-session/project SSE) | Shipped (#44, #46) — [spec](docs/spec/m3-task-api.md) |
-| **M4 — Live Dashboard** | The live diagram-flow UI — `chain|fanout|full` DAG, Inspector/Thread, `awaiting_input` ↔ `user_reply` loop, deep-links `/project/:p/session/:s` + `/s/:token` + `?q=<b64url>` — [FULL DAG case studies](docs/diagrams/full-dag-case-studies.md) (7 prompts, mermaid) | Shipped (#58 projects, #63 FULL DAG, #64 `force-dynamic`) — [spec](docs/spec/m4-live-dashboard.md) |
+| **M4 — Live Dashboard** | The live diagram-flow UI — `chain|fanout|full` DAG, Inspector/Thread, `awaiting_input` ↔ `user_reply` loop, deep-links `/project/:p/session/:s` + `/s/:token` + `?q=<b64url>` — [FULL DAG case studies](docs/diagrams/full-dag-case-studies.md) (7 prompts, mermaid) | Shipped (#58 projects, #63 FULL DAG, #64 `force-dynamic`) — [tasks](docs/tasks/m4-live-dashboard.md) |
+| **M5 — HITL Room** | Human-in-the-loop collaboration per session — queue lanes + fairness, single-question `ask_human` → park → reply → linked resume, steer/interrupt, WS room + socketless roster read, approval inbox | Shipped (#76 via #77 message-log, #78 lanes, #79 ask-park, #80 steer, #81 room-ws, #83 spike + agenthood #502) — [spec](docs/spec/m5-hitl-room.md) |
 
 Track active work and open issues on the [issues page](https://github.com/fworks-tech/atlaslink/issues).
 

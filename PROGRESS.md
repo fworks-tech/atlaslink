@@ -1,7 +1,7 @@
 # Atlaslink — Session Progress Checklist
 
 > Status snapshot of the atlaslink project.
-> Updated: 2026-08-29
+> Updated: 2026-09-03 (`7dbbf32`)
 
 ## Legend
 
@@ -13,7 +13,7 @@
 
 ## 1. Agenthood Setup in Atlaslink
 
-- [x] Repo cloned at `C:\github\atlaslink` (branch: `main`, initial commit)
+- [x] Repo cloned at `C:\Github\atlaslink` (branch: `main`, initial commit)
 - [x] `package.json` + `package-lock.json` initialized
 - [x] `agenthood` installed as local file dependency (`file:../agenthood`)
 - [x] `.env` created with `OPENCODE_API_KEY` (gitignored — not committed)
@@ -152,11 +152,13 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
        auth-rejection logging, and the `execRawDdl` seam rename. Suite: 121.
 
 ### M4 — Live Dashboard
-9. [ ] Add a live dashboard UI rendering society provenance
-       (ADR-002) with Atlas as the root node (ADR-003)
+9. [x] Add a live dashboard UI rendering society provenance
+       (ADR-002) with Atlas as the root node (ADR-003) — shipped
+       (#58 projects, #63 FULL DAG, #64 `force-dynamic`)
 
-### M5 — HITL collaboration room (#76, in flight)
-10. [~] Single-question `ask_human` → park → reply → linked resume; WS room
+### M5 — HITL collaboration room (#76, shipped/closed via #77–#81 + #83, agenthood #502)
+10. [x] Single-question `ask_human` → park → reply → linked resume; WS room
        (`/sessions/:id/room`) + socketless roster read. Spec:
        `docs/spec/m5-hitl-room.md`. Approval round-trip proven through the
-       real stubbed runner (`src/daemon/approvalRoundtrip.test.ts`).
+       real stubbed runner (`src/daemon/approvalRoundtrip.test.ts`, `f703571`,
+       merged to `main` as `7dbbf32`).

@@ -1,19 +1,17 @@
-# Tasks: M5 HITL collaboration room (#76)
+# Tasks: M5 HITL collaboration room (#76 — shipped/closed)
 
-Stacked, one-commit-per-task, dependency order. Branch per stage; each targets
-its parent. Stages 1–5 merge without closing #76; only the final stage
-closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
-`71fadc1`; code stages stack off that branch.)
+Stacked, one-commit-per-task, dependency order. The stack below merged
+top-down to `main` on 2026-09-03 and the stage branches were deleted; only
+`feat/issue-76-hitl-room` remains as history.
 
-## PR stack (all `Part of #76`, merge top-down; stack realigned)
-- #77 `feat/76-hitl-message-log-api` → `main` (CI full green)
-- #78 `feat/76-hitl-lanes` → stage-1 branch (Vercel only; repo CI runs on PRs to `main`)
-- #79 `feat/76-hitl-ask-park`=`29b15db` (unified-API migration) → stage-2 branch
-- #80 `feat/76-hitl-steer`=`fab26be` → stage-3 branch
-- #81 `feat/76-hitl-room-ws`=`6bb1c17` → stage-4 branch (room channel + roster read + dashboard UI; base `feat/76-hitl-steer`)
+## PR stack (all `Part of #76`, merged top-down)
+- #77 `feat/76-hitl-message-log-api` → `main` (`06b67c2`)
+- #78 `feat/76-hitl-lanes` → `main` (`34d1d4a`)
+- #79 `feat/76-hitl-ask-park` (unified-API migration) → `main` (`b51708d`)
+- #80 `feat/76-hitl-steer` → `main` (`851a452`)
+- #81 `feat/76-hitl-room-ws` (room channel + roster read + dashboard UI) → `main` (`7c41284`)
 - agenthood #502 merged to `main` (unified `AskHumanSignal.payload = {question, context?}`, 4000/1000 caps, `run.awaiting_input{question, context?, durationMs}`); dist rebuilt from `main`
-- `feat/76-hitl-spike` → `feat/76-hitl-room-ws` (spike + closeout, merges LAST — do not merge before the stack lands)
-- caveat: `npm run lint` fails on the stage-2/3 tips (prefer-const fixed only at stack tip `2cddbd9`); self-heals as the stack merges
+- #83 `feat/76-hitl-spike` (spike + closeout, merged LAST) → `main` (`7dbbf32`, closes #76)
 
 ## Stage 1 — message log API (off `feat/issue-76-hitl-room`) — DONE on `feat/76-hitl-message-log-api`
 - [x] feat(session): add `session.message` + `session.steer` events and `interaction[]` projection in `rehydrate` (+ eventLogBackend allowlist, Postgres status-preserving projection + ranked-CTE exclusion)
@@ -37,20 +35,21 @@ closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 - decisions locked: cooperative agenthood change; unified single-question payload (no string back-compat); linked-session resume; reply double-delta fixed in-branch
 - accepted residuals: no per-route reply throttle (global rate limit + single-reply bound); no resume-chain depth cap; store keeps raw human text (escape-at-render contract)
 
-## Stage 4 — steer / interrupt (`feat/76-hitl-steer` off stage 3) — DONE- [x] feat(api): `POST /tasks/:sessionId/steer` — queued → registry reprompt + CAS `session.steer` (rehydrate rewrites prompt) with rollback; running → abort-first + CAS `user_reply`, 201 `interrupted: true`; awaiting_input/terminal 409s
+## Stage 4 — steer / interrupt (`feat/76-hitl-steer` off stage 3) — DONE
+- [x] feat(api): `POST /tasks/:sessionId/steer` — queued → registry reprompt + CAS `session.steer` (rehydrate rewrites prompt) with rollback; running → abort-first + CAS `user_reply`, 201 `interrupted: true`; awaiting_input/terminal 409s
 - [x] feat(runner): registry `abort`/`attachAbort`/`untrackAbort` + `cancel` from RUNNING; runSession abort race finalizes CANCELLED, suppresses orphan finalize; cancel-running fires abort; seam mirrors + pump emits `session.cancelled`
 - [x] test: steer queued rewrite (store+registry+SSE+re-steer), steer running interrupt, all 409s, cancel fires abort, abort-race + late-signal suppression, reprompt/abort registry units, steer rehydrate, queue cancelled close-out
 - deviation: no step-polling / agenthood `run.interrupted` — single-shot runner + SDK without signal support; orphaned provider call finishes in background, output discarded; true provider abort is a follow-up
 - deferred: interrupt button + inline steer box → Stage 5 UI
 
-## Stage 5 — room transport (`feat/76-hitl-room-ws` off stage 4)
+## Stage 5 — room transport — DONE
 - [x] feat(ws): `/sessions/:id/room` channel (presence, multi-human fan-out, approval inbox; no typing indicators)
 - [x] feat(ws): bearer + tenant auth, rate limit, SSE stays read-only projection
 - [x] test(ws): two-client live test, tenant isolation, reconnect/resume
 - [x] feat(ws): `GET /sessions/:id/room/members` roster read (tenant-scoped, no oracle) for clients that cannot hold a socket
 - [x] feat(ui): multi-human thread (SSE-live chat/steer turns), presence headcount (5s roster poll), approval inbox (question + context + reply composer, no option pills), anytime chat composer, steer box + interrupt button
-- [x] test(ui): projection + subscription + presence-hook + room wiring suites (dashboard 116/116 pre-migration; recount after the composer rewrite)
+- [x] test(ui): projection + subscription + presence-hook + room wiring suites (dashboard 116/116, incl. post-migration composer rewrite)
 
-## Stage 6 — spike + close (parallel, merges last) — DONE on `feat/76-hitl-spike`
+## Stage 6 — spike + close (parallel, merged last) — DONE
 - [x] spike(runner): approval round-trip evidence — `src/daemon/approvalRoundtrip.test.ts` drives the REAL runner behind the `createApp` seam with the stubbed provider (`the-builder`, hermetic temp project dir, provider keys scrubbed): ask_human parks (`parked`, slot released, `run.awaiting_input{question, context?}` observed, listeners drained), reply spawns the linked follow-up on the interactive lane with the single-question fold, follow-up runs to SUCCEEDED
-- [x] docs: update README/PROGRESS, close #76 via PR
+- [x] docs: README/PROGRESS ship-state updated (#84); #76 closed by #83
