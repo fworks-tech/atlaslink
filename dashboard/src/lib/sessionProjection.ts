@@ -34,15 +34,24 @@ export const LIFECYCLE_TRANSITIONS: Record<string, (patch: Partial<Session>, eve
     patch.status = "awaiting_input";
     patch.nextStep = {
       awaiting_input: true,
-      prompt: typeof event.question === "string" ? (event.question as string) : typeof event.prompt === "string" ? (event.prompt as string) : undefined,
+      prompt: firstQuestionLabel(event.question) ?? (typeof event.prompt === "string" ? (event.prompt as string) : undefined),
       member: typeof event.member === "string" ? (event.member as string) : undefined,
     };
   },
-  "session.user_reply": (patch) => {
-    patch.status = "queued";
-    patch.nextStep = null;
-  },
+  // linked-session resume: the reply is recorded on the parked original, which
+  // stays awaiting_input — the follow-up arrives as its own session.created,
+  // so the reply event itself patches nothing (content comes via refetch)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  "session.user_reply": (_patch, _event, _current) => {},
 };
+
+/** First fx question label; tolerates the legacy plain-string shape. */
+function firstQuestionLabel(question: unknown): string | undefined {
+  if (typeof question === "string") return question;
+  const questions = (question as { questions?: Array<{ label?: unknown }> } | null)?.questions;
+  const label = questions?.[0]?.label;
+  return typeof label === "string" ? label : undefined;
+}
 
 export function formatDuration(session: Session): string {
   if (session.durationMs !== undefined && session.status !== "running") {

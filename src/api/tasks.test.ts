@@ -1,15 +1,71 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import type { AddressInfo } from 'node:net'
 import { EventLogStore } from '../bridge/EventLogStore'
 import { EventBroadcaster } from '../bridge/EventBroadcaster'
 import { SessionQueue } from '../bridge/SessionQueue'
 import { SseHandler } from '../bridge/sseEndpoint'
 import { createAppServer } from '../server'
+import { foldReplyPrompt, MAX_FOLD_LABELS, MAX_FOLD_REPLY } from './tasks'
 import { TaskRegistry } from '../tasks/taskRegistry'
 import { SessionStore } from '../session/sessionStore'
+import type { SessionBackend } from '../session/sessionBackend'
 import { VersionConflictError } from '../session/types'
 import type { BridgeEnvelope } from '../bridge/EventLogStore'
 import { tmpDataDir, runEnv, startServer, jsonRequest, collectStream, cleanup } from '../test/serverHarness'
+
+/** App server with a recording queue double: pins which lane each declare lands in. */
+async function startServerWithQueueSpy(dir: string) {
+  const previousToken = process.env.ATLASLINK_API_TOKEN
+  delete process.env.ATLASLINK_API_TOKEN
+  try {
+    const log = await EventLogStore.open(dir)
+    const broadcaster = new EventBroadcaster(log)
+    const sse = new SseHandler(log, broadcaster)
+    const registry = new TaskRegistry()
+    const declares: Array<{ id: string; lane: string | undefined }> = []
+    const queueControl = { throwOnDeclare: false }
+    const queue = {
+      declareSession: (session: { id: string }, opts?: { lane?: string }) => {
+        if (queueControl.throwOnDeclare) throw new Error('pump down')
+        declares.push({ id: session.id, lane: opts?.lane })
+      },
+    } as unknown as SessionQueue
+    const backend = new SessionStore()
+    const app = await createAppServer({ log, registry, queue, sse, backend })
+    const httpServer = app.server
+    await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
+    const port = (httpServer.address() as AddressInfo).port
+    return {
+      port,
+      broadcaster,
+      backend,
+      declares,
+      queueControl,
+      close: () =>
+        new Promise<void>((resolve) => {
+          httpServer.closeAllConnections?.()
+          httpServer.close(() => resolve())
+        }),
+    }
+  } finally {
+    if (previousToken === undefined) delete process.env.ATLASLINK_API_TOKEN
+    else process.env.ATLASLINK_API_TOKEN = previousToken
+  }
+}
+
+async function parkSession(backend: SessionBackend, sessionId: string, correlationId: string, label = 'Ship it?'): Promise<void> {
+  const at = new Date().toISOString()
+  await backend.append({ type: 'session.running', sessionId, correlationId, at })
+  await backend.append({
+    type: 'session.awaiting_input',
+    sessionId,
+    correlationId,
+    at,
+    member: 'the-architect',
+    question: { questions: [{ label, options: ['yes', 'no'] }] },
+  })
+}
 
 test('POST /tasks creates a queued session in the store and returns 201', async () => {
   const dir = tmpDataDir()
@@ -515,7 +571,7 @@ test('POST /tasks/:id/message on awaiting_input preserves nextStep', async () =>
       sessionId: id,
       correlationId: created.correlationId,
       at: new Date().toISOString(),
-      question: 'continue?',
+      question: { questions: [{ label: 'continue?' }] },
       member: 'atlas',
     })
 
@@ -599,6 +655,223 @@ test('POST /tasks/:id/message stores markup verbatim (escape-at-render contract)
     // stored raw — neutralization belongs to the renderer (React text nodes),
     // never to the store, so every consumer sees identical history
     assert.equal(JSON.parse(res.body).session.interaction.at(-1).content, payload)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/reply keeps the parked original and re-queues a linked follow-up to the interactive lane', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServerWithQueueSpy(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'the-architect', prompt: 'plan the release' })).body).session
+    await parkSession(srv.backend, created.sessionId, created.correlationId)
+
+    const seen: BridgeEnvelope[] = []
+    const unsubscribe = srv.broadcaster.subscribe((envelope) => {
+      seen.push(envelope)
+    })
+    const res = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/reply`, { content: 'yes, ship it' })
+    unsubscribe()
+    assert.equal(res.status, 201)
+    const parsed = JSON.parse(res.body)
+
+    // the parked original stays awaiting_input with the reply recorded
+    assert.equal(parsed.session.status, 'awaiting_input')
+    assert.deepEqual(parsed.session.nextStep, { awaiting_input: true, prompt: 'Ship it?', member: 'the-architect' })
+    assert.equal(parsed.session.interaction.at(-1).role, 'user')
+    assert.equal(parsed.session.interaction.at(-1).content, 'yes, ship it')
+    assert.equal(parsed.session.version, 4)
+
+    // the follow-up is a new session linked back, carrying the Q&A in its prompt
+    const followup = parsed.resumedSession
+    assert.ok(followup.sessionId.startsWith('ses-'))
+    assert.notEqual(followup.sessionId, created.sessionId)
+    assert.equal(followup.status, 'queued')
+    assert.equal(followup.resumeOf, created.sessionId)
+    assert.equal(followup.task.member, 'the-architect')
+    assert.ok(followup.task.prompt.includes('plan the release'))
+    // delimited fold so the model cannot mistake human text for instructions
+    assert.ok(followup.task.prompt.includes('<human_reply question="Ship it?">'))
+    assert.ok(followup.task.prompt.includes('yes, ship it\n</human_reply>'))
+
+    // the follow-up jumps the standard lane — a human is waiting on the answer
+    assert.deepEqual(srv.declares, [
+      { id: created.sessionId, lane: undefined },
+      { id: followup.sessionId, lane: 'interactive' },
+    ])
+
+    // the reply fans out on the original session
+    const replyEnvelope = seen.find((e) => e.type === 'session.user_reply')
+    assert.ok(replyEnvelope)
+    assert.equal(replyEnvelope.sessionId, created.sessionId)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/reply rejects unknown, non-parked, blank and terminal sessions', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServerWithQueueSpy(dir)
+    const missing = await jsonRequest(srv.port, 'POST', '/tasks/ses-nope/reply', { content: 'hi' })
+    assert.equal(missing.status, 404)
+
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    const early = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/reply`, { content: 'too soon' })
+    assert.equal(early.status, 409)
+    assert.equal(JSON.parse(early.body).error, 'session not awaiting input')
+
+    await parkSession(srv.backend, created.sessionId, created.correlationId)
+    const blank = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/reply`, { content: '   ' })
+    assert.equal(blank.status, 400)
+
+    const oversize = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/reply`, { content: 'x'.repeat(10001) })
+    assert.equal(oversize.status, 400)
+
+    await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/cancel`)
+    const afterCancel = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/reply`, { content: 'too late' })
+    assert.equal(afterCancel.status, 409)
+    assert.equal(JSON.parse(afterCancel.body).error, 'session already terminated')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/reply answers once per park; a second reply 409s without forking', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServerWithQueueSpy(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    await parkSession(srv.backend, created.sessionId, created.correlationId)
+
+    const first = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/reply`, { content: 'first answer' })
+    assert.equal(first.status, 201)
+    const second = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/reply`, { content: 'second answer' })
+    assert.equal(second.status, 409)
+    assert.equal(JSON.parse(second.body).error, 'session already answered')
+    // exactly one follow-up declared — no fork, no lane flood
+    assert.equal(srv.declares.length, 2)
+    // the parked original still shows only the first answer
+    const original = JSON.parse((await jsonRequest(srv.port, 'GET', `/tasks/${created.sessionId}`)).body).session
+    assert.equal(original.interaction.at(-1).content, 'first answer')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/reply carries tenant, project and tweaks onto the follow-up', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServerWithQueueSpy(dir)
+    const headers = { 'x-tenant-id': 'tenant-a' }
+    const created = JSON.parse(
+      (
+        await jsonRequest(
+          srv.port,
+          'POST',
+          '/tasks',
+          { member: 'm', prompt: 'p', projectId: 'proj-1', tweaks: { provider: 'groq' } },
+          headers,
+        )
+      ).body,
+    ).session
+    await parkSession(srv.backend.withTenant('tenant-a'), created.sessionId, created.correlationId)
+
+    const res = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/reply`, { content: 'go' }, headers)
+    assert.equal(res.status, 201)
+    const followup = JSON.parse(res.body).resumedSession
+    assert.equal(followup.tenantId, 'tenant-a')
+    assert.equal(followup.projectId, 'proj-1')
+    assert.deepEqual(followup.tweaks, { provider: 'groq' })
+    assert.equal(followup.resumeOf, created.sessionId)
+    // cross-tenant reads 404 — the follow-up cannot jump tenants
+    const foreign = await jsonRequest(srv.port, 'GET', `/tasks/${followup.sessionId}`, undefined, { 'x-tenant-id': 'tenant-b' })
+    assert.equal(foreign.status, 404)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/reply retries a version conflict once without double-declaring', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServerWithQueueSpy(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    await parkSession(srv.backend, created.sessionId, created.correlationId)
+
+    const orig = srv.backend.readModifyWrite.bind(srv.backend)
+    let calls = 0
+    srv.backend.readModifyWrite = async (sessionId, expectedVersion, mutator) => {
+      calls += 1
+      if (calls === 1) throw new VersionConflictError(sessionId, expectedVersion, expectedVersion + 1)
+      return orig(sessionId, expectedVersion, mutator)
+    }
+    const retried = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/reply`, { content: 'after conflict' })
+    assert.equal(retried.status, 201)
+    // the CAS loop retried before follow-up creation, so exactly one follow-up exists
+    assert.equal(srv.declares.length, 2)
+    assert.equal(srv.declares[1].lane, 'interactive')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/reply cancels the follow-up instead of orphaning it when declare fails', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServerWithQueueSpy(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    await parkSession(srv.backend, created.sessionId, created.correlationId)
+    srv.queueControl.throwOnDeclare = true
+
+    const res = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/reply`, { content: 'lost answer' })
+    assert.equal(res.status, 500)
+    assert.equal(JSON.parse(res.body).error, 'resume failed after commit; follow-up cancelled')
+    // the committed follow-up is visibly dead, never queued-forever with no worker
+    const all = JSON.parse((await jsonRequest(srv.port, 'GET', '/tasks')).body).sessions
+    const followup = all.find((s: { resumeOf?: string }) => s.resumeOf === created.sessionId)
+    assert.ok(followup)
+    assert.equal(followup.status, 'cancelled')
+    // nothing reached the pump
+    assert.equal(srv.declares.length, 1)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('foldReplyPrompt delimits the human text and caps hostile lengths', () => {
+  const folded = foldReplyPrompt('plan the release', 'Ship it?', 'yes, ship it')
+  assert.equal(folded, 'plan the release\n\n<human_reply question="Ship it?">\nyes, ship it\n</human_reply>')
+
+  const noQuestion = foldReplyPrompt('p', '', 'a')
+  assert.equal(noQuestion, 'p\n\n<human_reply>\na\n</human_reply>')
+
+  const quoted = foldReplyPrompt('p', 'say "hi"', 'a')
+  assert.ok(quoted.includes('question="say \'hi\'"'))
+
+  const long = foldReplyPrompt('p', 'L'.repeat(MAX_FOLD_LABELS + 10), 'R'.repeat(MAX_FOLD_REPLY + 10))
+  assert.ok(long.includes('…[truncated]'))
+  assert.ok(long.length < 'p'.length + MAX_FOLD_LABELS + MAX_FOLD_REPLY + 100)
+})
+
+test('POST /tasks/:id/cancel cancels a parked session (parked-forever stays cancellable)', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServerWithQueueSpy(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    await parkSession(srv.backend, created.sessionId, created.correlationId)
+
+    const cancelled = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/cancel`)
+    assert.equal(cancelled.status, 202)
+    assert.equal(JSON.parse(cancelled.body).session.status, 'cancelled')
     await srv.close()
   } finally {
     cleanup(dir)

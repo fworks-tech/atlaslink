@@ -31,12 +31,13 @@ function HomeInner() {
   const rawMode = (searchParams.get("mode") ?? (decoded?.m as string) ?? "full") as GraphMode;
   const mode: GraphMode = (["chain", "fanout", "full"].includes(rawMode) ? rawMode : "full") as GraphMode;
   const { projects, loading: projectsLoading, error: projectsError, addProject } = useProjects();
-  const { sessions } = useSessions();
+  const { sessions, refresh: refreshSessions } = useSessions();
   const { events } = useEvents();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [inspectorNode, setInspectorNode] = useState<{ id: string; type: string; data: unknown } | null>(null);
   const [replyContent, setReplyContent] = useState("");
   const [replyBusy, setReplyBusy] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
 
   const selectedSession = useMemo(() => sessions.find((s) => s.sessionId === selectedSessionId) ?? null, [sessions, selectedSessionId]);
 
@@ -87,15 +88,21 @@ function HomeInner() {
   const handleReply = useCallback(async () => {
     if (!selectedSessionId || !replyContent.trim()) return;
     setReplyBusy(true);
+    setReplyError(null);
     try {
-      await replyToSession(selectedSessionId, replyContent.trim());
+      const res = await replyToSession(selectedSessionId, replyContent.trim());
       setReplyContent("");
+      // the parked original keeps its state server-side, but the list holds a
+      // stale copy until refetch — refresh before following the follow-up
+      await refreshSessions();
+      // linked-session resume: follow the follow-up, the parked original stays behind
+      if (res?.resumedSession?.sessionId) handleSelectSession(res.resumedSession.sessionId);
     } catch (e) {
-      console.error(e);
+      setReplyError(e instanceof Error ? e.message : "Reply failed — retry or check the session state.");
     } finally {
       setReplyBusy(false);
     }
-  }, [selectedSessionId, replyContent]);
+  }, [selectedSessionId, replyContent, handleSelectSession, refreshSessions]);
 
   return (
     <div className="flex min-h-[60vh] flex-1 overflow-hidden">
@@ -201,6 +208,7 @@ function HomeInner() {
                     <input value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Type your reply…" className="flex-1 rounded border border-white/10 bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted" />
                     <button onClick={handleReply} disabled={replyBusy || !replyContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
                   </div>
+                  {replyError ? <div className="mt-2 text-xs text-red-400">{replyError}</div> : null}
                 </div>
               ) : selectedSession?.status === "awaiting_input" ? (
                 <div className="rounded-xl border border-accent/30 bg-accent/10 p-4">
@@ -209,6 +217,7 @@ function HomeInner() {
                     <input value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Reply to continue…" className="flex-1 rounded border border-white/10 bg-surface px-3 py-2 text-sm" />
                     <button onClick={handleReply} disabled={replyBusy || !replyContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
                   </div>
+                  {replyError ? <div className="mt-2 text-xs text-red-400">{replyError}</div> : null}
                 </div>
               ) : null}
             </div>

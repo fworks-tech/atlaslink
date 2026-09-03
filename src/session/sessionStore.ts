@@ -1,5 +1,5 @@
 import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project } from './types'
-import { StreamIntegrityError, VersionConflictError } from './types'
+import { StreamIntegrityError, VersionConflictError, firstQuestionLabel } from './types'
 import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
 import { deepFreeze } from './deepFreeze'
 import { DEFAULT_TENANT_ID } from './migrations'
@@ -60,6 +60,7 @@ export function rehydrate(events: SessionEvent[]): Session | null {
     interaction: [],
     nextStep: null,
     diagram: null,
+    replyCount: 0,
   }
 
   let createdAt: string | undefined
@@ -75,6 +76,7 @@ export function rehydrate(events: SessionEvent[]): Session | null {
         if (e.tweaks !== undefined) session.tweaks = e.tweaks
         if (e.projectId !== undefined) session.projectId = e.projectId
         if (e.tenantId !== undefined) session.tenantId = e.tenantId
+        if (e.resumeOf !== undefined) session.resumeOf = e.resumeOf
         session.interaction.push({ role: 'user', at: e.at, content: e.prompt ?? '' })
         break
       case 'session.running':
@@ -104,12 +106,20 @@ export function rehydrate(events: SessionEvent[]): Session | null {
         break
       case 'session.awaiting_input':
         session.status = 'awaiting_input'
-        session.nextStep = { awaiting_input: true, prompt: e.question, member: e.member }
-        session.interaction.push({ role: 'atlas', member: e.member, at: e.at, content: e.question ?? '' })
+        session.question = e.question
+        session.nextStep = { awaiting_input: true, prompt: firstQuestionLabel(e.question), member: e.member }
+        session.interaction.push({
+          role: 'atlas',
+          member: e.member,
+          at: e.at,
+          content: e.question?.questions.map((q) => q.label).join('; ') ?? '',
+        })
         break
       case 'session.user_reply':
-        session.status = 'queued'
-        session.nextStep = null
+        // linked-session resume: the reply is recorded on the parked original,
+        // which stays awaiting_input (still cancellable); the follow-up is a
+        // separate session carrying resumeOf — so the reply moves no lifecycle
+        session.replyCount += 1
         session.interaction.push({ role: 'user', at: e.at, content: e.reply ?? '' })
         break
       case 'session.message':

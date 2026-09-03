@@ -5,7 +5,7 @@ import { EventLogStore } from './bridge/EventLogStore'
 import { EventBroadcaster } from './bridge/EventBroadcaster'
 import { SessionQueue } from './bridge/SessionQueue'
 import { SseHandler, formatSse } from './bridge/sseEndpoint'
-import { createAppServer } from './server'
+import { createAppServer, asAskHumanQuestion } from './server'
 import { TaskRegistry } from './tasks/taskRegistry'
 import { log as logger } from './log'
 import { tmpDataDir, runEnv, startServer, collectStream, cleanup } from './test/serverHarness'
@@ -257,4 +257,14 @@ test('createAppServer builds the HTTP layer on Fastify (ADR-006 Decision 1)', as
   } finally {
     cleanup(dir)
   }
+})
+
+test('asAskHumanQuestion accepts fx questions and rejects everything else', () => {
+  const good = { questions: [{ label: 'Ship it?', options: ['yes', 'no'] }] }
+  assert.deepEqual(asAskHumanQuestion(good), good)
+  assert.equal(asAskHumanQuestion(undefined), undefined)
+  assert.equal(asAskHumanQuestion(null), undefined)
+  assert.equal(asAskHumanQuestion('continue?'), undefined)
+  assert.equal(asAskHumanQuestion({ questions: [] }), undefined)
+  assert.equal(asAskHumanQuestion({ questions: [{ description: 'no label' }] }), undefined)
 })

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { TaskRegistry, type Session } from '../tasks/taskRegistry'
 import { runSession, type AppLike } from './runTask'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
+import { AskHumanSignal } from 'agenthood/dist/tools/human/AskHumanSignal.js'
 
 type FakeApp = AppLike & { subscribeCount: () => number; listenerCount: () => number }
 
@@ -145,4 +146,26 @@ test('runSession fails the session when createContext rejects', async () => {
   assert.equal(finished.error, 'provider key missing')
   assert.ok(finished.startedAt)
   assert.ok(finished.finishedAt)
+})
+
+test('runSession parks the session on AskHumanSignal and releases the slot', async () => {
+  const registry = new TaskRegistry()
+  const session = baseSession(registry)
+  const questions = { questions: [{ label: 'Ship it?', options: ['yes', 'no'] }] }
+  const app = fakeApp({ error: new AskHumanSignal(questions) })
+
+  const finished = await runSession({
+    registry,
+    session,
+    config: {},
+    createApp: async () => app,
+  })
+
+  assert.equal(finished.status, 'parked')
+  assert.deepEqual(finished.question, questions)
+  // park is not failure: no error, no output — and the runner promise settled
+  // (it threw), so no orphan holds the pump slot when this returns
+  assert.equal(finished.error, undefined)
+  assert.equal(finished.output, undefined)
+  assert.equal(app.listenerCount(), 0)
 })

@@ -16,12 +16,15 @@ closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 - [x] test(queue): lane priority, fairness bound + reset, idle/interactive-only drains, re-entrant declare, late arrival, cancelled-standard skip, per-lane pending; `waitFor` drains instead of fixed sleeps
 - deferred (pre-existing, all stages): runner-throw strands the queue until next declare — follow-up issue
 
-## Stage 3 — agent ask + park (`feat/76-hitl-ask-park` off stage 2)
-- [ ] chore(spike): verify agenthood runner API for `ask_human`/permission hook + `run.interrupted`; confirm fallback if absent
-- [ ] feat(runner): add `ask_human` tool / permission hook emitting `session.awaiting_input`
-- [ ] feat(runner): park releasing the pump slot; `POST …/reply` re-queues to interactive-lane front; resume with history
-- [ ] test(runner): park→reply→resume round-trip, parked-forever holds no slot and is cancellable, no orphan worker
-- [ ] feat(ui): awaiting node + reply composer states for parked sessions
+## Stage 3 — agent ask + park (`feat/76-hitl-ask-park` off stage 2) — DONE (`fad462f`; agenthood side uncommitted)
+- [x] agenthood: `ask_human` tool + `AskHumanSignal` (rethrown by `ReActLoop`, translated to `run.awaiting_input` + rethrow by `MemberRunner`) — sibling repo, uncommitted, dist rebuilt
+- [x] feat(runner): `registry.park()` (`PARKED`, terminal for original) + `runSession` park catch (slot released, no orphan) + server-seam `awaiting_input` mirror
+- [x] feat(api): `POST …/reply` records reply on parked original (stays `awaiting_input`) + spawns linked follow-up (`resumeOf`, Q&A folded into prompt) on the interactive lane; blank-content 400
+- [x] test: park→reply→resume round-trip, parked holds no slot + cancellable (registry + API), no-orphan (settled runner), queue-spy lane assertion, fx question projection, dashboard projection + follow-resumed
+- [x] feat(ui): reply composer follows the resumed session; awaiting node unchanged (first-label prompt)
+- [x] review hardening: single-reply-per-park (409 `session already answered`), delimited+capped fold, tweaks/provider passthrough, post-commit failure compensation, question shape validation + live `awaiting_input` fan-out, tool size caps + park redaction (agenthood), PGlite reply-status / CAS-retry / tenant-passthrough / oversize / queue-parked-continues / seam-validation tests, composer refresh + error state
+- decisions locked: cooperative agenthood change; fx-style question object (no string back-compat); linked-session resume; reply double-delta fixed in-branch
+- accepted residuals: no per-route reply throttle (global rate limit + single-reply bound); no resume-chain depth cap; store keeps raw human text (escape-at-render contract)
 
 ## Stage 4 — steer / interrupt (`feat/76-hitl-steer` off stage 3)
 - [ ] feat(api): `POST /tasks/:sessionId/steer` (queued CAS rewrite; running interrupt flag)

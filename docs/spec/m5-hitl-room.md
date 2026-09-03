@@ -56,19 +56,31 @@ reviewable, stacked branches):
    runs. Fairness bound: the pump drains the interactive lane first; after 3
    consecutive interactive runs it takes one standard run if any (Architect
    to finalize the exact bound).
-3. **Agent asks (fx `ask_user_question` mirror).** New `ask_human
-   {question, options?}` tool / permission hook in the runner closure
-   (`src/server.ts:224`, `src/daemon/runTask.ts`). Emits
-   `session.awaiting_input` (store + SSE), then parks: the worker releases
-   the pump slot (no slot is held while parked). `POST …/reply` (existing
-   endpoint) appends `session.user_reply` — which already returns the
-   aggregate to `queued` (`src/session/sessionStore.ts:111`) — and re-queues
-   the session to the front of the interactive lane; the pump picks it up
-   and the runner resumes with full `interaction[]` history. Question payload
-   mirrors fx shape `{questions:[{label,description,options}]}` while keeping
-   plain-string `question` backwards compatible. Park policy per decision:
+3. **Agent asks (fx `ask_user_question` mirror) — DONE.** `ask_human
+   {questions:[{label,description?,options?}]}` tool auto-registered by
+   `MemberRunner` for every member run (agenthood; bypasses the
+   permission-profile gate by design — it asks, never touches state).
+   `execute` throws `AskHumanSignal`, which `ReActLoop` rethrows instead of
+   stringifying; `MemberRunner` translates it to a `run.awaiting_input` bus
+   event and rethrows. `runSession` catches the signal, records
+   `registry.park()` (new `PARKED` registry state, terminal for the original),
+   and returns — the pump slot is free, no orphan. The server seam mirrors
+   `session.awaiting_input` (store + SSE) with the fx question object;
+   `nextStep.prompt` keeps the first label (string) so the thread path is
+   unchanged. `POST …/reply` appends `session.user_reply` to the parked
+   original (which stays `awaiting_input`, still cancellable) and spawns a
+   **linked follow-up session** (`resumeOf`, original prompt + Q&A folded in),
+   created + enqueued to the interactive lane. Reply rules: **single reply per
+   park** (second reply 409s — multi-turn works via the follow-up parking and
+   asking again); the fold is `<human_reply question="…">…</human_reply>` with
+   length caps; provider/team `tweaks` ride along; a declare failure after the
+   follow-up commit cancels the follow-up instead of orphaning it. The seam
+   validates the fx shape before mirroring and fans `session.awaiting_input`
+   out live on SSE (store stays truth). Question size caps live in the tool
+   schema + `execute` (10 questions, 500-char labels); park emits are redacted
+   like any model text. Park policy per decision:
    **wait forever**; a parked session holds no pump slot and is always
-   cancellable.
+   cancellable (registry `cancel` accepts `PARKED`).
 4. **Human steer / interrupt.** `POST /tasks/:sessionId/steer`: queued →
    CAS prompt rewrite; running → append `session.user_reply` + interrupt flag
    the runner polls between steps. Harden `cancel` (`src/api/tasks.ts:154`)
@@ -118,8 +130,8 @@ Coverage: new suites per endpoint/hook; existing suites stay green.
 
 ## Open Questions
 - WS stack: native `ws` vs Fastify plugin — decided in ADR-007.
-- `question` object shape versioning (string vs fx-shaped object) — ADR-007.
-- Lane fairness bound constant (proposed 3:1) — Architect finalizes.
+- `question` payload: fx-style object — decided in Stage 3 (no string back-compat).
+- Lane fairness bound constant — finalized at 3 (`MAX_CONSECUTIVE_INTERACTIVE`).
 - agenthood runner API: `ask_human`/permission-hook support and
   `run.interrupted` emission — verify before Stage 3; fallback is
   poll-based park with zero runner cooperation.
@@ -136,9 +148,10 @@ Coverage: new suites per endpoint/hook; existing suites stay green.
 ## References
 - Issue #76 — M5 HITL collaboration room.
 - `src/api/tasks.ts:99` (create/enqueue), `:212` (cancel), `:254` (reply),
-  `:46` (CAS-append helper), `:303` (message).
-- `src/daemon/runTask.ts:19` (park point), `src/server.ts:224` (runner seam).
-- `src/session/types.ts:1-30`, `src/session/sessionStore.ts:42,105-118`.
+  `:46` (CAS-append helper), `:334` (message).
+- `src/daemon/runTask.ts:19` (park point), `src/server.ts:224` (runner seam, `:262` park mirror).
+- `src/session/types.ts:1-40`, `src/session/sessionStore.ts:42,105-120`.
+- `src/tasks/taskRegistry.ts:4-10,96-135` (PARKED, park/cancel).
 - `src/bridge/SessionQueue.ts:47`, `src/bridge/sseEndpoint.ts`.
 - ADR-002 (read-only projection), ADR-003 (sky of sessions),
   ADR-004 (event-sourced aggregate), ADR-006 (Fastify + Postgres).

@@ -66,6 +66,41 @@ test('PostgresBackend: trailing message/steer do not move list status', async ()
   assert.equal(s.interaction.at(-1)?.content, 'steer left')
 })
 
+test('PostgresBackend: user_reply preserves awaiting_input in the directory', async () => {
+  const backend = await backendWithMigrations()
+  await backend.append({ ...created, projectId: 'proj-1' })
+  await backend.append({ ...running })
+  await backend.append({
+    type: 'session.awaiting_input',
+    sessionId: 'ses-1',
+    correlationId: 'cor-1',
+    at: '2026-01-01T00:00:02Z',
+    member: 'the-architect',
+    question: { questions: [{ label: 'Ship it?' }] },
+  })
+  await backend.append({
+    type: 'session.user_reply',
+    sessionId: 'ses-1',
+    correlationId: 'cor-1',
+    at: '2026-01-01T00:00:03Z',
+    reply: 'yes',
+  })
+
+  // the reply must not move the directory row back to queued
+  const awaiting = await backend.list({ status: 'awaiting_input', limit: 50, offset: 0 })
+  assert.deepEqual(
+    awaiting.sessions.map((s) => s.sessionId),
+    ['ses-1']
+  )
+  const queued = await backend.list({ status: 'queued', limit: 50, offset: 0 })
+  assert.equal(queued.total, 0)
+
+  const s = await backend.get('ses-1')
+  assert.ok(s)
+  assert.equal(s.status, 'awaiting_input')
+  assert.equal(s.replyCount, 1)
+})
+
 test('migrations apply once and are idempotent on a fresh database', async () => {
   const db = new PGlite()
   const adapter = new PgliteDb(db)

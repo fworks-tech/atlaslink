@@ -15,7 +15,8 @@ import { SseHandler } from './bridge/sseEndpoint'
 import { createSessionBackend } from './session/backendFactory'
 import { SessionStore } from './session/sessionStore'
 import type { SessionBackend } from './session/sessionBackend'
-import type { SessionDelta } from './session/types'
+import type { SessionDelta, AskHumanQuestion } from './session/types'
+import type { BridgeEnvelope } from './bridge/EventLogStore'
 import { VersionConflictError } from './session/types'
 import { registerTaskRoutes } from './api/tasks'
 import { registerProjectRoutes } from './api/projects'
@@ -26,6 +27,19 @@ import type { LLMConfig } from 'agenthood/dist/llm/types.js'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
 
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+
+/**
+ * The runner hands us `unknown` (custom AppLike fakes, future runners) — a
+ * malformed question mirrors without it rather than crashing the seam or
+ * storing an unusable payload the projection would choke on.
+ */
+export function asAskHumanQuestion(value: unknown): AskHumanQuestion | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const questions = (value as { questions?: unknown }).questions
+  if (!Array.isArray(questions) || questions.length === 0) return undefined
+  if (questions.some((q) => typeof (q as { label?: unknown })?.label !== 'string')) return undefined
+  return value as AskHumanQuestion
+}
 
 function parseArgs(argv: string[]): { runMode: boolean; member?: string; task?: string } {
   let runMode = false
@@ -254,12 +268,39 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
            error: msg(err),
          })
        }
-       const final = registry.get(sessionId)!
-       if (final.status === 'succeeded') {
-         await mirror({ type: 'session.succeeded', correlationId: final.correlationId, at: at(), output: final.output, durationMs: final.durationMs })
-       } else if (final.status === 'failed') {
-         await mirror({ type: 'session.failed', correlationId: final.correlationId, at: at(), error: final.error, durationMs: final.durationMs })
-       }
+        const final = registry.get(sessionId)!
+        if (final.status === 'succeeded') {
+          await mirror({ type: 'session.succeeded', correlationId: final.correlationId, at: at(), output: final.output, durationMs: final.durationMs })
+        } else if (final.status === 'failed') {
+          await mirror({ type: 'session.failed', correlationId: final.correlationId, at: at(), error: final.error, durationMs: final.durationMs })
+        } else if (final.status === 'parked') {
+          // the worker returned on AskHumanSignal — slot free, question in hand.
+          // Park is the most time-sensitive transition, so it fans out live
+          // instead of waiting for a dashboard refetch (store stays truth).
+          const question = asAskHumanQuestion(final.question)
+          const parkedAt = at()
+          await mirror({
+            type: 'session.awaiting_input',
+            correlationId: final.correlationId,
+            at: parkedAt,
+            member: final.task.member,
+            ...(question !== undefined ? { question } : {}),
+          })
+          try {
+            const envelope: BridgeEnvelope = {
+              eventId: 0, // assigned by the broadcaster
+              type: 'session.awaiting_input',
+              sessionId,
+              correlationId: final.correlationId,
+              member: final.task.member,
+              at: parkedAt,
+              ...(question !== undefined ? { question } : {}),
+            }
+            broadcaster.emit(envelope)
+          } catch {
+            // best-effort; store is truth
+          }
+        }
      },
    })
 

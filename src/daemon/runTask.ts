@@ -2,6 +2,7 @@ import { msg } from '../tasks/taskRegistry'
 import { createContext } from './contextFactory'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
+import { AskHumanSignal } from 'agenthood/dist/tools/human/AskHumanSignal.js'
 
 export interface AppLike {
   events: { subscribe(listener: (event: RunEvent) => void): () => void }
@@ -14,7 +15,9 @@ export interface AppLike {
  * Executes one session to completion: builds a dedicated ApplicationContext,
  * subscribes to its RunEventBus, invokes the member, and finalizes the session
  * from the real run outcome. runMemberTask throws on failure (unlike the CLI's
- * process-exit path), so status is never guessed.
+ * process-exit path), so status is never guessed. An AskHumanSignal parks the
+ * session instead of failing it: the worker already returned, so the pump
+ * slot is free the moment this function returns — no orphan, nothing held.
  */
 export async function runSession(params: {
   registry: import('../tasks/taskRegistry.js').TaskRegistry
@@ -34,7 +37,11 @@ export async function runSession(params: {
     const { output, durationMs } = await app.runner.runMemberTask(params.session.task.member, params.session.task.prompt, params.config)
     params.registry.succeed(params.session.id, { output, durationMs })
   } catch (err) {
-    params.registry.fail(params.session.id, { error: msg(err) })
+    if (err instanceof AskHumanSignal) {
+      params.registry.park(params.session.id, { question: err.questions })
+    } else {
+      params.registry.fail(params.session.id, { error: msg(err) })
+    }
   } finally {
     unsubscribe()
   }

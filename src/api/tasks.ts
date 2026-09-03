@@ -76,6 +76,25 @@ async function casAppendSessionEvents(
   return { code: 409, error: 'session state changed' }
 }
 
+/** Caps: the fold lands in a fresh model prompt, so one park cannot blow past context on resume. */
+export const MAX_FOLD_REPLY = 4000
+export const MAX_FOLD_LABELS = 500
+
+function truncateFold(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}…[truncated]` : text
+}
+
+/**
+ * Follow-up prompt: the original prompt plus the answered Q&A. Delimited so
+ * the model cannot mistake human text for instructions; capped so a hostile
+ * or verbose reply cannot smuggle an unbounded prompt into the resumed run.
+ */
+export function foldReplyPrompt(originalPrompt: string, labels: string, reply: string): string {
+  const q = truncateFold(labels, MAX_FOLD_LABELS).replace(/"/g, "'")
+  const a = truncateFold(reply, MAX_FOLD_REPLY)
+  return `${originalPrompt}\n\n<human_reply${q ? ` question="${q}"` : ''}>\n${a}\n</human_reply>`
+}
+
 interface PostBody {
   member: string
   prompt: string
@@ -267,31 +286,94 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     async (request, reply) => {
       const tenantCtx = tenantBackendForRequest(request, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const backend = tenantCtx.backend
+      const tenantId = tenantCtx.tenantId!
+      const sessionId = request.params.sessionId
+      const content = request.body.content
+      if (content.trim().length === 0) {
+        return reply.code(400).send({ ok: false, error: 'content must not be blank' })
+      }
+      // the reply is recorded on the parked original, which stays
+      // awaiting_input (still cancellable) — resume spawns a linked follow-up.
+      // Single-reply-per-park: the original parks exactly once, so a second
+      // reply would fork a second follow-up (double LLM spend, lane flood).
+      // Multi-turn Q&A still works — the follow-up can park and ask again.
       const result = await casAppendSessionEvents(deps.sse.broadcaster, {
-        backend: tenantCtx.backend,
-        sessionId: request.params.sessionId,
+        backend,
+        sessionId,
         guard: (current) => {
           if (current.status !== 'awaiting_input') {
             return isTerminal(current.status) ? 'session already terminated' : 'session not awaiting input'
           }
+          if (current.replyCount > 0) return 'session already answered'
           return null
         },
         deltas: (current, at) => [
-          { type: 'session.user_reply', correlationId: current.correlationId, at, reply: request.body.content },
-          // re-queue as running so the diagram keeps growing — next iteration
-          { type: 'session.running', correlationId: current.correlationId, at },
+          { type: 'session.user_reply', correlationId: current.correlationId, at, reply: content },
         ],
         sseEvent: (current, at, version) => ({
           eventId: version,
           type: 'session.user_reply',
-          sessionId: request.params.sessionId,
+          sessionId,
           correlationId: current.correlationId,
           at,
-          reply: request.body.content,
+          reply: content,
         }),
       })
       if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
-      return reply.code(201).send({ ok: true, session: sessionToWire(result.session) })
+      const original = result.session
+      // linked follow-up: the original prompt plus the Q&A folded in, so the
+      // new run sees the answer without sharing the parked run's scratchpad.
+      // Provider/team overrides ride along — a pinned provider must not
+      // silently revert to default on the resumed run.
+      const followupId = `ses-${randomUUID()}`
+      const followupCorrelationId = `cor-${randomUUID()}`
+      const at = new Date().toISOString()
+      const labels = original.question?.questions.map((q) => q.label).join('; ') ?? ''
+      const prompt = foldReplyPrompt(original.task.prompt, labels, content)
+      const resumeProvider = typeof original.tweaks?.provider === 'string' ? original.tweaks.provider : undefined
+      await backend.append({
+        type: 'session.created',
+        sessionId: followupId,
+        correlationId: followupCorrelationId,
+        at,
+        member: original.task.member,
+        prompt,
+        tenantId,
+        ...(original.projectId !== undefined ? { projectId: original.projectId } : {}),
+        ...(original.tweaks !== undefined ? { tweaks: original.tweaks } : {}),
+        resumeOf: sessionId,
+      })
+      try {
+        // a human is waiting on this answer — it jumps the standard lane
+        const created = deps.registry.create({
+          member: original.task.member,
+          prompt,
+          ...(resumeProvider !== undefined ? { provider: resumeProvider } : {}),
+          id: followupId,
+          correlationId: followupCorrelationId,
+        })
+        deps.queue.declareSession(created, { lane: 'interactive' })
+      } catch (err) {
+        // the follow-up store entry already committed — never leave it
+        // queued-forever with no worker: cancel it visibly instead
+        try {
+          deps.registry.cancel(followupId)
+        } catch {
+          // registry entry missing — nothing to withdraw
+        }
+        try {
+          await backend.append({ type: 'session.cancelled', sessionId: followupId, correlationId: followupCorrelationId, at: new Date().toISOString() })
+        } catch {
+          // store truth stays queued; it surfaces in listing but never runs
+        }
+        log.error('task resume failed after commit; follow-up cancelled', { sessionId, followupId, error: err instanceof Error ? err.message : String(err) })
+        return reply.code(500).send({ ok: false, error: 'resume failed after commit; follow-up cancelled' })
+      }
+      log.info('task resumed', { sessionId, followupId, member: original.task.member, tenantId })
+      const followup = await backend.get(followupId)
+      if (!followup) return reply.code(404).send({ ok: false, error: 'unknown session' })
+      return reply.code(201).send({ ok: true, session: sessionToWire(original), resumedSession: sessionToWire(followup) })
     }
   )
 
