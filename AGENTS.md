@@ -17,7 +17,7 @@ to understand the Society's standards before taking any action in a repository.
 
 ## Branch Standards
 
-- One branch per issue: `type/issue-NUMBER-short-description`
+- One branch per issue: `type/issue-NUMBER-short-description` (bare `type/NUMBER-short-description`, e.g. `feat/76-hitl-room-ws`, also accepted — established repo practice)
 - Never commit directly to `main`
 - Branch names are lowercase, hyphenated, no spaces
 
