@@ -25,7 +25,7 @@ import { SessionStatus } from '../tasks/taskRegistry'
  *   session.started   — same, status 'running'
  *   session.succeeded — same, status 'succeeded'
  *   session.failed    — same, status 'failed'
- */
+ *   session.parked    — same, status 'parked' (slot released, run awaiting human)
 
 /** Fairness bound: at most this many interactive runs before a waiting standard session is served. */
 export const MAX_CONSECUTIVE_INTERACTIVE = 3
@@ -94,6 +94,10 @@ export class SessionQueue {
           this.#emit('session.succeeded', sessionId, final, SessionStatus.SUCCEEDED)
         } else if (final.status === SessionStatus.FAILED) {
           this.#emit('session.failed', sessionId, final, SessionStatus.FAILED)
+        } else if (final.status === SessionStatus.PARKED) {
+          // a parked run releases its slot without a terminal registry state —
+          // close the started event so queue watchers never see it running-forever
+          this.#emit('session.parked', sessionId, final, SessionStatus.PARKED)
         }
       }
     } finally {

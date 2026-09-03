@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 export const SessionStatus = Object.freeze({
   QUEUED: 'queued',
   RUNNING: 'running',
+  PARKED: 'parked',
   SUCCEEDED: 'succeeded',
   FAILED: 'failed',
   CANCELLED: 'cancelled',
@@ -80,14 +81,36 @@ export class TaskRegistry {
   }
 
   /**
-   * Cancel a queued session so the pump skips it. Only legal from QUEUED; a
-   * running/terminal session is untouched (the queue calls this only after the
-   * store commit succeeded, which the pump drains before starting).
+   * Park a running session: the worker returned early on AskHumanSignal, so
+   * the pump slot is already free — this only records where the session went.
+   * The question is the unified ask_human payload ({question, context?}).
+   * Parked is terminal for the original: resume always spawns a linked
+   * follow-up session, never restarts this entry. Only legal from RUNNING.
+   */
+  park(id: string, { question }: { question: unknown }): Session {
+    const session = this.#sessions.get(id)
+    if (!session) throw new Error(`unknown session "${id}"`)
+    if (session.status !== SessionStatus.RUNNING) {
+      throw new Error(`cannot park session in status "${session.status}"`)
+    }
+    session.status = SessionStatus.PARKED
+    session.question = question
+    return session
+  }
+
+  /**
+   * Cancel a queued session so the pump skips it, or a parked session whose
+   * human never replies (parked-forever stays cancellable). Only legal from
+   * QUEUED or PARKED; a running/terminal session is untouched (the queue calls
+   * this only after the store commit succeeded, which the pump drains before
+   * starting).
    */
   cancel(id: string): Session {
     const session = this.#sessions.get(id)
     if (!session) throw new Error(`unknown session "${id}"`)
-    TaskRegistry.#assert(session.status, 'cancel')
+    if (session.status !== SessionStatus.QUEUED && session.status !== SessionStatus.PARKED) {
+      throw new Error(`cannot cancel session in status "${session.status}"`)
+    }
     session.status = SessionStatus.CANCELLED
     session.finishedAt = new Date().toISOString()
     return session
@@ -131,4 +154,6 @@ export interface Session {
   output: string | undefined
   error: string | undefined
   durationMs: number | undefined
+  /** Unified ask_human payload ({question, context?}) the run parked on (PARKED only) */
+  question?: unknown
 }

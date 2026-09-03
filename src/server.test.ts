@@ -5,7 +5,8 @@ import { EventLogStore } from './bridge/EventLogStore'
 import { EventBroadcaster } from './bridge/EventBroadcaster'
 import { SessionQueue } from './bridge/SessionQueue'
 import { SseHandler, formatSse } from './bridge/sseEndpoint'
-import { createAppServer } from './server'
+import { createAppServer, asAskHumanQuestion } from './server'
+import { ASK_HUMAN_MAX_CONTEXT_LENGTH, ASK_HUMAN_MAX_QUESTION_LENGTH } from 'agenthood/dist/tools/human/AskHumanTool.js'
 import { TaskRegistry } from './tasks/taskRegistry'
 import { log as logger } from './log'
 import { tmpDataDir, runEnv, startServer, collectStream, cleanup } from './test/serverHarness'
@@ -257,4 +258,26 @@ test('createAppServer builds the HTTP layer on Fastify (ADR-006 Decision 1)', as
   } finally {
     cleanup(dir)
   }
+})
+
+test('asAskHumanQuestion accepts the unified payload and rejects everything else', () => {
+  const good = { question: 'Ship it?', context: 'release vote' }
+  assert.deepEqual(asAskHumanQuestion(good), good)
+  assert.deepEqual(asAskHumanQuestion({ question: 'Ship it?' }), { question: 'Ship it?' })
+  assert.equal(asAskHumanQuestion(undefined), undefined)
+  assert.equal(asAskHumanQuestion(null), undefined)
+  assert.equal(asAskHumanQuestion('continue?'), undefined)
+  assert.equal(asAskHumanQuestion({}), undefined)
+  assert.equal(asAskHumanQuestion({ questions: [{ label: 'Ship it?' }] }), undefined)
+  // caps are the agenthood tool schema limits — a compromised runner cannot park unbounded input
+  assert.equal(asAskHumanQuestion({ question: '' }), undefined)
+  assert.equal(
+    asAskHumanQuestion({ question: 'Q'.repeat(ASK_HUMAN_MAX_QUESTION_LENGTH + 1) }),
+    undefined
+  )
+  assert.equal(
+    asAskHumanQuestion({ question: 'q', context: 'C'.repeat(ASK_HUMAN_MAX_CONTEXT_LENGTH + 1) }),
+    undefined
+  )
+  assert.equal(asAskHumanQuestion({ question: 'q', context: 7 }), undefined)
 })

@@ -110,8 +110,14 @@ export function deleteProject(projectId: string): Promise<{ ok: boolean }> {
   });
 }
 
-export function replyToSession(sessionId: string, content: string): Promise<{ ok: boolean; session: Session }> {
-  return fetchJSON<{ ok: boolean; session: Session }>(`/tasks/${encodeURIComponent(sessionId)}/reply`, {
+export interface ReplyToSessionResponse {
+  ok: boolean;
+  session: Session;
+  resumedSession: Session;
+}
+
+export function replyToSession(sessionId: string, content: string): Promise<ReplyToSessionResponse> {
+  return fetchJSON<ReplyToSessionResponse>(`/tasks/${encodeURIComponent(sessionId)}/reply`, {
     method: "POST",
     body: JSON.stringify({ content }),
   });

@@ -33,10 +33,10 @@ function parseEvent(raw: string | SessionEvent): SessionEvent {
   return typeof raw === 'string' ? (JSON.parse(raw) as SessionEvent) : raw
 }
 
-/** Chat/steer append to history without moving the lifecycle — the sessions
+/** Chat/steer/reply append to history without moving the lifecycle — the sessions
  * directory keeps its status and only `updated_at` advances. Single source
  * for both the directory projection and the ranked-CTE exclusion below. */
-const STATUS_PRESERVING_EVENTS: ReadonlySet<SessionEvent['type']> = new Set(['session.message', 'session.steer'])
+const STATUS_PRESERVING_EVENTS: ReadonlySet<SessionEvent['type']> = new Set(['session.message', 'session.steer', 'session.user_reply'])
 
 /** SQL literal list derived from STATUS_PRESERVING_EVENTS — never hand-edit. */
 const STATUS_PRESERVING_SQL = [...STATUS_PRESERVING_EVENTS].map((t) => `'${t}'`).join(', ')
@@ -107,8 +107,7 @@ export class PostgresBackend implements SessionBackend {
         'session.failed': 'failed',
         'session.cancelled': 'cancelled',
         'session.awaiting_input': 'awaiting_input',
-        'session.user_reply': 'queued',
-      }
+        }
       const status = statusMap[event.type]
       if (!status) throw new Error(`unknown session event type for directory projection: ${event.type}`)
       // For sessions not in the directory (no projectId), this UPDATE is a no-op

@@ -589,3 +589,32 @@ test('cancelled standard is skipped without resetting the bound', async () => {
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('a parked worker releases the slot: drain continues, started closed by session.parked', async () => {
+  const order: string[] = []
+  const { dir, queue, seen } = await openQueue(
+    {
+      p1: SessionStatus.PARKED,
+      s2: SessionStatus.SUCCEEDED,
+    },
+    async (id) => {
+      order.push(id)
+    },
+  )
+  try {
+    // p1 parks mid-run: its runner returns (slot free) and the registry will
+    // read PARKED — the pump closes the started event with session.parked so
+    // queue watchers never see it running-forever, then continues draining
+    queue.declareSession({ id: 'p1', correlationId: 'c-p1', task: { member: 'm' } })
+    queue.declareSession({ id: 's2', correlationId: 'c-s2', task: { member: 'm' } })
+    await waitFor(() => order.length === 2, 'both sessions to run')
+
+    assert.deepEqual(order, ['p1', 's2'])
+    assert.ok(seen.some((e) => e.type === 'session.started' && e.sessionId === 'p1'))
+    assert.ok(seen.some((e) => e.type === 'session.parked' && e.sessionId === 'p1'))
+    assert.ok(!seen.some((e) => e.sessionId === 'p1' && (e.type === 'session.succeeded' || e.type === 'session.failed')))
+    assert.ok(seen.some((e) => e.type === 'session.succeeded' && e.sessionId === 's2'))
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

@@ -72,3 +72,46 @@ test('get has and list reflect the stored sessions', () => {
   assert.equal(registry.get('missing'), undefined)
   assert.deepEqual(registry.list(), [a, b])
 })
+
+test('park moves a running session to parked with its question', () => {
+  const registry = new TaskRegistry()
+  const session = registry.create({ member: 'the-architect', prompt: 'plan' })
+  registry.start(session.id)
+  const questions = { questions: [{ label: 'Ship it?' }] }
+
+  const parked = registry.park(session.id, { question: questions })
+
+  assert.equal(parked.status, SessionStatus.PARKED)
+  assert.deepEqual(parked.question, questions)
+})
+
+test('park rejects sessions that are not running', () => {
+  const registry = new TaskRegistry()
+  const queued = registry.create({ member: 'm', prompt: 'p' })
+  assert.throws(() => registry.park(queued.id, { question: {} }), /cannot park session in status "queued"/)
+  registry.start(queued.id)
+  registry.park(queued.id, { question: {} })
+  assert.throws(() => registry.park(queued.id, { question: {} }), /cannot park session in status "parked"/)
+  assert.throws(() => registry.succeed(queued.id, { output: 'x' }), /cannot succeed session in status/)
+  assert.throws(() => registry.fail(queued.id, { error: 'x' }), /cannot fail session in status/)
+})
+
+test('cancel accepts parked sessions so parked-forever stays cancellable', () => {
+  const registry = new TaskRegistry()
+  const session = registry.create({ member: 'm', prompt: 'p' })
+  registry.start(session.id)
+  registry.park(session.id, { question: {} })
+
+  const cancelled = registry.cancel(session.id)
+
+  assert.equal(cancelled.status, SessionStatus.CANCELLED)
+})
+
+test('cancel still rejects running and terminal sessions', () => {
+  const registry = new TaskRegistry()
+  const session = registry.create({ member: 'm', prompt: 'p' })
+  registry.start(session.id)
+  assert.throws(() => registry.cancel(session.id), /cannot cancel session in status "running"/)
+  registry.succeed(session.id, { output: 'ok' })
+  assert.throws(() => registry.cancel(session.id), /cannot cancel session in status "succeeded"/)
+})

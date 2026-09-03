@@ -9,6 +9,7 @@ import type { SseHandler } from '../bridge/sseEndpoint'
 import type { TaskRegistry } from '../tasks/taskRegistry'
 import { tenantBackendForRequest } from './tenant'
 import { log } from '../log'
+import { ASK_HUMAN_MAX_CONTEXT_LENGTH, ASK_HUMAN_MAX_QUESTION_LENGTH } from 'agenthood/dist/tools/human/AskHumanTool.js'
 
 export interface TaskDeps {
   backend: SessionBackend
@@ -76,11 +77,112 @@ async function casAppendSessionEvents(
   return { code: 409, error: 'session state changed' }
 }
 
+/** Caps: the fold lands in a fresh model prompt, so one park cannot blow past context on resume. */
+export const MAX_FOLD_QUESTION = ASK_HUMAN_MAX_QUESTION_LENGTH
+export const MAX_FOLD_CONTEXT = ASK_HUMAN_MAX_CONTEXT_LENGTH
+export const MAX_FOLD_REPLY = 4000
+/** Anytime chat is unbounded by lifecycle, so the log itself carries the bound. */
+export const MAX_SESSION_MESSAGES = 500
+
+function truncateFold(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}…[truncated]` : text
+}
+
+/**
+ * Follow-up prompt: the original prompt plus the answered Q&A. Delimited so
+ * the model cannot mistake human text for instructions; capped so a hostile
+ * or verbose reply cannot smuggle an unbounded prompt into the resumed run;
+ * the closing tag is neutralized in both halves so a crafted reply cannot
+ * break out of the delimiter and inject instructions after it.
+ */
+export function foldReplyPrompt(originalPrompt: string, question: string, context: string | undefined, reply: string): string {
+  const q = truncateFold(question, MAX_FOLD_QUESTION)
+    .replace(/"/g, "'")
+    .replace(/[<>\r\n]+/g, ' ')
+    .replace(/<\/human_reply/gi, '</ human_reply')
+    .trim()
+  const c = (context === undefined ? '' : truncateFold(context, MAX_FOLD_CONTEXT))
+    .replace(/"/g, "'")
+    .replace(/[<>\r\n]+/g, ' ')
+    .replace(/<\/human_reply/gi, '</ human_reply')
+    .trim()
+  const a = truncateFold(reply, MAX_FOLD_REPLY).replace(/<\/human_reply/gi, '</ human_reply')
+  return `${originalPrompt}\n\n<human_reply${q ? ` question="${q}"` : ''}${c ? ` context="${c}"` : ''}>\n${a}\n</human_reply>`
+}
+
 interface PostBody {
   member: string
   prompt: string
   projectId?: string
   tweaks?: { provider?: string; member?: Record<string, unknown>; team?: Record<string, unknown> }
+}
+
+/**
+ * Linked follow-up for a replied-to park: the original prompt plus the Q&A
+ * folded in, so the new run sees the answer without sharing the parked run's
+ * scratchpad. Committed to the store first, then created + enqueued to the
+ * interactive lane (a human is waiting on this answer). The provider override
+ * rides along — a pinned provider must not silently revert on resume;
+ * member/team tweaks persist on the store entry but the registry runner takes
+ * only provider today, same as the create route (pre-existing gap, not
+ * something resume may diverge on). A declare failure after the store commit
+ * cancels the follow-up instead of orphaning it queued-forever.
+ */
+async function spawnResumeFollowup(
+  deps: Pick<TaskDeps, 'registry' | 'queue'> & { backend: SessionBackend },
+  args: { sessionId: string; tenantId: string; original: AggregateSession; content: string }
+): Promise<{ followupId: string } | { error: string }> {
+  const { sessionId, tenantId, original, content } = args
+  const followupId = `ses-${randomUUID()}`
+  const followupCorrelationId = `cor-${randomUUID()}`
+  const at = new Date().toISOString()
+  const prompt = foldReplyPrompt(original.task.prompt, original.question?.question ?? '', original.question?.context, content)
+  const resumeProvider = typeof original.tweaks?.provider === 'string' ? original.tweaks.provider : undefined
+  await deps.backend.append({
+    type: 'session.created',
+    sessionId: followupId,
+    correlationId: followupCorrelationId,
+    at,
+    member: original.task.member,
+    prompt,
+    tenantId,
+    ...(original.projectId !== undefined ? { projectId: original.projectId } : {}),
+    ...(original.tweaks !== undefined ? { tweaks: original.tweaks } : {}),
+    resumeOf: sessionId,
+  })
+  try {
+    const created = deps.registry.create({
+      member: original.task.member,
+      prompt,
+      ...(resumeProvider !== undefined ? { provider: resumeProvider } : {}),
+      id: followupId,
+      correlationId: followupCorrelationId,
+    })
+    deps.queue.declareSession(created, { lane: 'interactive' })
+  } catch (err) {
+    try {
+      deps.registry.cancel(followupId)
+    } catch {
+      // registry entry missing — nothing to withdraw
+    }
+    try {
+      await deps.backend.append({
+        type: 'session.cancelled',
+        sessionId: followupId,
+        correlationId: followupCorrelationId,
+        at: new Date().toISOString(),
+      })
+    } catch {
+      // store truth stays queued; it surfaces in listing but never runs
+    }
+    log.error('task resume failed after commit; follow-up cancelled', {
+      sessionId,
+      followupId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return { error: 'resume failed after commit; follow-up cancelled' }
+  }
+  return { followupId }
 }
 
 /** Wire form of the store aggregate — same shape the spec §3 defines. */
@@ -240,6 +342,19 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         }
         const after = await backend.get(sessionId)
         if (!after) return reply.code(404).send({ ok: false, error: 'unknown session' })
+        // the store commit is truth, but live subscribers (dashboard thread,
+        // queue watchers) only move on SSE — fan out like every other route
+        try {
+          deps.sse.broadcaster.emit({
+            eventId: after.version,
+            type: 'session.cancelled',
+            sessionId,
+            correlationId: current.correlationId,
+            at: new Date().toISOString(),
+          })
+        } catch {
+          // best-effort; store is truth
+        }
         return reply.code(202).send({ ok: true, status: 'cancelled', session: sessionToWire(after) })
       } catch (err) {
         if (err instanceof VersionConflictError) continue
@@ -267,31 +382,55 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     async (request, reply) => {
       const tenantCtx = tenantBackendForRequest(request, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const backend = tenantCtx.backend
+      const tenantId = tenantCtx.tenantId!
+      const sessionId = request.params.sessionId
+      const content = request.body.content
+      if (content.trim().length === 0) {
+        return reply.code(400).send({ ok: false, error: 'content must not be blank' })
+      }
+      // the reply is recorded on the parked original, which stays
+      // awaiting_input (still cancellable) — resume spawns a linked follow-up.
+      // Single-reply-per-park: the original parks exactly once, so a second
+      // reply would fork a second follow-up (double LLM spend, lane flood).
+      // Multi-turn Q&A still works — the follow-up can park and ask again.
       const result = await casAppendSessionEvents(deps.sse.broadcaster, {
-        backend: tenantCtx.backend,
-        sessionId: request.params.sessionId,
+        backend,
+        sessionId,
         guard: (current) => {
           if (current.status !== 'awaiting_input') {
             return isTerminal(current.status) ? 'session already terminated' : 'session not awaiting input'
           }
+          if (current.replyCount > 0) return 'session already answered'
           return null
         },
         deltas: (current, at) => [
-          { type: 'session.user_reply', correlationId: current.correlationId, at, reply: request.body.content },
-          // re-queue as running so the diagram keeps growing — next iteration
-          { type: 'session.running', correlationId: current.correlationId, at },
+          { type: 'session.user_reply', correlationId: current.correlationId, at, reply: content },
         ],
         sseEvent: (current, at, version) => ({
           eventId: version,
           type: 'session.user_reply',
-          sessionId: request.params.sessionId,
+          sessionId,
           correlationId: current.correlationId,
           at,
-          reply: request.body.content,
+          reply: content,
         }),
       })
       if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
-      return reply.code(201).send({ ok: true, session: sessionToWire(result.session) })
+      const original = result.session
+      const resumed = await spawnResumeFollowup(deps, {
+        sessionId,
+        tenantId,
+        original,
+        content,
+      })
+      if ('error' in resumed) {
+        return reply.code(500).send({ ok: false, error: resumed.error })
+      }
+      log.info('task resumed', { sessionId, followupId: resumed.followupId, member: original.task.member, tenantId })
+      const followup = await backend.get(resumed.followupId)
+      if (!followup) return reply.code(404).send({ ok: false, error: 'unknown session' })
+      return reply.code(201).send({ ok: true, session: sessionToWire(original), resumedSession: sessionToWire(followup) })
     }
   )
 
@@ -323,7 +462,11 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       const result = await casAppendSessionEvents(deps.sse.broadcaster, {
         backend: tenantCtx.backend,
         sessionId: request.params.sessionId,
-        guard: (current) => (isTerminal(current.status) ? 'session already terminated' : null),
+        guard: (current) => {
+          if (isTerminal(current.status)) return 'session already terminated'
+          if (current.interaction.length >= MAX_SESSION_MESSAGES) return 'message log full'
+          return null
+        },
         deltas: (current, at) => [
           { type: 'session.message', correlationId: current.correlationId, at, message: content },
         ],

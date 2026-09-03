@@ -96,12 +96,12 @@ describe("formatDuration", () => {
 });
 
 describe("withLiveUpdates awaiting_input flow", () => {
-  it("transitions to awaiting_input and sets nextStep/interaction, then queued on user_reply", () => {
-    const afterAwait = withLiveUpdates([session()], [ev("session.awaiting_input", { question: "continue?", member: "atlas" }) as BridgeEvent]);
+  it("transitions to awaiting_input and keeps it on user_reply (linked resume)", () => {
+    const afterAwait = withLiveUpdates([session()], [ev("session.awaiting_input", { question: { questions: [{ label: "continue?" }] }, member: "atlas" }) as BridgeEvent]);
     expect(afterAwait[0].status).toBe("awaiting_input");
     expect((afterAwait[0] as unknown as { nextStep: unknown }).nextStep).toMatchObject({ awaiting_input: true, prompt: "continue?" });
     const afterReply = withLiveUpdates(afterAwait, [ev("session.user_reply", { reply: "yes" }) as BridgeEvent]);
-    expect(afterReply[0].status).toBe("queued");
-    expect((afterReply[0] as unknown as { nextStep: unknown }).nextStep).toBeNull();
+    expect(afterReply[0].status).toBe("awaiting_input");
+    expect((afterReply[0] as unknown as { nextStep: unknown }).nextStep).toMatchObject({ awaiting_input: true, prompt: "continue?" });
   });
 });
