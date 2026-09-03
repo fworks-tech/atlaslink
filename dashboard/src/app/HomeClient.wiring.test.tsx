@@ -291,4 +291,15 @@ describe("HomeClient room wiring", () => {
     render(<HomeClient />);
     expect(hydrateMock).not.toHaveBeenCalled();
   });
+
+  it("Enter submits the chat form", async () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    const input = screen.getByLabelText("Message the room");
+    fireEvent.change(input, { target: { value: "hi all" } });
+    const form = input.closest("form");
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledWith("ses-1", "hi all"));
+  });
 });

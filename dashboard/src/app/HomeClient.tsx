@@ -275,10 +275,10 @@ function HomeInner() {
               {!isTerminal ? (
                 <div className="rounded-xl border border-white/10 bg-surface p-4">
                   <div className="text-sm font-medium text-foreground">Room chat · visible to everyone here</div>
-                  <div className="mt-3 flex gap-2">
+                  <form onSubmit={(e) => { e.preventDefault(); void handleChat(); }} className="mt-3 flex gap-2">
                     <input value={chatContent} onChange={(e) => setChatContent(e.target.value)} placeholder="Message the room…" aria-label="Message the room" className="flex-1 rounded border border-white/10 bg-raised px-3 py-2 text-sm text-foreground placeholder:text-muted" />
-                    <button onClick={handleChat} disabled={chatBusy || !chatContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
-                  </div>
+                    <button type="submit" disabled={chatBusy || !chatContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
+                  </form>
                   {chatError ? <div className="mt-2 text-xs text-red-400">{chatError}</div> : null}
                 </div>
               ) : null}
