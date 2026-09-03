@@ -357,4 +357,16 @@ describe("HomeClient room wiring", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await vi.waitFor(() => expect(screen.getByText(/Chat failed/)).toBeDefined());
   });
+
+  it("shows a sessions load error with retry", async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    sessionsMock.mockReturnValue({ sessions: [], loading: false, error: "boom", refresh: refreshMock, hydrateSession: hydrateMock });
+    eventsMock.mockReturnValue({ events: [] });
+    render(<HomeClient />);
+    expect(screen.getByText(/Couldn't load sessions/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await vi.waitFor(() => expect(refreshMock).toHaveBeenCalled());
+  });
 });

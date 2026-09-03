@@ -274,6 +274,12 @@ function HomeInner() {
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Live Society Diagram</h1>
               <p className="mt-2 text-sm leading-6 text-muted">Atlas holds the sky of sessions. Click any card to inspect reasoning, tools, decisions. {selectedSession?.status === "awaiting_input" ? "Atlas is awaiting your input — reply below." : ""}</p>
             </header>
+            {sessionsError && !selectedSession ? (
+              <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">
+                <span>Couldn&apos;t load sessions ({sessionsError}).</span>
+                <button type="button" onClick={() => void refreshSessions()} className="underline hover:text-red-200">Retry</button>
+              </div>
+            ) : null}
             <div className="space-y-6">
               <ErrorBoundary>
                 <SocietyDiagram selectedSessionId={selectedSessionId} mode={mode} onNodeClick={handleNodeClick} selectedNodeId={selectedNodeId} />
