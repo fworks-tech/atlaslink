@@ -62,7 +62,8 @@ interface RoomClient {
 function sanitizeName(raw: unknown): string {
   if (typeof raw !== 'string') return 'anonymous'
   // display-only: strip control chars, bound length, never trust it further
-  const clean = raw.replace(/[\u0000-\u001f\u007f]/g, '').trim()
+  // match control chars without hex escapes (eslint no-control-regex)
+  const clean = raw.replace(/\p{Cc}/gu, '').trim()
   return clean.length === 0 ? 'anonymous' : clean.slice(0, MAX_ROOM_NAME_LENGTH)
 }
 
@@ -74,6 +75,9 @@ function firstQuery(value: unknown): string | undefined {
 
 export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): void {
   const rooms = new Map<string, Map<string, RoomClient>>()
+  // Registration-time capture: the upgrade check runs after harnesses (and
+  // any env-scoping caller) restore the env, so ambient reads would miss it.
+  const expectedToken = process.env.ATLASLINK_API_TOKEN
 
   const rosterOf = (sessionId: string): RoomMember[] =>
     [...(rooms.get(sessionId)?.values() ?? [])].map((c) => ({ id: c.id, name: c.name, joinedAt: c.joinedAt }))
@@ -113,7 +117,7 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): void {
         // Browsers cannot set upgrade headers: same bearer via ?token=.
         // The preHandler gate may already have enforced the header — this
         // check is idempotent with it, never weaker.
-        if (!checkBearer(request.headers.authorization, firstQuery(query.token))) {
+        if (!checkBearer(request.headers.authorization, firstQuery(query.token), expectedToken)) {
           socket.close(ROOM_CLOSE_UNAUTHORIZED, 'unauthorized')
           return
         }
