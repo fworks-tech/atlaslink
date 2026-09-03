@@ -95,6 +95,15 @@ test('rehydrate projects session.steer as a user turn without changing status', 
   assert.equal(s.interaction.at(-1)?.content, 'prefer groq')
 })
 
+test('rehydrate applies session.steer as a prompt rewrite on top of the history', () => {
+  const steer: SessionEvent = { type: 'session.steer', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:01Z', message: 'use groq, not openai' }
+  const s = rehydrate([created, steer])
+  assert.ok(s)
+  assert.equal(s.status, 'queued')
+  assert.equal(s.task.prompt, 'use groq, not openai')
+  assert.equal(s.interaction.at(-1)?.content, 'use groq, not openai')
+})
+
 test('rehydrate projects the single parked question and carries resumeOf onto the follow-up', () => {
   const awaiting: SessionEvent = {
     type: 'session.awaiting_input',

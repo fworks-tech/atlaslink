@@ -327,7 +327,16 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         return reply.code(409).send({ ok: false, error: 'session already terminated' })
       }
       if (current.status === 'running') {
-        // M3 best-effort contract (spec §3): acknowledge now, cancel lands with the runtime
+        // M3 best-effort contract (spec §3): acknowledge now, cancel lands with the runtime.
+        // M5: the abort is real — runSession races the in-flight call against
+        // the session controller and finalizes CANCELLED + mirrors it, so the
+        // 202 only means "finalization is async", not "maybe".
+        try {
+          deps.registry.abort(sessionId)
+        } catch {
+          // no live run tracked — the ack below still holds; a concurrent
+          // finalize owns the outcome
+        }
         return reply.code(202).send({ ok: true, status: 'running', cancel: 'best-effort', session: sessionToWire(current) })
       }
       try {
@@ -431,6 +440,125 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       const followup = await backend.get(resumed.followupId)
       if (!followup) return reply.code(404).send({ ok: false, error: 'unknown session' })
       return reply.code(201).send({ ok: true, session: sessionToWire(original), resumedSession: sessionToWire(followup) })
+    }
+  )
+
+  // Human steer / interrupt: queued → the mission is rewritten before the run
+  // starts (registry reprompt + CAS session.steer, rollback on CAS failure);
+  // running → the new direction is recorded as session.user_reply and the
+  // in-flight run is aborted (runSession finalizes CANCELLED, slot freed).
+  // awaiting_input takes a reply, not a steer — 409 points there.
+  app.post<{ Params: { sessionId: string }; Body: { content: string } }>(
+    '/tasks/:sessionId/steer',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['content'],
+          properties: {
+            content: { type: 'string', minLength: 1, maxLength: 10000 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const tenantCtx = tenantBackendForRequest(request, deps.backend)
+      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const backend = tenantCtx.backend
+      const sessionId = request.params.sessionId
+      const content = request.body.content
+      if (content.trim().length === 0) {
+        return reply.code(400).send({ ok: false, error: 'content must not be blank' })
+      }
+      const current = await backend.get(sessionId)
+      if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
+      if (isTerminal(current.status)) {
+        return reply.code(409).send({ ok: false, error: 'session already terminated' })
+      }
+      if (current.status === 'awaiting_input') {
+        return reply.code(409).send({ ok: false, error: 'session awaiting input; reply instead of steering' })
+      }
+      if (current.status === 'queued') {
+        // the pump reads the registry copy at start, so the registry moves
+        // first and the store CAS commits second — a CAS failure rolls the
+        // registry back rather than diverging execution from history
+        const reg = deps.registry.get(sessionId)
+        if (!reg || reg.status !== 'queued') {
+          return reply.code(409).send({ ok: false, error: 'session already started' })
+        }
+        const previousPrompt = reg.task.prompt
+        try {
+          deps.registry.reprompt(sessionId, content)
+        } catch {
+          return reply.code(409).send({ ok: false, error: 'session already started' })
+        }
+        const result = await casAppendSessionEvents(deps.sse.broadcaster, {
+          backend,
+          sessionId,
+          guard: (fresh) => {
+            if (isTerminal(fresh.status)) return 'session already terminated'
+            if (fresh.status !== 'queued') return 'session already started'
+            return null
+          },
+          deltas: (fresh, at) => [
+            { type: 'session.steer', correlationId: fresh.correlationId, at, message: content },
+          ],
+          sseEvent: (fresh, at, version) => ({
+            eventId: version,
+            type: 'session.steer',
+            sessionId,
+            correlationId: fresh.correlationId,
+            at,
+            message: content,
+          }),
+        })
+        if (result.code !== 201) {
+          try {
+            deps.registry.reprompt(sessionId, previousPrompt)
+          } catch {
+            // still queued with the new prompt while history shows the old —
+            // surfaces on the next read; the run itself is unaffected
+          }
+          return reply.code(result.code).send({ ok: false, error: result.error })
+        }
+        return reply.code(201).send({ ok: true, session: sessionToWire(result.session) })
+      }
+      if (current.status === 'running') {
+        // abort first, record second: firing the controller is synchronous and
+        // idempotent, so a run finalizing in the same tick either gets
+        // interrupted or fails the abort — never a user_reply on a corpse.
+        // The registry is execution truth here; a stale store read must not
+        // resurrect anything.
+        if (!deps.registry.abort(sessionId)) {
+          return reply.code(409).send({ ok: false, error: 'session not running' })
+        }
+        const result = await casAppendSessionEvents(deps.sse.broadcaster, {
+          backend,
+          sessionId,
+          guard: (fresh) => {
+            if (isTerminal(fresh.status)) return 'session already terminated'
+            if (fresh.status !== 'running') return 'session not running'
+            return null
+          },
+          deltas: (fresh, at) => [
+            { type: 'session.user_reply', correlationId: fresh.correlationId, at, reply: content },
+          ],
+          sseEvent: (fresh, at, version) => ({
+            eventId: version,
+            type: 'session.user_reply',
+            sessionId,
+            correlationId: fresh.correlationId,
+            at,
+            reply: content,
+          }),
+        })
+        // the abort already fired even on CAS failure — the run still
+        // finalizes CANCELLED; only the new direction failed to record
+        if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
+        return reply.code(201).send({ ok: true, session: sessionToWire(result.session), interrupted: true })
+      }
+      return reply.code(409).send({ ok: false, error: 'session cannot be steered from its current state' })
     }
   )
 

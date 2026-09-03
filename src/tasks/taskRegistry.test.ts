@@ -107,11 +107,52 @@ test('cancel accepts parked sessions so parked-forever stays cancellable', () =>
   assert.equal(cancelled.status, SessionStatus.CANCELLED)
 })
 
-test('cancel still rejects running and terminal sessions', () => {
+test('cancel accepts running sessions so the abort path can finalize an interrupt', () => {
   const registry = new TaskRegistry()
   const session = registry.create({ member: 'm', prompt: 'p' })
   registry.start(session.id)
-  assert.throws(() => registry.cancel(session.id), /cannot cancel session in status "running"/)
+
+  const cancelled = registry.cancel(session.id)
+
+  assert.equal(cancelled.status, SessionStatus.CANCELLED)
+  assert.ok(cancelled.finishedAt)
+})
+
+test('cancel still rejects terminal sessions', () => {
+  const registry = new TaskRegistry()
+  const session = registry.create({ member: 'm', prompt: 'p' })
+  registry.start(session.id)
   registry.succeed(session.id, { output: 'ok' })
   assert.throws(() => registry.cancel(session.id), /cannot cancel session in status "succeeded"/)
+})
+
+test('reprompt rewrites the prompt of a queued session only', () => {
+  const registry = new TaskRegistry()
+  const session = registry.create({ member: 'm', prompt: 'old mission' })
+
+  assert.equal(registry.reprompt(session.id, 'new mission').task.prompt, 'new mission')
+  registry.start(session.id)
+  assert.throws(() => registry.reprompt(session.id, 'too late'), /cannot reprompt session in status "running"/)
+})
+
+test('abort fires the attached controller of a live run, false otherwise', () => {
+  const registry = new TaskRegistry()
+  const session = registry.create({ member: 'm', prompt: 'p' })
+
+  // never started: no live run to interrupt
+  assert.equal(registry.abort(session.id), false)
+  assert.equal(registry.abort('ses-missing'), false)
+
+  registry.start(session.id)
+  // running but untracked (no controller attached): nothing to fire
+  assert.equal(registry.abort(session.id), false)
+
+  const controller = new AbortController()
+  registry.attachAbort(session.id, controller)
+  assert.equal(registry.abort(session.id), true)
+  assert.equal(controller.signal.aborted, true)
+
+  registry.untrackAbort(session.id)
+  registry.cancel(session.id)
+  assert.equal(registry.abort(session.id), false)
 })

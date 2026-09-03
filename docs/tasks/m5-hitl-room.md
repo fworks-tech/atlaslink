@@ -5,6 +5,14 @@ its parent. Stages 1–5 merge without closing #76; only the final stage
 closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 `71fadc1`; code stages stack off that branch.)
 
+## PR stack (all `Part of #76`, merge top-down; nothing merged yet)
+- #77 `feat/76-hitl-message-log-api` → `main` (CI full green)
+- #78 `feat/76-hitl-lanes` → stage-1 branch (Vercel only; repo CI runs on PRs to `main`)
+- #79 `feat/76-hitl-ask-park` → stage-2 branch (needs agenthood #496 on `main` before its CI goes green)
+- #80 `feat/76-hitl-steer` → stage-3 branch (same agenthood dependency)
+- agenthood: `feat/issue-496-ask-human-park@099d4b0` (ask_human tool + signal + redacted emit; no PR — merge first)
+- caveat: `npm run lint` fails on the stage-2/3 tips (prefer-const fixed only at stack tip `2cddbd9`); self-heals as the stack merges
+
 ## Stage 1 — message log API (off `feat/issue-76-hitl-room`) — DONE on `feat/76-hitl-message-log-api`
 - [x] feat(session): add `session.message` + `session.steer` events and `interaction[]` projection in `rehydrate` (+ eventLogBackend allowlist, Postgres status-preserving projection + ranked-CTE exclusion)
 - [x] feat(api): add `POST /tasks/:sessionId/message` (anytime chat, CAS, SSE fan-out) + tests
@@ -27,11 +35,11 @@ closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 - decisions locked: cooperative agenthood change; fx-style question object (no string back-compat); linked-session resume; reply double-delta fixed in-branch
 - accepted residuals: no per-route reply throttle (global rate limit + single-reply bound); no resume-chain depth cap; store keeps raw human text (escape-at-render contract)
 
-## Stage 4 — steer / interrupt (`feat/76-hitl-steer` off stage 3)
-- [ ] feat(api): `POST /tasks/:sessionId/steer` (queued CAS rewrite; running interrupt flag)
-- [ ] feat(runner): honor interrupt flag between steps; `AbortSignal` into `runMemberTask`; emit terminal
-- [ ] test(e2e): steer queued vs running, interrupt running to terminal
-- [ ] feat(ui): interrupt button + inline steer box during `running`
+## Stage 4 — steer / interrupt (`feat/76-hitl-steer` off stage 3) — DONE- [x] feat(api): `POST /tasks/:sessionId/steer` — queued → registry reprompt + CAS `session.steer` (rehydrate rewrites prompt) with rollback; running → abort-first + CAS `user_reply`, 201 `interrupted: true`; awaiting_input/terminal 409s
+- [x] feat(runner): registry `abort`/`attachAbort`/`untrackAbort` + `cancel` from RUNNING; runSession abort race finalizes CANCELLED, suppresses orphan finalize; cancel-running fires abort; seam mirrors + pump emits `session.cancelled`
+- [x] test: steer queued rewrite (store+registry+SSE+re-steer), steer running interrupt, all 409s, cancel fires abort, abort-race + late-signal suppression, reprompt/abort registry units, steer rehydrate, queue cancelled close-out
+- deviation: no step-polling / agenthood `run.interrupted` — single-shot runner + SDK without signal support; orphaned provider call finishes in background, output discarded; true provider abort is a follow-up
+- deferred: interrupt button + inline steer box → Stage 5 UI
 
 ## Stage 5 — room transport (`feat/76-hitl-room-ws` off stage 4)
 - [ ] feat(ws): `/sessions/:id/room` channel (presence, multi-human fan-out, approval inbox; no typing indicators)

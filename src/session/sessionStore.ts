@@ -123,7 +123,13 @@ export function rehydrate(events: SessionEvent[]): Session | null {
         session.interaction.push({ role: 'user', at: e.at, content: e.reply ?? '' })
         break
       case 'session.message':
+        session.interaction.push({ role: 'user', at: e.at, content: e.message ?? '' })
+        break
       case 'session.steer':
+        // steer rewrites the mission: the aggregate prompt moves with the
+        // event (queued sessions run the new text; running ones are
+        // interrupted alongside), and the history keeps the human's words
+        if (e.message) session.task.prompt = e.message
         session.interaction.push({ role: 'user', at: e.at, content: e.message ?? '' })
         break
     }

@@ -90,12 +90,22 @@ reviewable, stacked branches):
    decision:
    **wait forever**; a parked session holds no pump slot and is always
    cancellable (registry `cancel` accepts `PARKED`).
-4. **Human steer / interrupt.** `POST /tasks/:sessionId/steer`: queued →
-   CAS prompt rewrite; running → append `session.user_reply` + interrupt flag
-   the runner polls between steps. Harden `cancel` (`src/api/tasks.ts:154`)
-   with `AbortSignal` into `runMemberTask`; runner emits terminal status
-   (new `run.interrupted` event on the agenthood side). Dashboard gets an
-   interrupt button (Esc-equivalent) + inline steer box during `running`.
+4. **Human steer / interrupt — DONE.** `POST /tasks/:sessionId/steer`:
+   queued → registry reprompt + CAS `session.steer` (which rewrites
+   `task.prompt` in rehydrate), registry rollback on CAS failure; running →
+   abort-first then CAS `session.user_reply`, 201 with `interrupted: true`;
+   awaiting_input 409s toward reply; terminal 409s. `cancel` on a running
+   session now fires the same abort (202 stays async-ack). Deviation from the
+   draft: no step-polling and no `run.interrupted` agenthood event — the
+   runner is single-shot and the SDK provider path takes no signal, so
+   `runSession` races the in-flight call against a per-run AbortController
+   owned by the registry (`attachAbort`/`abort`/`untrackAbort`, abort only
+   fires on a tracked RUNNING run). The abort win finalizes CANCELLED and
+   frees the slot at once; the orphaned provider call completes in the
+   background with its output discarded and late park/succeed/fail
+   suppressed. Seam mirrors `session.cancelled`; pump emits it to close
+   `started`. Follow-up (not this stage): true provider-side abort.
+   Dashboard interrupt button + inline steer box deferred to Stage 5 UI.
 5. **Room transport.** WS channel `/sessions/:id/room` with presence,
    multi-human fan-out, and approval inbox (fx ctrl+X equivalent). Typing
    indicators are deferred polish (see Out of Scope). SSE stays
