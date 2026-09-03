@@ -26,4 +26,11 @@ describe("SessionThread presence", () => {
     render(<SessionThread session={session()} events={[]} members={[]} />);
     expect(screen.queryByText(/here/)).toBeNull();
   });
+
+  it("renders turn content as markdown", () => {
+    const s = session();
+    s.interaction = [{ role: "atlas", content: "done — see **summary**", at: "2026-09-03T20:00:00.000Z" } as unknown as NonNullable<Session["interaction"]>[number]];
+    render(<SessionThread session={s} events={[]} members={[]} />);
+    expect(screen.getByText("summary").tagName).toBe("STRONG");
+  });
 });

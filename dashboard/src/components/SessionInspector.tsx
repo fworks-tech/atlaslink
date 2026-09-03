@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { BridgeEvent, Session } from "@/lib/types";
 import { artifactsFor } from "@/lib/runProjection";
 import { pairTools } from "@/lib/eventPairing";
+import { Markdown } from "@/components/Markdown";
 
 export interface SelectedNode {
   id: string;
@@ -38,7 +39,7 @@ function NodeDetail({ node }: { node: SelectedNode }) {
     return (
       <div className="space-y-1.5">
         <div className="text-xs text-muted">step {String(d.step ?? first.step ?? 0)} · {str(d.sessionId).slice(0, 14)}…</div>
-        <div className="rounded bg-raised p-2 text-xs leading-snug break-words whitespace-pre-wrap">{content.slice(0, 2000)}</div>
+        <Markdown text={content} className="rounded bg-raised p-2 text-xs leading-snug" />
         {summary && <div className="text-xs text-muted">↳ {summary.slice(0, 500)}</div>}
         {events.length > 1 && <div className="text-[11px] text-muted">+{events.length - 1} more event(s) in this step</div>}
       </div>
@@ -53,7 +54,7 @@ function NodeDetail({ node }: { node: SelectedNode }) {
         <div className="text-xs font-medium text-foreground">{str(called.name, "tool")}</div>
         <div className="text-[11px] break-words text-muted">args: {JSON.stringify(called.args ?? called.arguments ?? "").slice(0, 500)}</div>
         {result ? (
-          <div className="mt-1 rounded bg-ok/5 p-1.5 text-xs break-words whitespace-pre-wrap">↳ {str(result.output, str(result.result, JSON.stringify(result).slice(0, 500)))}</div>
+          <Markdown text={str(result.output, str(result.result, JSON.stringify(result)))} className="mt-1 rounded bg-ok/5 p-1.5 text-xs" />
         ) : (
           <div className="text-xs text-amber-300">running…</div>
         )}
@@ -66,7 +67,7 @@ function NodeDetail({ node }: { node: SelectedNode }) {
     return (
       <div className="space-y-1.5">
         <div className="text-xs text-muted">decision · {str(event.decisionId, str(d.sessionId, "")).slice(0, 40)}</div>
-        <div className="rounded border border-violet-500/20 bg-violet-500/10 p-2 text-xs break-words whitespace-pre-wrap">{outcome.slice(0, 1000)}</div>
+        <Markdown text={outcome} className="rounded border border-violet-500/20 bg-violet-500/10 p-2 text-xs" />
       </div>
     );
   }
@@ -175,7 +176,7 @@ export function SessionInspector({
                 <div className="font-medium text-foreground">{session.task.prompt}</div>
                 <div className="font-mono text-xs text-muted">{session.sessionId}</div>
                 <div className="text-xs text-muted">status: {session.status} · {session.projectId ?? "no project"}</div>
-                {session.output && <div className="rounded bg-raised p-2 text-xs whitespace-pre-wrap">{session.output}</div>}
+                {session.output && <Markdown text={session.output} className="rounded bg-raised p-2 text-xs" />}
                 {session.error && <div className="rounded bg-danger/10 p-2 text-xs text-danger">{session.error}</div>}
               </div>
             )}
@@ -187,7 +188,7 @@ export function SessionInspector({
                   artifacts.reasoning.map((e, i) => (
                     <div key={i} className="rounded border border-white/5 bg-raised/40 p-2">
                       <div className="text-[11px] text-muted">step {String((e as Record<string, unknown>).step ?? i)} · {String(e.member ?? "")}</div>
-                      <div className="mt-1 text-xs leading-snug whitespace-pre-wrap">{String((e as Record<string, unknown>).content ?? (e as Record<string, unknown>).text ?? JSON.stringify(e))}</div>
+                      <Markdown text={String((e as Record<string, unknown>).content ?? (e as Record<string, unknown>).text ?? JSON.stringify(e))} className="mt-1 text-xs leading-snug" />
                       {typeof (e as Record<string, unknown>).summary === "string" && (
                         <details className="mt-1">
                           <summary className="cursor-pointer text-xs text-accent">summary</summary>
@@ -208,7 +209,7 @@ export function SessionInspector({
                     <div key={i} className="rounded border border-white/5 bg-raised/40 p-2">
                       <div className="text-xs font-medium text-foreground">{String(p.called.name ?? "tool")}</div>
                       <div className="text-[11px] text-muted">args: {JSON.stringify(p.called.args ?? p.called.arguments ?? "").slice(0, 200)}</div>
-                      {p.result ? <div className="mt-1 text-xs whitespace-pre-wrap bg-ok/5 p-1.5 rounded">↳ {String((p.result as Record<string, unknown>).output ?? (p.result as Record<string, unknown>).result ?? JSON.stringify(p.result).slice(0, 300))}</div> : <div className="text-xs text-amber-300">running…</div>}
+                      {p.result ? <Markdown text={String((p.result as Record<string, unknown>).output ?? (p.result as Record<string, unknown>).result ?? JSON.stringify(p.result))} className="mt-1 rounded bg-ok/5 p-1.5 text-xs" /> : <div className="text-xs text-amber-300">running…</div>}
                     </div>
                   ))
                 )}
