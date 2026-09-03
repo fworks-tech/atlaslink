@@ -31,13 +31,37 @@ const { version } = JSON.parse(readFileSync(new URL('../package.json', import.me
 /**
  * The runner hands us `unknown` (custom AppLike fakes, future runners) — a
  * malformed question mirrors without it rather than crashing the seam or
- * storing an unusable payload the projection would choke on.
+ * storing an unusable payload the projection would choke on. Caps mirror the
+ * agenthood tool schema so a compromised runner cannot park an unbounded
+ * question that is stored raw and fanned out on SSE.
  */
+export const MAX_SEAM_QUESTIONS = 10
+export const MAX_SEAM_LABEL_LENGTH = 500
+export const MAX_SEAM_OPTIONS = 10
+export const MAX_SEAM_OPTION_LENGTH = 200
+
 export function asAskHumanQuestion(value: unknown): AskHumanQuestion | undefined {
   if (typeof value !== 'object' || value === null) return undefined
   const questions = (value as { questions?: unknown }).questions
-  if (!Array.isArray(questions) || questions.length === 0) return undefined
-  if (questions.some((q) => typeof (q as { label?: unknown })?.label !== 'string')) return undefined
+  if (!Array.isArray(questions) || questions.length === 0 || questions.length > MAX_SEAM_QUESTIONS) {
+    return undefined
+  }
+  for (const q of questions) {
+    const label = (q as { label?: unknown } | null)?.label
+    if (typeof label !== 'string' || label.length === 0 || label.length > MAX_SEAM_LABEL_LENGTH) {
+      return undefined
+    }
+    const options = (q as { options?: unknown } | null)?.options
+    if (options !== undefined) {
+      if (
+        !Array.isArray(options) ||
+        options.length > MAX_SEAM_OPTIONS ||
+        options.some((o) => typeof o !== 'string' || o.length === 0 || o.length > MAX_SEAM_OPTION_LENGTH)
+      ) {
+        return undefined
+      }
+    }
+  }
   return value as AskHumanQuestion
 }
 

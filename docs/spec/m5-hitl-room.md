@@ -73,12 +73,21 @@ reviewable, stacked branches):
    created + enqueued to the interactive lane. Reply rules: **single reply per
    park** (second reply 409s — multi-turn works via the follow-up parking and
    asking again); the fold is `<human_reply question="…">…</human_reply>` with
-   length caps; provider/team `tweaks` ride along; a declare failure after the
+   length caps; the provider override rides into the resumed run while the full
+   `tweaks` object persists on the follow-up store entry (member/team tweaks
+   are stored but not consumed by the runner — pre-existing gap shared with
+   the create route, out of scope); a declare failure after the
    follow-up commit cancels the follow-up instead of orphaning it. The seam
    validates the fx shape before mirroring and fans `session.awaiting_input`
    out live on SSE (store stays truth). Question size caps live in the tool
    schema + `execute` (10 questions, 500-char labels); park emits are redacted
-   like any model text. Park policy per decision:
+   like any model text. Society-review hardening: the fold neutralizes
+   `</human_reply` in reply and labels and strips markup/newlines from the
+   attribute half; the seam enforces the same caps (10/500/10×200) so a
+   compromised runner cannot park unbounded input; the chat log is bounded at
+   500 messages; cancel fans out `session.cancelled` SSE; the pump emits
+   `session.parked` so queue watchers see the slot release. Park policy per
+   decision:
    **wait forever**; a parked session holds no pump slot and is always
    cancellable (registry `cancel` accepts `PARKED`).
 4. **Human steer / interrupt.** `POST /tasks/:sessionId/steer`: queued →

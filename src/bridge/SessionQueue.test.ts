@@ -590,7 +590,7 @@ test('cancelled standard is skipped without resetting the bound', async () => {
   }
 })
 
-test('a parked worker releases the slot: drain continues with no terminal emit', async () => {
+test('a parked worker releases the slot: drain continues, started closed by session.parked', async () => {
   const order: string[] = []
   const { dir, queue, seen } = await openQueue(
     {
@@ -603,13 +603,15 @@ test('a parked worker releases the slot: drain continues with no terminal emit',
   )
   try {
     // p1 parks mid-run: its runner returns (slot free) and the registry will
-    // read PARKED — the pump must not emit a terminal event, just continue
+    // read PARKED — the pump closes the started event with session.parked so
+    // queue watchers never see it running-forever, then continues draining
     queue.declareSession({ id: 'p1', correlationId: 'c-p1', task: { member: 'm' } })
     queue.declareSession({ id: 's2', correlationId: 'c-s2', task: { member: 'm' } })
     await waitFor(() => order.length === 2, 'both sessions to run')
 
     assert.deepEqual(order, ['p1', 's2'])
     assert.ok(seen.some((e) => e.type === 'session.started' && e.sessionId === 'p1'))
+    assert.ok(seen.some((e) => e.type === 'session.parked' && e.sessionId === 'p1'))
     assert.ok(!seen.some((e) => e.sessionId === 'p1' && (e.type === 'session.succeeded' || e.type === 'session.failed')))
     assert.ok(seen.some((e) => e.type === 'session.succeeded' && e.sessionId === 's2'))
   } finally {

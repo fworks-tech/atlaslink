@@ -5,7 +5,7 @@ import { EventLogStore } from './bridge/EventLogStore'
 import { EventBroadcaster } from './bridge/EventBroadcaster'
 import { SessionQueue } from './bridge/SessionQueue'
 import { SseHandler, formatSse } from './bridge/sseEndpoint'
-import { createAppServer, asAskHumanQuestion } from './server'
+import { createAppServer, asAskHumanQuestion, MAX_SEAM_LABEL_LENGTH, MAX_SEAM_OPTIONS, MAX_SEAM_OPTION_LENGTH, MAX_SEAM_QUESTIONS } from './server'
 import { TaskRegistry } from './tasks/taskRegistry'
 import { log as logger } from './log'
 import { tmpDataDir, runEnv, startServer, collectStream, cleanup } from './test/serverHarness'
@@ -267,4 +267,25 @@ test('asAskHumanQuestion accepts fx questions and rejects everything else', () =
   assert.equal(asAskHumanQuestion('continue?'), undefined)
   assert.equal(asAskHumanQuestion({ questions: [] }), undefined)
   assert.equal(asAskHumanQuestion({ questions: [{ description: 'no label' }] }), undefined)
+  // caps mirror the tool schema — a compromised runner cannot park unbounded input
+  assert.equal(asAskHumanQuestion({ questions: [{ label: '' }] }), undefined)
+  assert.equal(
+    asAskHumanQuestion({ questions: [{ label: 'L'.repeat(MAX_SEAM_LABEL_LENGTH + 1) }] }),
+    undefined
+  )
+  assert.equal(
+    asAskHumanQuestion({ questions: Array.from({ length: MAX_SEAM_QUESTIONS + 1 }, () => ({ label: 'q' })) }),
+    undefined
+  )
+  assert.equal(asAskHumanQuestion({ questions: [{ label: 'q', options: 'yes' }] }), undefined)
+  assert.equal(
+    asAskHumanQuestion({
+      questions: [{ label: 'q', options: Array.from({ length: MAX_SEAM_OPTIONS + 1 }, () => 'o') }],
+    }),
+    undefined
+  )
+  assert.equal(
+    asAskHumanQuestion({ questions: [{ label: 'q', options: ['O'.repeat(MAX_SEAM_OPTION_LENGTH + 1)] }] }),
+    undefined
+  )
 })
