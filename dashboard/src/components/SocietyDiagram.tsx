@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -41,10 +41,12 @@ export function SocietyDiagram({
   selectedSessionId,
   mode = "full",
   onNodeClick,
+  selectedNodeId,
 }: {
   selectedSessionId: string;
   mode?: GraphMode;
   onNodeClick?: (nodeId: string, type: string, data: unknown) => void;
+  selectedNodeId?: string;
 }) {
   const { sessions, loading } = useSessions();
   const { events } = useEvents();
@@ -125,6 +127,20 @@ export function SocietyDiagram({
   useEffect(() => {
     setEdges(nextEdges);
   }, [nextEdges, setEdges]);
+
+  // Deep-link hydration: when ?node= names a node that exists in the built
+  // graph, surface its payload via onNodeClick once per id so reload restores
+  // the same inspector detail without requiring a second click. Depends on the
+  // memoised projection (not live node state) so drags/selections don't retrigger.
+  const hydratedRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!selectedNodeId || !onNodeClick || hydratedRef.current.has(selectedNodeId)) return;
+    const match = nextNodes.find((n) => n.id === selectedNodeId);
+    if (match) {
+      hydratedRef.current.add(selectedNodeId);
+      onNodeClick(match.id, match.type ?? "unknown", match.data);
+    }
+  }, [selectedNodeId, nextNodes, onNodeClick]);
 
   if (loading) {
     return <p className="py-12 text-center text-sm text-muted">Loading diagram…</p>;

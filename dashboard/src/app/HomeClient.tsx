@@ -47,7 +47,10 @@ function HomeInner() {
       params.set("session", id);
       if (projectOfSession) params.set("project", projectOfSession);
       params.delete("q");
+      // The inspector shows another session's node payload otherwise.
+      params.delete("node");
       router.push(`?${params.toString()}`);
+      setInspectorNode(null);
       setMobileSidebarOpen(false);
     },
     [router, searchParams, sessions]
@@ -73,6 +76,13 @@ function HomeInner() {
     },
     [router, searchParams]
   );
+
+  const handleCloseInspector = useCallback(() => {
+    setInspectorNode(null);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("node");
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }, [router, searchParams]);
 
   const handleReply = useCallback(async () => {
     if (!selectedSessionId || !replyContent.trim()) return;
@@ -178,7 +188,7 @@ function HomeInner() {
             </header>
             <div className="space-y-6">
               <ErrorBoundary>
-                <SocietyDiagram selectedSessionId={selectedSessionId} mode={mode} onNodeClick={handleNodeClick} />
+                <SocietyDiagram selectedSessionId={selectedSessionId} mode={mode} onNodeClick={handleNodeClick} selectedNodeId={selectedNodeId} />
               </ErrorBoundary>
               <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
                 <SessionList onSelect={handleSelectSession} />
@@ -202,7 +212,7 @@ function HomeInner() {
                 </div>
               ) : null}
             </div>
-            <SessionInspector open={Boolean(inspectorNode)} onClose={() => setInspectorNode(null)} session={selectedSession} events={events} />
+            <SessionInspector open={Boolean(inspectorNode)} onClose={handleCloseInspector} session={selectedSession} events={events} selectedNode={inspectorNode} />
           </div>
         ) : (
           <ErrorBoundary>
