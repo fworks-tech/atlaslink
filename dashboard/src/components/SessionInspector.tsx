@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { BridgeEvent, Session } from "@/lib/types";
 import { artifactsFor } from "@/lib/runProjection";
 import { pairTools } from "@/lib/eventPairing";
@@ -17,6 +17,15 @@ function asRecord(v: unknown): Record<string, unknown> {
 
 function str(v: unknown, fallback = ""): string {
   return typeof v === "string" ? v : fallback;
+}
+
+type InspectorTab = "overview" | "reasoning" | "tools" | "decisions";
+
+function tabForNodeType(type: string): InspectorTab {
+  if (type === "reasoning") return "reasoning";
+  if (type === "tool") return "tools";
+  if (type === "decision") return "decisions";
+  return "overview";
 }
 
 function NodeDetail({ node }: { node: SelectedNode }) {
@@ -96,26 +105,27 @@ export function SessionInspector({
   events: BridgeEvent[];
   selectedNode?: SelectedNode | null;
 }) {
-  const [tab, setTab] = useState<"overview" | "reasoning" | "tools" | "decisions">("overview");
+  const [tab, setTab] = useState<InspectorTab>("overview");
   const [lastAutoId, setLastAutoId] = useState<string | null>(null);
   const artifacts = useMemo(() => (session ? artifactsFor(session.correlationId, events) : null), [session, events]);
 
-  // Auto-select the relevant tab when a new node is clicked; manual tab
-  // switches are preserved until the next node selection. Clearing the
-  // selection resets the latch so reopening the same node auto-switches again.
-  useEffect(() => {
-    if (!selectedNode) {
+  // Auto-select the relevant tab on a new node selection; manual choices win
+  // until the next selection. Derived during render (React's
+  // "adjust state during render" pattern) — deliberately not in an effect so
+  // no cascading render occurs. Clearing the selection resets the latch so
+  // reopening the same node auto-switches again.
+  if (!selectedNode) {
+    if (lastAutoId !== null) {
       setLastAutoId(null);
-      return;
     }
-    if (selectedNode.id !== lastAutoId) {
-      setLastAutoId(selectedNode.id);
-      if (selectedNode.type === "reasoning") setTab("reasoning");
-      else if (selectedNode.type === "tool") setTab("tools");
-      else if (selectedNode.type === "decision") setTab("decisions");
-      else setTab("overview");
-    }
-  }, [selectedNode, lastAutoId]);
+  } else if (selectedNode.id !== lastAutoId) {
+    setLastAutoId(selectedNode.id);
+    setTab(tabForNodeType(selectedNode.type));
+  }
+  const activeTab = tab;
+  const handleTab = (t: InspectorTab) => {
+    setTab(t);
+  };
 
   if (!open) return null;
   return (
@@ -150,15 +160,15 @@ export function SessionInspector({
             {(["overview", "reasoning", "tools", "decisions"] as const).map((t) => (
               <button
                 key={t}
-                onClick={() => setTab(t)}
-                className={`rounded px-3 py-1.5 text-xs capitalize ${tab === t ? "bg-raised text-foreground" : "text-muted hover:text-foreground"}`}
+                onClick={() => handleTab(t)}
+                className={`rounded px-3 py-1.5 text-xs capitalize ${activeTab === t ? "bg-raised text-foreground" : "text-muted hover:text-foreground"}`}
               >
                 {t}
               </button>
             ))}
           </div>
           <div className="flex-1 overflow-auto p-4 text-sm">
-            {tab === "overview" && (
+            {activeTab === "overview" && (
               <div className="space-y-2">
                 <div className="font-medium text-foreground">{session.task.prompt}</div>
                 <div className="font-mono text-xs text-muted">{session.sessionId}</div>
@@ -167,7 +177,7 @@ export function SessionInspector({
                 {session.error && <div className="rounded bg-danger/10 p-2 text-xs text-danger">{session.error}</div>}
               </div>
             )}
-            {tab === "reasoning" && (
+            {activeTab === "reasoning" && (
               <div className="space-y-2">
                 {!artifacts || artifacts.reasoning.length === 0 ? (
                   <div className="text-xs text-muted">No reasoning yet — mediator has not streamed.</div>
@@ -187,7 +197,7 @@ export function SessionInspector({
                 )}
               </div>
             )}
-            {tab === "tools" && (
+            {activeTab === "tools" && (
               <div className="space-y-2">
                 {pairTools(events.filter((e) => e.correlationId === session.correlationId)).length === 0 ? (
                   <div className="text-xs text-muted">No tool calls yet.</div>
@@ -202,7 +212,7 @@ export function SessionInspector({
                 )}
               </div>
             )}
-            {tab === "decisions" && (
+            {activeTab === "decisions" && (
               <div className="space-y-2">
                 {!artifacts || artifacts.decisions.length === 0 ? <div className="text-xs text-muted">No decisions recorded.</div> : artifacts.decisions.map((e, i) => (
                   <div key={i} className="rounded border border-violet-500/20 bg-violet-500/10 p-2 text-xs">{JSON.stringify(e).slice(0, 300)}</div>
