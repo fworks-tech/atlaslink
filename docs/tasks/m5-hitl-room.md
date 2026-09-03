@@ -5,10 +5,11 @@ its parent. Stages 1–5 merge without closing #76; only the final stage
 closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 `71fadc1`; code stages stack off that branch.)
 
-## Stage 1 — message log API (off `feat/issue-76-hitl-room`)
-- [ ] feat(session): add `session.message` + `session.steer` events and `interaction[]` projection in `rehydrate`
-- [ ] feat(api): add `POST /tasks/:id/message` (anytime chat, CAS, SSE fan-out) + tests
-- [ ] test(api): unit + integration tests for message ingress, tenant isolation, 409/404 paths
+## Stage 1 — message log API (off `feat/issue-76-hitl-room`) — DONE on `feat/76-hitl-message-log-api`
+- [x] feat(session): add `session.message` + `session.steer` events and `interaction[]` projection in `rehydrate` (+ eventLogBackend allowlist, Postgres status-preserving projection + ranked-CTE exclusion)
+- [x] feat(api): add `POST /tasks/:sessionId/message` (anytime chat, CAS, SSE fan-out) + tests
+- [x] test(api): unit + integration tests for message ingress, tenant isolation, 409/404 paths
+- [x] review follow-ups: shared CAS-append helper (reply + message), write-time terminal re-check, blank-content 400, single store/SSE timestamp, Postgres `projectDirectory` helper + single-source CTE exclusion, PGlite listing / 409-variants / nextStep / SSE-emit / CAS-retry / oversize / allowlist / stored-raw tests
 
 ## Stage 2 — queue lanes (`feat/76-hitl-lanes` off stage 1)
 - [ ] feat(queue): priority lane for interactive sessions + fairness bound (drain interactive first; 1 standard run per 3 interactive)
@@ -22,7 +23,7 @@ closes it. (This spec + ADR-007 already landed on `feat/issue-76-hitl-room`
 - [ ] feat(ui): awaiting node + reply composer states for parked sessions
 
 ## Stage 4 — steer / interrupt (`feat/76-hitl-steer` off stage 3)
-- [ ] feat(api): `POST /tasks/:id/steer` (queued CAS rewrite; running interrupt flag)
+- [ ] feat(api): `POST /tasks/:sessionId/steer` (queued CAS rewrite; running interrupt flag)
 - [ ] feat(runner): honor interrupt flag between steps; `AbortSignal` into `runMemberTask`; emit terminal
 - [ ] test(e2e): steer queued vs running, interrupt running to terminal
 - [ ] feat(ui): interrupt button + inline steer box during `running`

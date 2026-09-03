@@ -13,9 +13,9 @@ serial pump → `runSession` → `RunEventBus` → SSE read-only projection).
 Sessions run to completion with no live human input. The store already has
 `queued|running|awaiting_input|succeeded|failed|cancelled`, events
 `session.awaiting_input {question}` / `session.user_reply {reply}`,
-`interaction[]`, `nextStep`, and `POST /tasks/:id/reply`
-(`src/session/types.ts:1`, `src/session/sessionStore.ts:105`,
-`src/api/tasks.ts:194`), plus a `SessionThread` composer in the dashboard —
+`interaction[]`, `nextStep`, and `POST /tasks/:sessionId/reply`
+(`src/session/types.ts:25-27`, `src/session/sessionStore.ts:105-114`,
+`src/api/tasks.ts:254`), plus a `SessionThread` composer in the dashboard —
 but nothing in the run path ever emits `awaiting_input`: `TaskRegistry` has no
 pause state, `SessionQueue` (`src/bridge/SessionQueue.ts:47`) is
 run-to-completion, `runSession` (`src/daemon/runTask.ts:19`) has no
@@ -26,14 +26,30 @@ Full-duplex room per session, shipped in stage order (each stage independently
 reviewable, stacked branches):
 
 1. **Message log API (truth stays event-sourced).** New `session.message`
-   (human↔human, anytime, no status gate) and `session.steer` (interrupt
-   intent) events; extend `interaction[]` projection in `rehydrate`
-   (`src/session/sessionStore.ts:42`). `POST /tasks/:id/message` appends a
-   user turn any time; best-effort SSE fan-out (store is truth, SSE is
-   projection — ADR-002). The message log is the persisted chat history
+   (human↔human, anytime, no lifecycle gate except terminal → 409) and
+   `session.steer` (interrupt intent) events; extend `interaction[]`
+   projection in `rehydrate` (`src/session/sessionStore.ts:42`).
+   `POST /tasks/:sessionId/message` takes `{content: string(1..10000,
+   non-blank)}` and appends one `session.message {message: content}` via a
+   shared CAS-append helper (`src/api/tasks.ts:46`, also used by reply)
+   with 2-attempt `VersionConflictError` retry, write-time terminal
+   re-check (a cancel/finish racing the commit still 409s instead of
+   polluting a closed session), and best-effort SSE fan-out (store is
+   truth, SSE is projection — ADR-002). Wire: `201` + aggregate;
+   `404` unknown session; `409` terminal/changed; single shared `at`
+   timestamp for store + SSE. The message log is the persisted chat history
    inside the existing `SessionBackend` — no external service, no extra
-   cost. Tenant-scoped via `tenantBackendForRequest`, bearer
-   gate + rate limit unchanged.
+   cost. Cross-backend invariant: every new chat/steer event must also join
+   the `eventLogBackend` store-allowlist, the Postgres
+   `STATUS_PRESERVING_EVENTS` directory projection (status-preserving,
+   `updated_at` only, single `projectDirectory` helper), and the ranked-CTE
+   exclusion (derived from the same set) — otherwise status-filtered
+   listing diverges per backend. Contract: store raw, escape at render —
+   the thread path must never use `dangerouslySetInnerHTML`. Tenant-scoped
+   via `tenantBackendForRequest`, bearer gate + rate limit unchanged.
+   `session.steer` reuses the message text field as a plain user turn in
+   Stage 1 — the Stage 4 interrupt flag is additive and must not repurpose
+   `message`.
 2. **Queue lanes (before park, so wait-forever cannot deadlock the pump).**
    Interactive (`awaiting_input`-capable) sessions get a priority lane — the
    serial FIFO pump would otherwise stall behind one parked session or long
@@ -53,7 +69,7 @@ reviewable, stacked branches):
    plain-string `question` backwards compatible. Park policy per decision:
    **wait forever**; a parked session holds no pump slot and is always
    cancellable.
-4. **Human steer / interrupt.** `POST /tasks/:id/steer`: queued →
+4. **Human steer / interrupt.** `POST /tasks/:sessionId/steer`: queued →
    CAS prompt rewrite; running → append `session.user_reply` + interrupt flag
    the runner polls between steps. Harden `cancel` (`src/api/tasks.ts:154`)
    with `AbortSignal` into `runMemberTask`; runner emits terminal status
@@ -91,7 +107,10 @@ migration details (lands with backend branch).
 
 ## Testing Strategy
 Unit: `rehydrate` for `session.message`/`session.steer`, CAS paths on
-message/reply/steer, `filterSessions` unchanged. Integration: park→reply→resume
+message/reply/steer, `filterSessions` unchanged. Postgres: directory
+projection preserves status on message/steer (`updated_at` only); ranked CTE
+excludes message/steer so trailing chat never hides a session from `?status=`
+filters; tenant-isolation + 404/409 paths per endpoint. Integration: park→reply→resume
 round-trip, steer queued vs running, abort propagation into registry terminal
 state. E2E: two dashboard clients + one run proving ask + answer + interrupt.
 Hermetic backends only in CI (`pglite`/memory); managed Postgres never in CI.
@@ -104,12 +123,22 @@ Coverage: new suites per endpoint/hook; existing suites stay green.
 - agenthood runner API: `ask_human`/permission-hook support and
   `run.interrupted` emission — verify before Stage 3; fallback is
   poll-based park with zero runner cooperation.
+- steer payload forward-compat: Stage 1 `session.steer` carries `{message}`
+  with no interrupt semantics; Stage 4 must add the running-interrupt flag
+  without breaking Stage 1 history — decide field name before Stage 4.
+- Deferred security hardening (Stage 1 audit): bearer tokens are not bound
+  to tenants (`src/session/tenant.ts` TODO — any bearer can claim any
+  `x-tenant-id`; do not widen tenant-scoped writes until fixed); global
+  `GET /events` fans out all tenants' chat — needs tenant filtering by
+  Stage 5; per-session message caps / pagination (unbounded `interaction[]`
+  growth) — Stage 4+.
 
 ## References
 - Issue #76 — M5 HITL collaboration room.
-- `src/api/tasks.ts:41` (create/enqueue), `:154` (cancel), `:194` (reply).
+- `src/api/tasks.ts:99` (create/enqueue), `:212` (cancel), `:254` (reply),
+  `:46` (CAS-append helper), `:303` (message).
 - `src/daemon/runTask.ts:19` (park point), `src/server.ts:224` (runner seam).
-- `src/session/types.ts:1`, `src/session/sessionStore.ts:42,105`.
+- `src/session/types.ts:1-30`, `src/session/sessionStore.ts:42,105-118`.
 - `src/bridge/SessionQueue.ts:47`, `src/bridge/sseEndpoint.ts`.
 - ADR-002 (read-only projection), ADR-003 (sky of sessions),
   ADR-004 (event-sourced aggregate), ADR-006 (Fastify + Postgres).
