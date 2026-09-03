@@ -11,7 +11,7 @@ export function ReasoningNode(props: NodeProps) {
   const summary = typeof first.summary === "string" ? first.summary : undefined;
   return (
     <>
-      <NodeResizer isVisible={props.selected} minWidth={140} minHeight={46} color="#fbbf24" />
+      <NodeResizer isVisible={props.selected} minWidth={160} minHeight={92} color="#fbbf24" />
       <div
         className="w-full min-w-[160px] overflow-hidden border border-amber-400/30 bg-amber-500/10 p-2.5 shadow-lg"
         style={{ clipPath: "polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)" }}

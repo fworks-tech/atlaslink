@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildSocietyGraph } from "@/lib/graph";
+import { NODE_FOOTPRINTS, buildSocietyGraph } from "@/lib/graph";
 import type { Session, BridgeEvent } from "@/lib/types";
 
 function sess(id: string, cor: string, status: Session["status"] = "running"): Session {
@@ -44,5 +44,58 @@ describe("buildSocietyGraph full mode", () => {
     const events = [ev({ member: "the-mediator" }), ev({ eventId: 2, member: "the-debugger" })];
     const graph = buildSocietyGraph([sess("ses-1", "cor-1")], events, { mode: "fanout" });
     expect(graph.edges.filter((e) => e.source === "ses-1")).toHaveLength(2);
+  });
+
+  // True rendered minima, measured from the component classes (no DOM measuring):
+  // ReasoningNode: min-w-[160px], p-2.5 + header + line-clamp-2 + optional summary ~= 90px.
+  // ToolNode: min-w-[160px], p-2.5 + header + name + status ~= 72px.
+  it("reserves true rendered sizes for reasoning and tool nodes", () => {
+    expect(NODE_FOOTPRINTS.reasoning).toEqual({ width: 160, height: 92 });
+    expect(NODE_FOOTPRINTS.tool).toEqual({ width: 160, height: 76 });
+  });
+
+  function fullChain(): ReturnType<typeof buildSocietyGraph> {
+    const events: BridgeEvent[] = [
+      ev({ eventId: 1, type: "reasoning", step: 1, member: "the-debugger", content: "why" }),
+      ev({ eventId: 2, type: "tool.called", name: "grep", step: 1, member: "the-debugger" }),
+      ev({ eventId: 3, type: "tool.result", name: "grep", step: 1, member: "the-debugger" }),
+      ev({ eventId: 4, type: "decision.recorded", decisionId: "dec-1" }),
+    ];
+    return buildSocietyGraph([sess("ses-1", "cor-1", "running")], events, { mode: "full" });
+  }
+
+  it("separates consecutive full-DAG nodes by reserved heights + ranksep", () => {
+    const graph = fullChain();
+    const center = (id: string): number => {
+      const n = graph.nodes.find((m) => m.id === id)!;
+      const kind = n.type as keyof typeof NODE_FOOTPRINTS;
+      return n.position.y + NODE_FOOTPRINTS[kind].height / 2;
+    };
+    const reasoning = "ses-1::reasoning::1";
+    const tool = graph.nodes.find((n) => n.type === "tool")!.id;
+    const decision = "ses-1::decision::dec-1";
+    expect(center(tool) - center(reasoning)).toBe(
+      (NODE_FOOTPRINTS.reasoning.height + NODE_FOOTPRINTS.tool.height) / 2 + 72,
+    );
+    expect(center(decision) - center(tool)).toBe(
+      (NODE_FOOTPRINTS.tool.height + NODE_FOOTPRINTS.decision.height) / 2 + 72,
+    );
+  });
+
+  it("never overlaps full-DAG node footprints", () => {
+    const graph = fullChain();
+    const rects = graph.nodes.map((n) => {
+      const kind = n.type as keyof typeof NODE_FOOTPRINTS;
+      const size = NODE_FOOTPRINTS[kind];
+      return { id: n.id, x: n.position.x, y: n.position.y, w: size.width, h: size.height };
+    });
+    for (let i = 0; i < rects.length; i++) {
+      for (let j = i + 1; j < rects.length; j++) {
+        const a = rects[i];
+        const b = rects[j];
+        const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+        expect(overlap, `${a.id} overlaps ${b.id}`).toBe(false);
+      }
+    }
   });
 });

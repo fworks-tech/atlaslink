@@ -27,20 +27,38 @@ export type AtlasGraphNode = Node<Record<string, never>, "atlas">;
 export type SessionGraphNode = Node<SessionNodeData, "session">;
 export type MemberGraphNode = Node<MemberNodeData, "member">;
 
-const ATLAS_WIDTH = 176;
-const ATLAS_HEIGHT = 72;
-const SESSION_WIDTH = 240;
-const SESSION_HEIGHT = 118;
-const MEMBER_WIDTH = 128;
-const MEMBER_HEIGHT = 36;
-const TOOL_WIDTH = 140;
-const TOOL_HEIGHT = 46;
-const DECISION_WIDTH = 120;
-const DECISION_HEIGHT = 120;
-const AWAITING_WIDTH = 260;
-const AWAITING_HEIGHT = 92;
-const TERMINAL_WIDTH = 128;
-const TERMINAL_HEIGHT = 40;
+/**
+ * dagre reserves per node kind. Reasoning/tool footprints match the rendered
+ * minima (ReasoningNode/ToolNode: min-w-[160px], p-2.5 + header + up to three
+ * text rows ~= 76-90px tall) — smaller reserves stacked the full-DAG chain.
+ */
+export const NODE_FOOTPRINTS = {
+  atlas: { width: 176, height: 72 },
+  session: { width: 240, height: 118 },
+  member: { width: 128, height: 36 },
+  reasoning: { width: 160, height: 92 },
+  tool: { width: 160, height: 76 },
+  decision: { width: 120, height: 120 },
+  awaiting: { width: 260, height: 92 },
+  terminal: { width: 128, height: 40 },
+} as const;
+
+const ATLAS_WIDTH = NODE_FOOTPRINTS.atlas.width;
+const ATLAS_HEIGHT = NODE_FOOTPRINTS.atlas.height;
+const SESSION_WIDTH = NODE_FOOTPRINTS.session.width;
+const SESSION_HEIGHT = NODE_FOOTPRINTS.session.height;
+const MEMBER_WIDTH = NODE_FOOTPRINTS.member.width;
+const MEMBER_HEIGHT = NODE_FOOTPRINTS.member.height;
+const TOOL_WIDTH = NODE_FOOTPRINTS.tool.width;
+const TOOL_HEIGHT = NODE_FOOTPRINTS.tool.height;
+const REASONING_WIDTH = NODE_FOOTPRINTS.reasoning.width;
+const REASONING_HEIGHT = NODE_FOOTPRINTS.reasoning.height;
+const DECISION_WIDTH = NODE_FOOTPRINTS.decision.width;
+const DECISION_HEIGHT = NODE_FOOTPRINTS.decision.height;
+const AWAITING_WIDTH = NODE_FOOTPRINTS.awaiting.width;
+const AWAITING_HEIGHT = NODE_FOOTPRINTS.awaiting.height;
+const TERMINAL_WIDTH = NODE_FOOTPRINTS.terminal.width;
+const TERMINAL_HEIGHT = NODE_FOOTPRINTS.terminal.height;
 
 export interface SocietyGraph {
   nodes: Node[];
@@ -116,7 +134,7 @@ export function buildSocietyGraph(
       }
       for (const [step] of [...byStep.entries()].sort((a, b) => a[0] - b[0])) {
         const id = `${session.sessionId}::reasoning::${step}`;
-        graph.setNode(id, { width: TOOL_WIDTH, height: TOOL_HEIGHT });
+        graph.setNode(id, { width: REASONING_WIDTH, height: REASONING_HEIGHT });
         graph.setEdge(last, id);
         last = id;
       }
@@ -232,7 +250,7 @@ export function buildSocietyGraph(
         const id = `${session.sessionId}::reasoning::${step}`;
         if (!graph.hasNode(id)) continue;
         const p = graph.node(id);
-        nodes.push({ id, type: "reasoning", position: { x: p.x - TOOL_WIDTH / 2, y: p.y - TOOL_HEIGHT / 2 }, data: { sessionId: session.sessionId, step, events: byStep.get(step)! } });
+        nodes.push({ id, type: "reasoning", position: { x: p.x - REASONING_WIDTH / 2, y: p.y - REASONING_HEIGHT / 2 }, data: { sessionId: session.sessionId, step, events: byStep.get(step)! } });
         edges.push({ id: `edge-${id}`, source: graph.predecessors(id)?.[0] ?? session.sessionId, target: id });
       }
       // render tool nodes in same stable order as layout phase
