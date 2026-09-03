@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useMemo, useCallback } from "react";
+import { Suspense, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { SessionComposer } from "@/components/SessionComposer";
@@ -32,7 +32,7 @@ function HomeInner() {
   const rawMode = (searchParams.get("mode") ?? (decoded?.m as string) ?? "full") as GraphMode;
   const mode: GraphMode = (["chain", "fanout", "full"].includes(rawMode) ? rawMode : "full") as GraphMode;
   const { projects, loading: projectsLoading, error: projectsError, addProject } = useProjects();
-  const { sessions, refresh: refreshSessions } = useSessions();
+  const { sessions, loading: sessionsLoading, error: sessionsError, refresh: refreshSessions, hydrateSession } = useSessions();
   const { events } = useEvents();
   const { members } = useRoomPresence(selectedSessionId);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -43,6 +43,9 @@ function HomeInner() {
   const [chatContent, setChatContent] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  // state updates flush after the event, so a second submit in the same tick
+  // would slip past chatBusy — the ref closes the double-send window
+  const chatInflight = useRef(false);
   const [steerContent, setSteerContent] = useState("");
   const [steerBusy, setSteerBusy] = useState(false);
   const [steerError, setSteerError] = useState<string | null>(null);
@@ -50,6 +53,17 @@ function HomeInner() {
   const selectedSession = useMemo(() => sessions.find((s) => s.sessionId === selectedSessionId) ?? null, [sessions, selectedSessionId]);
   const isTerminal = selectedSession?.status === "succeeded" || selectedSession?.status === "failed" || selectedSession?.status === "cancelled";
   const isSteerable = selectedSession?.status === "queued" || selectedSession?.status === "running";
+
+  // Deep-link hydration: a shared ?session= id may sit beyond the one-shot
+  // list page, so fetch the single row instead of leaving context empty.
+  // hydrateSession records failures in the sessions error state, which the
+  // banner below renders while no session is selected.
+  useEffect(() => {
+    if (!selectedSessionId || selectedSession || sessionsLoading) return;
+    hydrateSession(selectedSessionId).catch(() => {
+      // error state carries the failure — nothing to do here
+    });
+  }, [selectedSessionId, selectedSession, sessionsLoading, hydrateSession]);
 
   const handleSelectSession = useCallback(
     (id: string) => {
@@ -119,19 +133,26 @@ function HomeInner() {
   }, [sendReply, replyContent]);
 
   const handleChat = useCallback(async () => {
-    if (!selectedSessionId || !chatContent.trim()) return;
+    if (!selectedSessionId || !chatContent.trim() || chatInflight.current) return;
+    chatInflight.current = true;
     setChatBusy(true);
     setChatError(null);
     try {
       await sendChatMessage(selectedSessionId, chatContent.trim());
       setChatContent("");
-      // the turn lands in the thread via the session.message SSE event; the
-      // refresh keeps the list copy (version) from going stale
-      await refreshSessions();
     } catch (e) {
       setChatError(e instanceof Error ? e.message : "Chat failed — retry or check the session state.");
     } finally {
+      chatInflight.current = false;
       setChatBusy(false);
+    }
+    // the turn lands in the thread via the session.message SSE event; the
+    // refresh only keeps the list copy (version) from going stale — its
+    // failure must not mark a delivered chat as failed
+    try {
+      await refreshSessions();
+    } catch {
+      // refresh records its own error state; the send already succeeded
     }
   }, [selectedSessionId, chatContent, refreshSessions]);
 
@@ -253,6 +274,12 @@ function HomeInner() {
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Live Society Diagram</h1>
               <p className="mt-2 text-sm leading-6 text-muted">Atlas holds the sky of sessions. Click any card to inspect reasoning, tools, decisions. {selectedSession?.status === "awaiting_input" ? "Atlas is awaiting your input — reply below." : ""}</p>
             </header>
+            {sessionsError && !selectedSession ? (
+              <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">
+                <span>Couldn&apos;t load sessions ({sessionsError}).</span>
+                <button type="button" onClick={() => void refreshSessions()} className="underline hover:text-red-200">Retry</button>
+              </div>
+            ) : null}
             <div className="space-y-6">
               <ErrorBoundary>
                 <SocietyDiagram selectedSessionId={selectedSessionId} mode={mode} onNodeClick={handleNodeClick} selectedNodeId={selectedNodeId} />
@@ -263,12 +290,17 @@ function HomeInner() {
               </div>
               {!isTerminal ? (
                 <div className="rounded-xl border border-white/10 bg-surface p-4">
-                  <div className="text-sm font-medium text-foreground">Room chat · visible to everyone here</div>
-                  <div className="mt-3 flex gap-2">
-                    <input value={chatContent} onChange={(e) => setChatContent(e.target.value)} placeholder="Message the room…" aria-label="Message the room" className="flex-1 rounded border border-white/10 bg-raised px-3 py-2 text-sm text-foreground placeholder:text-muted" />
-                    <button onClick={handleChat} disabled={chatBusy || !chatContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
-                  </div>
-                  {chatError ? <div className="mt-2 text-xs text-red-400">{chatError}</div> : null}
+                  <div className="text-sm font-medium text-foreground">Room chat · visible to everyone here{members.length > 0 ? ` · ${members.length} here` : ""}</div>
+                  <form onSubmit={(e) => { e.preventDefault(); void handleChat(); }} className="mt-3 flex gap-2">
+                    <input value={chatContent} onChange={(e) => { setChatContent(e.target.value); if (chatError) setChatError(null); }} placeholder="Message the room…" aria-label="Message the room" className="flex-1 rounded border border-white/10 bg-raised px-3 py-2 text-sm text-foreground placeholder:text-muted" />
+                    <button type="submit" disabled={chatBusy || !chatContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
+                  </form>
+                  {chatError ? (
+                    <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-xs text-red-400">
+                      <span>{chatError}</span>
+                      <button type="button" onClick={() => void handleChat()} disabled={chatBusy} className="underline hover:text-red-300 disabled:opacity-50">Retry</button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               {isSteerable ? (

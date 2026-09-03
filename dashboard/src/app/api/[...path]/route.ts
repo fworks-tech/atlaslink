@@ -64,6 +64,12 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     if (STRIP_RESPONSE_HEADERS.includes(key.toLowerCase())) continue;
     responseHeaders.set(key, value);
   }
+  // Observability for opaque browser errors (e.g. room chat "not found"):
+  // log which upstream route answered with a failure status. The query
+  // string is stripped — ids stay out of the server logs.
+  if (!upstream.ok) {
+    console.warn(`[bff] ${req.method} /${path.join("/")} -> ${upstream.status}`);
+  }
   // upstream.body streams — SSE frames pass through verbatim instead of buffering
   return new NextResponse(upstream.body, { status: upstream.status, headers: responseHeaders });
 }

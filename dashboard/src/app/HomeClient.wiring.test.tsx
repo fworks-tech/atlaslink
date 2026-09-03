@@ -14,6 +14,8 @@ const replyMock = vi.fn();
 const chatMock = vi.fn();
 const steerMock = vi.fn();
 const cancelMock = vi.fn();
+const presenceMock = vi.fn();
+const hydrateMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush, replace: routerReplace }),
@@ -33,7 +35,7 @@ vi.mock("@/hooks/useEvents", () => ({
 }));
 
 vi.mock("@/hooks/useRoomPresence", () => ({
-  useRoomPresence: () => ({ members: [] }),
+  useRoomPresence: () => presenceMock(),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -102,8 +104,13 @@ vi.mock("@/components/ErrorBoundary", () => ({
 
 function seed(params: string) {
   searchParamsMock.mockReturnValue(new URLSearchParams(params));
+  presenceMock.mockReturnValue({ members: [] });
+  hydrateMock.mockResolvedValue({ sessionId: "ses-hydrated" });
   projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
   sessionsMock.mockReturnValue({
+    loading: false,
+    error: null,
+    hydrateSession: hydrateMock,
     sessions: [
       {
         sessionId: "ses-1",
@@ -129,8 +136,13 @@ function seed(params: string) {
 
 function seedRoom(params: string) {
   searchParamsMock.mockReturnValue(new URLSearchParams(params));
+  presenceMock.mockReturnValue({ members: [] });
+  hydrateMock.mockResolvedValue({ sessionId: "ses-hydrated" });
   projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
   sessionsMock.mockReturnValue({
+    loading: false,
+    error: null,
+    hydrateSession: hydrateMock,
     sessions: [
       {
         sessionId: "ses-1",
@@ -251,5 +263,110 @@ describe("HomeClient room wiring", () => {
     expect(screen.queryByLabelText("Message the room")).toBeNull();
     expect(screen.queryByLabelText("Redirect this session")).toBeNull();
     expect(screen.queryByRole("button", { name: "Interrupt" })).toBeNull();
+  });
+
+  it("hydrates a deep-linked session missing from the list", async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    hydrateMock.mockResolvedValue({ sessionId: "ses-9" });
+    sessionsMock.mockReturnValue({ sessions: [], loading: false, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
+    eventsMock.mockReturnValue({ events: [] });
+    render(<HomeClient />);
+    await vi.waitFor(() => expect(hydrateMock).toHaveBeenCalledWith("ses-9"));
+  });
+
+  it("does not hydrate a session already in the list", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(hydrateMock).not.toHaveBeenCalled();
+  });
+
+  it("does not hydrate while the list is still loading", () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    sessionsMock.mockReturnValue({ sessions: [], loading: true, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
+    eventsMock.mockReturnValue({ events: [] });
+    render(<HomeClient />);
+    expect(hydrateMock).not.toHaveBeenCalled();
+  });
+
+  it("Enter submits the chat form", async () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    const input = screen.getByLabelText("Message the room");
+    fireEvent.change(input, { target: { value: "hi all" } });
+    const form = input.closest("form");
+    expect(form).not.toBeNull();
+    fireEvent.submit(form as HTMLFormElement);
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledWith("ses-1", "hi all"));
+  });
+
+  it("shows the room presence count in the chat header", () => {
+    seedRoom("session=ses-1");
+    presenceMock.mockReturnValue({ members: [{ name: "a" }, { name: "b" }] });
+    render(<HomeClient />);
+    expect(screen.getByText(/2 here/)).toBeDefined();
+  });
+
+  it("chat failure shows a status-qualified error with retry and clears on edit", async () => {
+    seedRoom("session=ses-1");
+    chatMock.mockRejectedValueOnce(new Error("404 not found")).mockRejectedValueOnce(new Error("404 not found"));
+    render(<HomeClient />);
+    const input = screen.getByLabelText("Message the room");
+    fireEvent.change(input, { target: { value: "hi all" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await vi.waitFor(() => expect(screen.getByText("404 not found")).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(screen.getByText("404 not found")).toBeDefined());
+    fireEvent.change(input, { target: { value: "hi all!" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledTimes(3));
+    await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("posts exactly once on double submit", async () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    fireEvent.change(screen.getByLabelText("Message the room"), { target: { value: "hi all" } });
+    const send = screen.getByRole("button", { name: "Send" });
+    fireEvent.click(send);
+    fireEvent.click(send);
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("a failed list refresh does not mark a delivered chat as failed", async () => {
+    seedRoom("session=ses-1");
+    refreshMock.mockRejectedValueOnce(new Error("list down"));
+    render(<HomeClient />);
+    fireEvent.change(screen.getByLabelText("Message the room"), { target: { value: "hi all" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledWith("ses-1", "hi all"));
+    await vi.waitFor(() => expect(screen.getByLabelText("Message the room")).toHaveValue(""));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("renders the fallback text for non-Error chat rejections", async () => {
+    seedRoom("session=ses-1");
+    chatMock.mockRejectedValueOnce("plain string failure");
+    render(<HomeClient />);
+    fireEvent.change(screen.getByLabelText("Message the room"), { target: { value: "hi all" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await vi.waitFor(() => expect(screen.getByText(/Chat failed/)).toBeDefined());
+  });
+
+  it("shows a sessions load error with retry", async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    sessionsMock.mockReturnValue({ sessions: [], loading: false, error: "boom", refresh: refreshMock, hydrateSession: hydrateMock });
+    eventsMock.mockReturnValue({ events: [] });
+    render(<HomeClient />);
+    expect(screen.getByText(/Couldn't load sessions/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await vi.waitFor(() => expect(refreshMock).toHaveBeenCalled());
   });
 });

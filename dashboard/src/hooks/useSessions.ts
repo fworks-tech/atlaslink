@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { getTasks } from "@/lib/api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getSession, getTasks } from "@/lib/api";
 import type { Session } from "@/lib/types";
 
 /**
@@ -13,6 +13,12 @@ export function useSessions() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // mirror for decisions that must read the list synchronously — updaters
+  // run during render, so a flag set inside one is unreadable right after
+  const sessionsRef = useRef<Session[]>([]);
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,11 +42,41 @@ export function useSessions() {
   }, []);
 
   const refresh = useCallback(async () => {
-    const res = await getTasks();
-    setSessions(res.sessions);
-    setTotal(res.total);
-    setError(null);
+    try {
+      const res = await getTasks();
+      setSessions(res.sessions);
+      setTotal(res.total);
+      setError(null);
+    } catch (err) {
+      // keep the last good list — a failed poll must not blank the UI or
+      // reject into a send flow that already succeeded
+      setError(err instanceof Error ? err.message : "failed to load sessions");
+    }
   }, []);
 
-  return { sessions, total, loading, error, refresh };
+  // Deep-link hydration: the list is a one-shot page (limit 50), so a shared
+  // ?session= id may be missing until a manual action triggers refresh.
+  // Fetch the single row and merge it instead of leaving the selection null.
+  const hydrateSession = useCallback(async (sessionId: string): Promise<Session> => {
+    try {
+      const res = await getSession(sessionId);
+      const isNew = !sessionsRef.current.some((s) => s.sessionId === sessionId);
+      setSessions((prev) => {
+        const idx = prev.findIndex((s) => s.sessionId === sessionId);
+        if (idx === -1) return [...prev, res.session];
+        const next = [...prev];
+        next[idx] = res.session;
+        return next;
+      });
+      // an appended row was never counted by the server page
+      if (isNew) setTotal((t) => t + 1);
+      setError(null);
+      return res.session;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "failed to load session");
+      throw err;
+    }
+  }, []);
+
+  return { sessions, total, loading, error, refresh, hydrateSession };
 }
