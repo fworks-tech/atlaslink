@@ -302,4 +302,11 @@ describe("HomeClient room wiring", () => {
     fireEvent.submit(form as HTMLFormElement);
     await vi.waitFor(() => expect(chatMock).toHaveBeenCalledWith("ses-1", "hi all"));
   });
+
+  it("shows the room presence count in the chat header", () => {
+    seedRoom("session=ses-1");
+    presenceMock.mockReturnValue({ members: [{ name: "a" }, { name: "b" }] });
+    render(<HomeClient />);
+    expect(screen.getByText(/2 here/)).toBeDefined();
+  });
 });

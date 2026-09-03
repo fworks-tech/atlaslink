@@ -17,6 +17,7 @@ export function useRoomPresence(sessionId?: string) {
 
   useEffect(() => {
     let cancelled = false;
+    let inflight = false;
     const load = async (): Promise<void> => {
       // no selection (or a failed read) means an empty roster — the
       // same-reference guard avoids a re-render every poll with no session
@@ -24,11 +25,18 @@ export function useRoomPresence(sessionId?: string) {
         if (!cancelled) setMembers((prev) => (prev.length === 0 ? prev : []));
         return;
       }
+      // hidden tabs skip the poll and a slow read never overlaps the next
+      // tick — presence resumes honest on the following interval
+      if (typeof document !== "undefined" && document.hidden) return;
+      if (inflight) return;
+      inflight = true;
       try {
         const res = await getRoomMembers(sessionId);
         if (!cancelled) setMembers(res.members);
       } catch {
         if (!cancelled) setMembers((prev) => (prev.length === 0 ? prev : []));
+      } finally {
+        inflight = false;
       }
     };
     void load();
