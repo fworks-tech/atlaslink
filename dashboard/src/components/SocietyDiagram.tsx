@@ -93,7 +93,8 @@ export function SocietyDiagram({
 
   // The projection wins for data (a session's status/members move on) and for
   // membership (nodes the projection no longer yields are pruned — a wrapped
-  // event buffer drops an early chain); the user wins for position and size.
+  // event buffer drops an early chain); the user wins for position, size, and
+  // selection (so resize handles don't vanish on live updates).
   // Edges are derived, so fully replaced.
   useEffect(() => {
     setNodes((current) => {
@@ -106,6 +107,7 @@ export function SocietyDiagram({
             ? {
                 ...next,
                 position: existing.position,
+                selected: existing.selected ?? next.selected,
                 style: existing.style ?? next.style,
                 measured: existing.measured ?? next.measured,
               }

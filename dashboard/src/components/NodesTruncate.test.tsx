@@ -36,6 +36,14 @@ describe("diagram node truncation", () => {
     expect(el.textContent?.length).toBeLessThanOrEqual(40);
   });
 
+  it("renders reasoning fallback when the step has no events", () => {
+    renderNode(
+      // @ts-expect-error — NodeProps stub for unit test
+      <ReasoningNode data={{ sessionId: "ses-1", step: 0, events: [] }} selected={false} />,
+    );
+    expect(screen.getByText("reasoning")).toBeDefined();
+  });
+
   it("truncates tool name with title tooltip", () => {
     const name = "tool-" + "z".repeat(100);
     renderNode(

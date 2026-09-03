@@ -6,9 +6,9 @@ import type { BridgeEvent } from "@/lib/types";
 
 export function ReasoningNode(props: NodeProps) {
   const data = props.data as { sessionId: string; step: number; events: BridgeEvent[] };
-  const first = data.events[0];
-  const content = typeof first.content === "string" ? (first.content as string) : typeof first.text === "string" ? (first.text as string) : "reasoning";
-  const summary = typeof (first as Record<string, unknown>).summary === "string" ? (first as Record<string, unknown>).summary as string : undefined;
+  const first = (data.events?.[0] ?? {}) as Record<string, unknown>;
+  const content = typeof first.content === "string" ? first.content : typeof first.text === "string" ? first.text : "reasoning";
+  const summary = typeof first.summary === "string" ? first.summary : undefined;
   return (
     <>
       <NodeResizer isVisible={props.selected} minWidth={140} minHeight={46} color="#fbbf24" />
