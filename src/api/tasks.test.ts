@@ -7,6 +7,8 @@ import { SseHandler } from '../bridge/sseEndpoint'
 import { createAppServer } from '../server'
 import { TaskRegistry } from '../tasks/taskRegistry'
 import { SessionStore } from '../session/sessionStore'
+import { VersionConflictError } from '../session/types'
+import type { BridgeEnvelope } from '../bridge/EventLogStore'
 import { tmpDataDir, runEnv, startServer, jsonRequest, collectStream, cleanup } from '../test/serverHarness'
 
 test('POST /tasks creates a queued session in the store and returns 201', async () => {
@@ -469,6 +471,134 @@ test('POST /tasks/:id/message rejects missing or empty content with the error en
 
     const empty = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: '' })
     assert.equal(empty.status, 400)
+    assert.equal(JSON.parse(empty.body).ok, false)
+
+    const blank = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: '   \n  ' })
+    assert.equal(blank.status, 400)
+    assert.equal(JSON.parse(blank.body).ok, false)
+    assert.equal(JSON.parse(blank.body).error, 'content must not be blank')
+
+    const oversize = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: 'x'.repeat(10001) })
+    assert.equal(oversize.status, 400)
+    assert.equal(JSON.parse(oversize.body).ok, false)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/message 409s succeeded and failed sessions, not just cancelled', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    for (const terminal of ['session.succeeded', 'session.failed'] as const) {
+      const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+      await srv.backend.append({ type: terminal, sessionId: created.sessionId, correlationId: created.correlationId, at: new Date().toISOString() })
+      const res = await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/message`, { content: 'late' })
+      assert.equal(res.status, 409)
+      assert.equal(JSON.parse(res.body).error, 'session already terminated')
+    }
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/message on awaiting_input preserves nextStep', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    const id = created.sessionId
+    await srv.backend.append({
+      type: 'session.awaiting_input',
+      sessionId: id,
+      correlationId: created.correlationId,
+      at: new Date().toISOString(),
+      question: 'continue?',
+      member: 'atlas',
+    })
+
+    const res = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: 'one moment' })
+    assert.equal(res.status, 201)
+    const parsed = JSON.parse(res.body)
+    assert.equal(parsed.session.status, 'awaiting_input')
+    assert.deepEqual(parsed.session.nextStep, { awaiting_input: true, prompt: 'continue?', member: 'atlas' })
+    assert.equal(parsed.session.interaction.at(-1).role, 'user')
+    assert.equal(parsed.session.interaction.at(-1).content, 'one moment')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/message fans out a session.message SSE envelope', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+
+    const seen: BridgeEnvelope[] = []
+    const unsubscribe = srv.broadcaster.subscribe((envelope) => {
+      seen.push(envelope)
+    })
+    try {
+      const res = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: 'ping' })
+      assert.equal(res.status, 201)
+    } finally {
+      unsubscribe()
+    }
+    const message = seen.find((e) => e.type === 'session.message')
+    assert.ok(message)
+    assert.equal(message.sessionId, id)
+    assert.equal(message.message, 'ping')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/message retries a version conflict, then 409s a persistent one', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+
+    const orig = srv.backend.readModifyWrite.bind(srv.backend)
+    let calls = 0
+    srv.backend.readModifyWrite = async (sessionId, expectedVersion, mutator) => {
+      calls += 1
+      if (calls === 1) throw new VersionConflictError(sessionId, expectedVersion, expectedVersion + 1)
+      return orig(sessionId, expectedVersion, mutator)
+    }
+    const retried = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: 'after conflict' })
+    assert.equal(retried.status, 201)
+    assert.equal(JSON.parse(retried.body).session.interaction.at(-1).content, 'after conflict')
+
+    srv.backend.readModifyWrite = async (sessionId, expectedVersion) => {
+      throw new VersionConflictError(sessionId, expectedVersion, expectedVersion + 1)
+    }
+    const conflicted = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: 'never lands' })
+    assert.equal(conflicted.status, 409)
+    assert.equal(JSON.parse(conflicted.body).error, 'session state changed')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/message stores markup verbatim (escape-at-render contract)', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+
+    const payload = '<script>alert(1)</script>'
+    const res = await jsonRequest(srv.port, 'POST', `/tasks/${id}/message`, { content: payload })
+    assert.equal(res.status, 201)
+    // stored raw — neutralization belongs to the renderer (React text nodes),
+    // never to the store, so every consumer sees identical history
+    assert.equal(JSON.parse(res.body).session.interaction.at(-1).content, payload)
     await srv.close()
   } finally {
     cleanup(dir)

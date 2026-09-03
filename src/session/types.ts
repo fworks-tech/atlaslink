@@ -72,6 +72,15 @@ export class VersionConflictError extends Error {
   }
 }
 
+/** Thrown by a readModifyWrite mutator when the write-time aggregate is
+ * terminal — lets routes reject late writes that raced a cancel/finish. */
+export class SessionTerminatedError extends Error {
+  constructor(public readonly sessionId: string) {
+    super(`session already terminated: ${sessionId}`)
+    this.name = 'SessionTerminatedError'
+  }
+}
+
 /** Per-session snapshot cache entry shared by all SessionBackend implementations. */
 export interface SessionSnapshot {
   session: Session

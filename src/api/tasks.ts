@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type { SessionBackend, SessionFilter } from '../session/sessionBackend'
-import type { Session as AggregateSession, SessionEvent } from '../session/types'
-import { VersionConflictError } from '../session/types'
+import type { Session as AggregateSession, SessionDelta, SessionEvent } from '../session/types'
+import { SessionTerminatedError, VersionConflictError } from '../session/types'
+import type { BridgeEnvelope } from '../bridge/EventLogStore'
 import type { SessionQueue } from '../bridge/SessionQueue'
 import type { SseHandler } from '../bridge/sseEndpoint'
 import type { TaskRegistry } from '../tasks/taskRegistry'
@@ -17,6 +18,63 @@ export interface TaskDeps {
 }
 
 const TERMINAL_STATUSES = ['succeeded', 'failed', 'cancelled'] as const
+
+function isTerminal(status: string): boolean {
+  return (TERMINAL_STATUSES as readonly string[]).includes(status)
+}
+
+interface CasAppendOptions {
+  backend: SessionBackend
+  sessionId: string
+  /** Fast reject on the pre-read aggregate; return an error message or null to proceed. */
+  guard: (current: AggregateSession) => string | null
+  /** Events to append; the terminal check is re-enforced inside the write. */
+  deltas: (current: AggregateSession, at: string) => SessionDelta[]
+  /** SSE envelope fanned out after commit. */
+  sseEvent: (current: AggregateSession, at: string, version: number) => BridgeEnvelope
+}
+
+type CasAppendResult = { code: 201; session: AggregateSession } | { code: 404 | 409; error: string }
+
+/**
+ * Shared CAS-append loop for the reply/message-style routes: pre-read guard,
+ * 2-attempt readModifyWrite with VersionConflictError retry, write-time
+ * terminal re-check (a cancel/finish landing between read and commit still
+ * rejects instead of polluting a closed session), best-effort SSE fan-out,
+ * and 201/404/409 mapping. The store is truth; SSE is projection.
+ */
+async function casAppendSessionEvents(
+  broadcaster: { emit: (envelope: BridgeEnvelope) => void },
+  opts: CasAppendOptions
+): Promise<CasAppendResult> {
+  const { backend, sessionId, guard, deltas, sseEvent } = opts
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const current = await backend.get(sessionId)
+    if (!current) return { code: 404, error: 'unknown session' }
+    const rejection = guard(current)
+    if (rejection) return { code: 409, error: rejection }
+    const at = new Date().toISOString()
+    try {
+      await backend.readModifyWrite(sessionId, current.version, (writeTime) => {
+        if (writeTime && isTerminal(writeTime.status)) throw new SessionTerminatedError(sessionId)
+        return deltas(writeTime ?? current, at)
+      })
+    } catch (err) {
+      if (err instanceof VersionConflictError) continue
+      if (err instanceof SessionTerminatedError) return { code: 409, error: 'session already terminated' }
+      throw err
+    }
+    const after = await backend.get(sessionId)
+    if (!after) return { code: 404, error: 'unknown session' }
+    try {
+      broadcaster.emit(sseEvent(current, at, after.version))
+    } catch {
+      // best-effort; store is truth
+    }
+    return { code: 201, session: after }
+  }
+  return { code: 409, error: 'session state changed' }
+}
 
 interface PostBody {
   member: string
@@ -163,7 +221,7 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     for (let attempt = 0; attempt < 2; attempt++) {
       const current = await backend.get(sessionId)
       if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
-      if ((TERMINAL_STATUSES as readonly string[]).includes(current.status)) {
+      if (isTerminal(current.status)) {
         return reply.code(409).send({ ok: false, error: 'session already terminated' })
       }
       if (current.status === 'running') {
@@ -181,7 +239,8 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
           // the registry entry may already be gone or terminal — the store commit is the truth
         }
         const after = await backend.get(sessionId)
-        return reply.code(202).send({ ok: true, status: 'cancelled', session: sessionToWire(after!) })
+        if (!after) return reply.code(404).send({ ok: false, error: 'unknown session' })
+        return reply.code(202).send({ ok: true, status: 'cancelled', session: sessionToWire(after) })
       } catch (err) {
         if (err instanceof VersionConflictError) continue
         throw err
@@ -208,43 +267,38 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     async (request, reply) => {
       const tenantCtx = tenantBackendForRequest(request, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
-      const backend = tenantCtx.backend
-      const sessionId = request.params.sessionId
-      const { content } = request.body
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const current = await backend.get(sessionId)
-        if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
-        if (current.status !== 'awaiting_input') {
-          if ((TERMINAL_STATUSES as readonly string[]).includes(current.status)) {
-            return reply.code(409).send({ ok: false, error: 'session already terminated' })
+      const result = await casAppendSessionEvents(deps.sse.broadcaster, {
+        backend: tenantCtx.backend,
+        sessionId: request.params.sessionId,
+        guard: (current) => {
+          if (current.status !== 'awaiting_input') {
+            return isTerminal(current.status) ? 'session already terminated' : 'session not awaiting input'
           }
-          return reply.code(409).send({ ok: false, error: 'session not awaiting input' })
-        }
-        try {
-          await backend.readModifyWrite(sessionId, current.version, () => [
-            { type: 'session.user_reply', correlationId: current.correlationId, at: new Date().toISOString(), reply: content },
-            // re-queue as running so the diagram keeps growing — next iteration
-            { type: 'session.running', correlationId: current.correlationId, at: new Date().toISOString() },
-          ])
-          const after = await backend.get(sessionId)
-          // also fan out on SSE so live diagram updates without polling
-          // (store is truth; SSE is best-effort projection)
-          try {
-            const eventId = after?.version ?? current.version + 2
-            deps.sse.broadcaster.emit({ eventId, type: 'session.user_reply', sessionId, correlationId: current.correlationId, at: new Date().toISOString(), reply: content } as unknown as { eventId: number; type: string } & Record<string, unknown>)
-          } catch {}
-          return reply.code(201).send({ ok: true, session: sessionToWire(after!) })
-        } catch (err) {
-          if (err instanceof VersionConflictError) continue
-          throw err
-        }
-      }
-      return reply.code(409).send({ ok: false, error: 'session state changed' })
+          return null
+        },
+        deltas: (current, at) => [
+          { type: 'session.user_reply', correlationId: current.correlationId, at, reply: request.body.content },
+          // re-queue as running so the diagram keeps growing — next iteration
+          { type: 'session.running', correlationId: current.correlationId, at },
+        ],
+        sseEvent: (current, at, version) => ({
+          eventId: version,
+          type: 'session.user_reply',
+          sessionId: request.params.sessionId,
+          correlationId: current.correlationId,
+          at,
+          reply: request.body.content,
+        }),
+      })
+      if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
+      return reply.code(201).send({ ok: true, session: sessionToWire(result.session) })
     }
   )
 
   // Anytime human↔human chat: appends to interaction[] without moving the
-  // lifecycle (no status gate — terminal sessions still conflict).
+  // lifecycle (no awaiting_input gate — allowed in any non-terminal state).
+  // Contract: store raw, escape at render — the thread path must never use
+  // dangerouslySetInnerHTML (stored XSS would fire for every viewer).
   app.post<{ Params: { sessionId: string }; Body: { content: string } }>(
     '/tasks/:sessionId/message',
     {
@@ -262,33 +316,28 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     async (request, reply) => {
       const tenantCtx = tenantBackendForRequest(request, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
-      const backend = tenantCtx.backend
-      const sessionId = request.params.sessionId
       const { content } = request.body
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const current = await backend.get(sessionId)
-        if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
-        if ((TERMINAL_STATUSES as readonly string[]).includes(current.status)) {
-          return reply.code(409).send({ ok: false, error: 'session already terminated' })
-        }
-        try {
-          await backend.readModifyWrite(sessionId, current.version, () => [
-            { type: 'session.message', correlationId: current.correlationId, at: new Date().toISOString(), message: content },
-          ])
-          const after = await backend.get(sessionId)
-          // also fan out on SSE so live room views update without polling
-          // (store is truth; SSE is best-effort projection)
-          try {
-            const eventId = after?.version ?? current.version + 1
-            deps.sse.broadcaster.emit({ eventId, type: 'session.message', sessionId, correlationId: current.correlationId, at: new Date().toISOString(), message: content } as unknown as { eventId: number; type: string } & Record<string, unknown>)
-          } catch {}
-          return reply.code(201).send({ ok: true, session: sessionToWire(after!) })
-        } catch (err) {
-          if (err instanceof VersionConflictError) continue
-          throw err
-        }
+      if (content.trim().length === 0) {
+        return reply.code(400).send({ ok: false, error: 'content must not be blank' })
       }
-      return reply.code(409).send({ ok: false, error: 'session state changed' })
+      const result = await casAppendSessionEvents(deps.sse.broadcaster, {
+        backend: tenantCtx.backend,
+        sessionId: request.params.sessionId,
+        guard: (current) => (isTerminal(current.status) ? 'session already terminated' : null),
+        deltas: (current, at) => [
+          { type: 'session.message', correlationId: current.correlationId, at, message: content },
+        ],
+        sseEvent: (current, at, version) => ({
+          eventId: version,
+          type: 'session.message',
+          sessionId: request.params.sessionId,
+          correlationId: current.correlationId,
+          at,
+          message: content,
+        }),
+      })
+      if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
+      return reply.code(201).send({ ok: true, session: sessionToWire(result.session) })
     }
   )
 
