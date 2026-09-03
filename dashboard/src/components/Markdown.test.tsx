@@ -50,4 +50,45 @@ describe("Markdown", () => {
     render(<Markdown text={"just **short**"} />);
     expect(screen.queryByRole("button")).toBeNull();
   });
+
+  it("resets the expander when the payload changes", () => {
+    const long = Array.from({ length: 60 }, (_, i) => `old ${i + 1}`).join("\n\n");
+    const { rerender } = render(<Markdown text={long} />);
+    fireEvent.click(screen.getByRole("button", { name: "View more" }));
+    expect(screen.getByText("old 60")).toBeDefined();
+    const next = Array.from({ length: 60 }, (_, i) => `new ${i + 1}`).join("\n\n");
+    rerender(<Markdown text={next} />);
+    expect(screen.queryByText("new 51")).toBeNull();
+    expect(screen.getByRole("button", { name: "View more" })).toBeDefined();
+  });
+
+  it("closes a fence cut by the clamp so the expander survives", () => {
+    const body = ["```js", ...Array.from({ length: 60 }, (_, i) => `code ${i + 1}`)].join("\n");
+    render(<Markdown text={body} />);
+    expect(screen.getByRole("button", { name: "View more" })).toBeDefined();
+    expect(screen.getByText(/code 1/).closest("pre")).not.toBeNull();
+  });
+
+  it("empties javascript and data hrefs", () => {
+    const { container } = render(<Markdown text={"[x](javascript:alert(1)) [y](data:text/html,<b>hi</b>)"} />);
+    const anchors = [...container.querySelectorAll("a")];
+    expect(anchors).toHaveLength(2);
+    for (const a of anchors) {
+      expect(a.getAttribute("href") ?? "").not.toMatch(/^(javascript|data):/);
+    }
+  });
+
+  it("constrains images against beacons and blowout", () => {
+    const { container } = render(<Markdown text={"![alt](https://example.com/pixel.png)"} />);
+    const img = container.querySelector("img") as HTMLImageElement;
+    expect(img.getAttribute("loading")).toBe("lazy");
+    expect(img.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(img.className).toContain("max-w-full");
+  });
+
+  it("strips the inline pill inside code blocks", () => {
+    const { container } = render(<Markdown text={"```js\nconst x = 1;\n```"} />);
+    const pre = container.querySelector("pre") as HTMLElement;
+    expect(pre.className).toContain("[&_code]:bg-transparent");
+  });
 });
