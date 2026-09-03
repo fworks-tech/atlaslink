@@ -126,3 +126,58 @@ export function replyToSession(sessionId: string, content: string): Promise<Repl
 export function getSession(sessionId: string): Promise<{ ok: boolean; session: Session }> {
   return fetchJSON<{ ok: boolean; session: Session }>(`/tasks/${encodeURIComponent(sessionId)}`);
 }
+
+export interface ChatMessageResponse {
+  ok: boolean;
+  session: Session;
+}
+
+/** Anytime human↔human chat: appends to interaction[] without moving the lifecycle. */
+export function sendChatMessage(sessionId: string, content: string): Promise<ChatMessageResponse> {
+  return fetchJSON<ChatMessageResponse>(`/tasks/${encodeURIComponent(sessionId)}/message`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
+export interface SteerSessionResponse {
+  ok: boolean;
+  session: Session;
+  interrupted?: true;
+}
+
+/** Human steer: rewrites a queued prompt, or aborts a running session first. */
+export function steerSession(sessionId: string, content: string): Promise<SteerSessionResponse> {
+  return fetchJSON<SteerSessionResponse>(`/tasks/${encodeURIComponent(sessionId)}/steer`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
+export interface CancelSessionResponse {
+  ok: boolean;
+  status: string;
+  session: Session;
+}
+
+/** Interrupt: best-effort abort of a running session (async-ack, 202). */
+export function cancelSession(sessionId: string): Promise<CancelSessionResponse> {
+  return fetchJSON<CancelSessionResponse>(`/tasks/${encodeURIComponent(sessionId)}/cancel`, {
+    method: "POST",
+  });
+}
+
+export interface RoomMember {
+  id: string;
+  name: string;
+  joinedAt: string;
+}
+
+/**
+ * Live roster of the WS room. Poll this — the browser cannot hold a socket
+ * (the BFF cannot proxy WS upgrades and the gate token stays server-side),
+ * so presence reads through the same BFF forwarding as every other call.
+ */
+export function getRoomMembers(sessionId: string): Promise<{ ok: boolean; members: RoomMember[] }> {
+  return fetchJSON<{ ok: boolean; members: RoomMember[] }>(`/sessions/${encodeURIComponent(sessionId)}/room/members`);
+}

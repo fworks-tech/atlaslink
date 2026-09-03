@@ -9,6 +9,11 @@ const searchParamsMock = vi.fn();
 const projectsMock = vi.fn();
 const sessionsMock = vi.fn();
 const eventsMock = vi.fn();
+const refreshMock = vi.fn();
+const replyMock = vi.fn();
+const chatMock = vi.fn();
+const steerMock = vi.fn();
+const cancelMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush, replace: routerReplace }),
@@ -25,6 +30,17 @@ vi.mock("@/hooks/useSessions", () => ({
 
 vi.mock("@/hooks/useEvents", () => ({
   useEvents: () => eventsMock(),
+}));
+
+vi.mock("@/hooks/useRoomPresence", () => ({
+  useRoomPresence: () => ({ members: [] }),
+}));
+
+vi.mock("@/lib/api", () => ({
+  replyToSession: (...args: unknown[]) => replyMock(...args),
+  sendChatMessage: (...args: unknown[]) => chatMock(...args),
+  steerSession: (...args: unknown[]) => steerMock(...args),
+  cancelSession: (...args: unknown[]) => cancelMock(...args),
 }));
 
 // biome-ignore lint/suspicious/noExplicitAny: test stubs
@@ -106,6 +122,42 @@ function seed(params: string) {
         task: { member: "the-mediator", prompt: "second task" },
       },
     ],
+    refresh: refreshMock,
+  });
+  eventsMock.mockReturnValue({ events: [] });
+}
+
+function seedRoom(params: string) {
+  searchParamsMock.mockReturnValue(new URLSearchParams(params));
+  projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+  sessionsMock.mockReturnValue({
+    sessions: [
+      {
+        sessionId: "ses-1",
+        correlationId: "cor-1",
+        status: "running",
+        version: 1,
+        projectId: "p-1",
+        task: { member: "the-mediator", prompt: "review PR" },
+      },
+      {
+        sessionId: "ses-9",
+        correlationId: "cor-9",
+        status: "awaiting_input",
+        version: 2,
+        task: { member: "the-architect", prompt: "plan" },
+        nextStep: { awaiting_input: true, prompt: "Ship it?", member: "the-architect" },
+        question: { question: "Ship it?", context: "plan context" },
+      },
+      {
+        sessionId: "ses-7",
+        correlationId: "cor-7",
+        status: "succeeded",
+        version: 3,
+        task: { member: "the-builder", prompt: "done work" },
+      },
+    ],
+    refresh: refreshMock,
   });
   eventsMock.mockReturnValue({ events: [] });
 }
@@ -144,5 +196,60 @@ describe("HomeClient inspector wiring", () => {
     fireEvent.click(screen.getByTestId("select-ses2"));
     expect(routerPush).toHaveBeenCalledWith("?session=ses-2&project=p-1");
     expect(screen.queryByTestId("inspector")).toBeNull();
+  });
+});
+
+describe("HomeClient room wiring", () => {
+  beforeEach(() => {
+    chatMock.mockResolvedValue({ ok: true, session: {} });
+    steerMock.mockResolvedValue({ ok: true, session: {} });
+    cancelMock.mockResolvedValue({ ok: true, status: "cancelled", session: {} });
+    replyMock.mockResolvedValue({ ok: true, session: {}, resumedSession: { sessionId: "ses-10" } });
+  });
+
+  it("chat composer posts to the room, clears, and refreshes", async () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    fireEvent.change(screen.getByLabelText("Message the room"), { target: { value: "hi all" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await vi.waitFor(() => expect(chatMock).toHaveBeenCalledWith("ses-1", "hi all"));
+    await vi.waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    // the clear lands on a later flush than the refresh call — wait for the DOM
+    await vi.waitFor(() => expect(screen.getByLabelText("Message the room")).toHaveValue(""));
+  });
+
+  it("approval inbox renders the question plus context and replies via the composer", async () => {
+    seedRoom("session=ses-9");
+    render(<HomeClient />);
+    expect(screen.getByText(/Ship it\?/)).toBeDefined();
+    expect(screen.getByText("plan context")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "yes" })).toBeNull();
+    const replyInput = screen.getByPlaceholderText("Type your reply…");
+    fireEvent.change(replyInput, { target: { value: "go ahead" } });
+    const sendBtn = replyInput.parentElement?.querySelector("button");
+    expect(sendBtn).not.toBeNull();
+    fireEvent.click(sendBtn as HTMLButtonElement);
+    await vi.waitFor(() => expect(replyMock).toHaveBeenCalledWith("ses-9", "go ahead"));
+    await vi.waitFor(() => expect(routerPush).toHaveBeenCalledWith(expect.stringContaining("ses-10")));
+  });
+
+  it("steer box steers and the interrupt button cancels a running session", async () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    fireEvent.change(screen.getByLabelText("Redirect this session"), { target: { value: "pivot" } });
+    fireEvent.click(screen.getByRole("button", { name: "Steer" }));
+    await vi.waitFor(() => expect(steerMock).toHaveBeenCalledWith("ses-1", "pivot"));
+    // the steer round-trip disables the box while in flight — wait for it to settle
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Interrupt" })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: "Interrupt" }));
+    await vi.waitFor(() => expect(cancelMock).toHaveBeenCalledWith("ses-1"));
+  });
+
+  it("terminal sessions hide the chat composer and the steer box", () => {
+    seedRoom("session=ses-7");
+    render(<HomeClient />);
+    expect(screen.queryByLabelText("Message the room")).toBeNull();
+    expect(screen.queryByLabelText("Redirect this session")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Interrupt" })).toBeNull();
   });
 });

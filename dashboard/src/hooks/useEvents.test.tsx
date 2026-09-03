@@ -80,4 +80,12 @@ describe("useEvents", () => {
     renderHook(() => useEvents({ enabled: false }));
     expect(MockEventSource.instances).toHaveLength(0);
   });
+
+  it("subscribes to the room event types that keep the thread live", () => {
+    renderHook(() => useEvents());
+    const types = MockEventSource.instances[0].listeners;
+    for (const type of ["session.message", "session.steer", "session.awaiting_input", "session.user_reply", "session.parked"]) {
+      expect(types.has(type), `subscribed to ${type}`).toBe(true);
+    }
+  });
 });

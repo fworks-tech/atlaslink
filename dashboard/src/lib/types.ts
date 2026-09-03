@@ -16,6 +16,10 @@ export interface Session {
   durationMs?: number;
   interaction?: { role: "user" | "atlas" | "member"; member?: string; at: string; content: string }[];
   nextStep?: { awaiting_input: boolean; prompt?: string; member?: string } | null;
+  // unified ask_human payload behind nextStep.prompt; drives the inbox question + context + composer
+  question?: { question: string; context?: string };
+  // parked session this follow-up continues (linked-session resume)
+  resumeOf?: string;
   diagram?: { nodes: { id: string; type: string; position: { x: number; y: number } }[]; edges: { id: string; source: string; target: string }[]; mode: string } | null;
 }
 

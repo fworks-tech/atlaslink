@@ -4,6 +4,18 @@ function toDate(at?: string): number {
   return at !== undefined ? Date.parse(at) : NaN;
 }
 
+/** Client-side mirror of the server chat bound: the thread never grows past it. */
+const MAX_THREAD_TURNS = 500;
+
+function appendHumanTurn(patch: Partial<Session>, event: BridgeEvent, current: Session): void {
+  const content = typeof event.message === "string" ? event.message : undefined;
+  if (!content) return;
+  patch.interaction = [
+    ...(current.interaction ?? []),
+    { role: "user" as const, at: typeof event.at === "string" ? event.at : "", content },
+  ].slice(-MAX_THREAD_TURNS);
+}
+
 /** What each terminal/in-flight lifecycle event means, as data — not an if-chain. */
 export const LIFECYCLE_TRANSITIONS: Record<string, (patch: Partial<Session>, event: BridgeEvent, current: Session) => void> = {
   "session.running": (patch, event, current) => {
@@ -43,14 +55,17 @@ export const LIFECYCLE_TRANSITIONS: Record<string, (patch: Partial<Session>, eve
   // so the reply event itself patches nothing (content comes via refetch)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   "session.user_reply": (_patch, _event, _current) => {},
+  // anytime chat + steer land in the thread live: same user-turn shape as the
+  // store projection, so the thread matches refetch without one
+  "session.message": appendHumanTurn,
+  "session.steer": appendHumanTurn,
 };
 
-/** First fx question label; tolerates the legacy plain-string shape. */
+/** Single unified ask_human question; tolerates the legacy plain-string shape. */
 function firstQuestionLabel(question: unknown): string | undefined {
   if (typeof question === "string") return question;
-  const questions = (question as { questions?: Array<{ label?: unknown }> } | null)?.questions;
-  const label = questions?.[0]?.label;
-  return typeof label === "string" ? label : undefined;
+  const text = (question as { question?: unknown } | null)?.question;
+  return typeof text === "string" ? text : undefined;
 }
 
 export function formatDuration(session: Session): string {

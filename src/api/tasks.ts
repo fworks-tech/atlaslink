@@ -1,15 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type { SessionBackend, SessionFilter } from '../session/sessionBackend'
-import type { Session as AggregateSession, SessionDelta, SessionEvent } from '../session/types'
-import { SessionTerminatedError, VersionConflictError } from '../session/types'
-import type { BridgeEnvelope } from '../bridge/EventLogStore'
+import type { Session as AggregateSession, SessionEvent } from '../session/types'
+import { VersionConflictError } from '../session/types'
 import type { SessionQueue } from '../bridge/SessionQueue'
 import type { SseHandler } from '../bridge/sseEndpoint'
 import type { TaskRegistry } from '../tasks/taskRegistry'
 import { tenantBackendForRequest } from './tenant'
+import { appendChatMessage, isTerminal, replyToParked, steerSession } from './sessionActions'
 import { log } from '../log'
-import { ASK_HUMAN_MAX_CONTEXT_LENGTH, ASK_HUMAN_MAX_QUESTION_LENGTH } from 'agenthood/dist/tools/human/AskHumanTool.js'
 
 export interface TaskDeps {
   backend: SessionBackend
@@ -18,171 +17,11 @@ export interface TaskDeps {
   sse: SseHandler
 }
 
-const TERMINAL_STATUSES = ['succeeded', 'failed', 'cancelled'] as const
-
-function isTerminal(status: string): boolean {
-  return (TERMINAL_STATUSES as readonly string[]).includes(status)
-}
-
-interface CasAppendOptions {
-  backend: SessionBackend
-  sessionId: string
-  /** Fast reject on the pre-read aggregate; return an error message or null to proceed. */
-  guard: (current: AggregateSession) => string | null
-  /** Events to append; the terminal check is re-enforced inside the write. */
-  deltas: (current: AggregateSession, at: string) => SessionDelta[]
-  /** SSE envelope fanned out after commit. */
-  sseEvent: (current: AggregateSession, at: string, version: number) => BridgeEnvelope
-}
-
-type CasAppendResult = { code: 201; session: AggregateSession } | { code: 404 | 409; error: string }
-
-/**
- * Shared CAS-append loop for the reply/message-style routes: pre-read guard,
- * 2-attempt readModifyWrite with VersionConflictError retry, write-time
- * terminal re-check (a cancel/finish landing between read and commit still
- * rejects instead of polluting a closed session), best-effort SSE fan-out,
- * and 201/404/409 mapping. The store is truth; SSE is projection.
- */
-async function casAppendSessionEvents(
-  broadcaster: { emit: (envelope: BridgeEnvelope) => void },
-  opts: CasAppendOptions
-): Promise<CasAppendResult> {
-  const { backend, sessionId, guard, deltas, sseEvent } = opts
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const current = await backend.get(sessionId)
-    if (!current) return { code: 404, error: 'unknown session' }
-    const rejection = guard(current)
-    if (rejection) return { code: 409, error: rejection }
-    const at = new Date().toISOString()
-    try {
-      await backend.readModifyWrite(sessionId, current.version, (writeTime) => {
-        if (writeTime && isTerminal(writeTime.status)) throw new SessionTerminatedError(sessionId)
-        return deltas(writeTime ?? current, at)
-      })
-    } catch (err) {
-      if (err instanceof VersionConflictError) continue
-      if (err instanceof SessionTerminatedError) return { code: 409, error: 'session already terminated' }
-      throw err
-    }
-    const after = await backend.get(sessionId)
-    if (!after) return { code: 404, error: 'unknown session' }
-    try {
-      broadcaster.emit(sseEvent(current, at, after.version))
-    } catch {
-      // best-effort; store is truth
-    }
-    return { code: 201, session: after }
-  }
-  return { code: 409, error: 'session state changed' }
-}
-
-/** Caps: the fold lands in a fresh model prompt, so one park cannot blow past context on resume. */
-export const MAX_FOLD_QUESTION = ASK_HUMAN_MAX_QUESTION_LENGTH
-export const MAX_FOLD_CONTEXT = ASK_HUMAN_MAX_CONTEXT_LENGTH
-export const MAX_FOLD_REPLY = 4000
-/** Anytime chat is unbounded by lifecycle, so the log itself carries the bound. */
-export const MAX_SESSION_MESSAGES = 500
-
-function truncateFold(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}…[truncated]` : text
-}
-
-/**
- * Follow-up prompt: the original prompt plus the answered Q&A. Delimited so
- * the model cannot mistake human text for instructions; capped so a hostile
- * or verbose reply cannot smuggle an unbounded prompt into the resumed run;
- * the closing tag is neutralized in both halves so a crafted reply cannot
- * break out of the delimiter and inject instructions after it.
- */
-export function foldReplyPrompt(originalPrompt: string, question: string, context: string | undefined, reply: string): string {
-  const q = truncateFold(question, MAX_FOLD_QUESTION)
-    .replace(/"/g, "'")
-    .replace(/[<>\r\n]+/g, ' ')
-    .replace(/<\/human_reply/gi, '</ human_reply')
-    .trim()
-  const c = (context === undefined ? '' : truncateFold(context, MAX_FOLD_CONTEXT))
-    .replace(/"/g, "'")
-    .replace(/[<>\r\n]+/g, ' ')
-    .replace(/<\/human_reply/gi, '</ human_reply')
-    .trim()
-  const a = truncateFold(reply, MAX_FOLD_REPLY).replace(/<\/human_reply/gi, '</ human_reply')
-  return `${originalPrompt}\n\n<human_reply${q ? ` question="${q}"` : ''}${c ? ` context="${c}"` : ''}>\n${a}\n</human_reply>`
-}
-
 interface PostBody {
   member: string
   prompt: string
   projectId?: string
   tweaks?: { provider?: string; member?: Record<string, unknown>; team?: Record<string, unknown> }
-}
-
-/**
- * Linked follow-up for a replied-to park: the original prompt plus the Q&A
- * folded in, so the new run sees the answer without sharing the parked run's
- * scratchpad. Committed to the store first, then created + enqueued to the
- * interactive lane (a human is waiting on this answer). The provider override
- * rides along — a pinned provider must not silently revert on resume;
- * member/team tweaks persist on the store entry but the registry runner takes
- * only provider today, same as the create route (pre-existing gap, not
- * something resume may diverge on). A declare failure after the store commit
- * cancels the follow-up instead of orphaning it queued-forever.
- */
-async function spawnResumeFollowup(
-  deps: Pick<TaskDeps, 'registry' | 'queue'> & { backend: SessionBackend },
-  args: { sessionId: string; tenantId: string; original: AggregateSession; content: string }
-): Promise<{ followupId: string } | { error: string }> {
-  const { sessionId, tenantId, original, content } = args
-  const followupId = `ses-${randomUUID()}`
-  const followupCorrelationId = `cor-${randomUUID()}`
-  const at = new Date().toISOString()
-  const prompt = foldReplyPrompt(original.task.prompt, original.question?.question ?? '', original.question?.context, content)
-  const resumeProvider = typeof original.tweaks?.provider === 'string' ? original.tweaks.provider : undefined
-  await deps.backend.append({
-    type: 'session.created',
-    sessionId: followupId,
-    correlationId: followupCorrelationId,
-    at,
-    member: original.task.member,
-    prompt,
-    tenantId,
-    ...(original.projectId !== undefined ? { projectId: original.projectId } : {}),
-    ...(original.tweaks !== undefined ? { tweaks: original.tweaks } : {}),
-    resumeOf: sessionId,
-  })
-  try {
-    const created = deps.registry.create({
-      member: original.task.member,
-      prompt,
-      ...(resumeProvider !== undefined ? { provider: resumeProvider } : {}),
-      id: followupId,
-      correlationId: followupCorrelationId,
-    })
-    deps.queue.declareSession(created, { lane: 'interactive' })
-  } catch (err) {
-    try {
-      deps.registry.cancel(followupId)
-    } catch {
-      // registry entry missing — nothing to withdraw
-    }
-    try {
-      await deps.backend.append({
-        type: 'session.cancelled',
-        sessionId: followupId,
-        correlationId: followupCorrelationId,
-        at: new Date().toISOString(),
-      })
-    } catch {
-      // store truth stays queued; it surfaces in listing but never runs
-    }
-    log.error('task resume failed after commit; follow-up cancelled', {
-      sessionId,
-      followupId,
-      error: err instanceof Error ? err.message : String(err),
-    })
-    return { error: 'resume failed after commit; follow-up cancelled' }
-  }
-  return { followupId }
 }
 
 /** Wire form of the store aggregate — same shape the spec §3 defines. */
@@ -394,52 +233,17 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       const backend = tenantCtx.backend
       const tenantId = tenantCtx.tenantId!
       const sessionId = request.params.sessionId
-      const content = request.body.content
-      if (content.trim().length === 0) {
-        return reply.code(400).send({ ok: false, error: 'content must not be blank' })
-      }
-      // the reply is recorded on the parked original, which stays
-      // awaiting_input (still cancellable) — resume spawns a linked follow-up.
-      // Single-reply-per-park: the original parks exactly once, so a second
-      // reply would fork a second follow-up (double LLM spend, lane flood).
-      // Multi-turn Q&A still works — the follow-up can park and ask again.
-      const result = await casAppendSessionEvents(deps.sse.broadcaster, {
-        backend,
-        sessionId,
-        guard: (current) => {
-          if (current.status !== 'awaiting_input') {
-            return isTerminal(current.status) ? 'session already terminated' : 'session not awaiting input'
-          }
-          if (current.replyCount > 0) return 'session already answered'
-          return null
-        },
-        deltas: (current, at) => [
-          { type: 'session.user_reply', correlationId: current.correlationId, at, reply: content },
-        ],
-        sseEvent: (current, at, version) => ({
-          eventId: version,
-          type: 'session.user_reply',
-          sessionId,
-          correlationId: current.correlationId,
-          at,
-          reply: content,
-        }),
-      })
-      if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
-      const original = result.session
-      const resumed = await spawnResumeFollowup(deps, {
+      // shared with the WS room channel — the route only adapts codes to HTTP
+      const result = await replyToParked(
+        { backend, registry: deps.registry, queue: deps.queue, broadcaster: deps.sse.broadcaster },
         sessionId,
         tenantId,
-        original,
-        content,
-      })
-      if ('error' in resumed) {
-        return reply.code(500).send({ ok: false, error: resumed.error })
-      }
-      log.info('task resumed', { sessionId, followupId: resumed.followupId, member: original.task.member, tenantId })
-      const followup = await backend.get(resumed.followupId)
+        request.body.content
+      )
+      if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
+      const followup = await backend.get(result.followupId)
       if (!followup) return reply.code(404).send({ ok: false, error: 'unknown session' })
-      return reply.code(201).send({ ok: true, session: sessionToWire(original), resumedSession: sessionToWire(followup) })
+      return reply.code(201).send({ ok: true, session: sessionToWire(result.session), resumedSession: sessionToWire(followup) })
     }
   )
 
@@ -465,100 +269,23 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     async (request, reply) => {
       const tenantCtx = tenantBackendForRequest(request, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
-      const backend = tenantCtx.backend
-      const sessionId = request.params.sessionId
-      const content = request.body.content
-      if (content.trim().length === 0) {
-        return reply.code(400).send({ ok: false, error: 'content must not be blank' })
-      }
-      const current = await backend.get(sessionId)
-      if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
-      if (isTerminal(current.status)) {
-        return reply.code(409).send({ ok: false, error: 'session already terminated' })
-      }
-      if (current.status === 'awaiting_input') {
-        return reply.code(409).send({ ok: false, error: 'session awaiting input; reply instead of steering' })
-      }
-      if (current.status === 'queued') {
-        // the pump reads the registry copy at start, so the registry moves
-        // first and the store CAS commits second — a CAS failure rolls the
-        // registry back rather than diverging execution from history
-        const reg = deps.registry.get(sessionId)
-        if (!reg || reg.status !== 'queued') {
-          return reply.code(409).send({ ok: false, error: 'session already started' })
-        }
-        const previousPrompt = reg.task.prompt
-        try {
-          deps.registry.reprompt(sessionId, content)
-        } catch {
-          return reply.code(409).send({ ok: false, error: 'session already started' })
-        }
-        const result = await casAppendSessionEvents(deps.sse.broadcaster, {
-          backend,
-          sessionId,
-          guard: (fresh) => {
-            if (isTerminal(fresh.status)) return 'session already terminated'
-            if (fresh.status !== 'queued') return 'session already started'
-            return null
-          },
-          deltas: (fresh, at) => [
-            { type: 'session.steer', correlationId: fresh.correlationId, at, message: content },
-          ],
-          sseEvent: (fresh, at, version) => ({
-            eventId: version,
-            type: 'session.steer',
-            sessionId,
-            correlationId: fresh.correlationId,
-            at,
-            message: content,
-          }),
-        })
-        if (result.code !== 201) {
-          try {
-            deps.registry.reprompt(sessionId, previousPrompt)
-          } catch {
-            // still queued with the new prompt while history shows the old —
-            // surfaces on the next read; the run itself is unaffected
-          }
-          return reply.code(result.code).send({ ok: false, error: result.error })
-        }
-        return reply.code(201).send({ ok: true, session: sessionToWire(result.session) })
-      }
-      if (current.status === 'running') {
-        // abort first, record second: firing the controller is synchronous and
-        // idempotent, so a run finalizing in the same tick either gets
-        // interrupted or fails the abort — never a user_reply on a corpse.
-        // The registry is execution truth here; a stale store read must not
-        // resurrect anything.
-        if (!deps.registry.abort(sessionId)) {
-          return reply.code(409).send({ ok: false, error: 'session not running' })
-        }
-        const result = await casAppendSessionEvents(deps.sse.broadcaster, {
-          backend,
-          sessionId,
-          guard: (fresh) => {
-            if (isTerminal(fresh.status)) return 'session already terminated'
-            if (fresh.status !== 'running') return 'session not running'
-            return null
-          },
-          deltas: (fresh, at) => [
-            { type: 'session.user_reply', correlationId: fresh.correlationId, at, reply: content },
-          ],
-          sseEvent: (fresh, at, version) => ({
-            eventId: version,
-            type: 'session.user_reply',
-            sessionId,
-            correlationId: fresh.correlationId,
-            at,
-            reply: content,
-          }),
-        })
-        // the abort already fired even on CAS failure — the run still
-        // finalizes CANCELLED; only the new direction failed to record
-        if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
-        return reply.code(201).send({ ok: true, session: sessionToWire(result.session), interrupted: true })
-      }
-      return reply.code(409).send({ ok: false, error: 'session cannot be steered from its current state' })
+      // shared with the WS room channel — the route only adapts codes to HTTP
+      const result = await steerSession(
+        {
+          backend: tenantCtx.backend,
+          registry: deps.registry,
+          queue: deps.queue,
+          broadcaster: deps.sse.broadcaster,
+        },
+        request.params.sessionId,
+        request.body.content
+      )
+      if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
+      return reply.code(201).send({
+        ok: true,
+        session: sessionToWire(result.session),
+        ...(result.interrupted ? { interrupted: true as const } : {}),
+      })
     }
   )
 
@@ -583,30 +310,17 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     async (request, reply) => {
       const tenantCtx = tenantBackendForRequest(request, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
-      const { content } = request.body
-      if (content.trim().length === 0) {
-        return reply.code(400).send({ ok: false, error: 'content must not be blank' })
-      }
-      const result = await casAppendSessionEvents(deps.sse.broadcaster, {
-        backend: tenantCtx.backend,
-        sessionId: request.params.sessionId,
-        guard: (current) => {
-          if (isTerminal(current.status)) return 'session already terminated'
-          if (current.interaction.length >= MAX_SESSION_MESSAGES) return 'message log full'
-          return null
+      // shared with the WS room channel — the route only adapts codes to HTTP
+      const result = await appendChatMessage(
+        {
+          backend: tenantCtx.backend,
+          registry: deps.registry,
+          queue: deps.queue,
+          broadcaster: deps.sse.broadcaster,
         },
-        deltas: (current, at) => [
-          { type: 'session.message', correlationId: current.correlationId, at, message: content },
-        ],
-        sseEvent: (current, at, version) => ({
-          eventId: version,
-          type: 'session.message',
-          sessionId: request.params.sessionId,
-          correlationId: current.correlationId,
-          at,
-          message: content,
-        }),
-      })
+        request.params.sessionId,
+        request.body.content
+      )
       if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
       return reply.code(201).send({ ok: true, session: sessionToWire(result.session) })
     }
