@@ -76,7 +76,7 @@ test('PostgresBackend: user_reply preserves awaiting_input in the directory', as
     correlationId: 'cor-1',
     at: '2026-01-01T00:00:02Z',
     member: 'the-architect',
-    question: { questions: [{ label: 'Ship it?' }] },
+    question: { question: 'Ship it?' },
   })
   await backend.append({
     type: 'session.user_reply',

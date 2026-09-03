@@ -9,6 +9,7 @@ import type { SseHandler } from '../bridge/sseEndpoint'
 import type { TaskRegistry } from '../tasks/taskRegistry'
 import { tenantBackendForRequest } from './tenant'
 import { log } from '../log'
+import { ASK_HUMAN_MAX_CONTEXT_LENGTH, ASK_HUMAN_MAX_QUESTION_LENGTH } from 'agenthood/dist/tools/human/AskHumanTool.js'
 
 export interface TaskDeps {
   backend: SessionBackend
@@ -77,8 +78,9 @@ async function casAppendSessionEvents(
 }
 
 /** Caps: the fold lands in a fresh model prompt, so one park cannot blow past context on resume. */
+export const MAX_FOLD_QUESTION = ASK_HUMAN_MAX_QUESTION_LENGTH
+export const MAX_FOLD_CONTEXT = ASK_HUMAN_MAX_CONTEXT_LENGTH
 export const MAX_FOLD_REPLY = 4000
-export const MAX_FOLD_LABELS = 500
 /** Anytime chat is unbounded by lifecycle, so the log itself carries the bound. */
 export const MAX_SESSION_MESSAGES = 500
 
@@ -93,14 +95,19 @@ function truncateFold(text: string, max: number): string {
  * the closing tag is neutralized in both halves so a crafted reply cannot
  * break out of the delimiter and inject instructions after it.
  */
-export function foldReplyPrompt(originalPrompt: string, labels: string, reply: string): string {
-  const q = truncateFold(labels, MAX_FOLD_LABELS)
+export function foldReplyPrompt(originalPrompt: string, question: string, context: string | undefined, reply: string): string {
+  const q = truncateFold(question, MAX_FOLD_QUESTION)
+    .replace(/"/g, "'")
+    .replace(/[<>\r\n]+/g, ' ')
+    .replace(/<\/human_reply/gi, '</ human_reply')
+    .trim()
+  const c = (context === undefined ? '' : truncateFold(context, MAX_FOLD_CONTEXT))
     .replace(/"/g, "'")
     .replace(/[<>\r\n]+/g, ' ')
     .replace(/<\/human_reply/gi, '</ human_reply')
     .trim()
   const a = truncateFold(reply, MAX_FOLD_REPLY).replace(/<\/human_reply/gi, '</ human_reply')
-  return `${originalPrompt}\n\n<human_reply${q ? ` question="${q}"` : ''}>\n${a}\n</human_reply>`
+  return `${originalPrompt}\n\n<human_reply${q ? ` question="${q}"` : ''}${c ? ` context="${c}"` : ''}>\n${a}\n</human_reply>`
 }
 
 interface PostBody {
@@ -129,8 +136,7 @@ async function spawnResumeFollowup(
   const followupId = `ses-${randomUUID()}`
   const followupCorrelationId = `cor-${randomUUID()}`
   const at = new Date().toISOString()
-  const labels = original.question?.questions.map((q) => q.label).join('; ') ?? ''
-  const prompt = foldReplyPrompt(original.task.prompt, labels, content)
+  const prompt = foldReplyPrompt(original.task.prompt, original.question?.question ?? '', original.question?.context, content)
   const resumeProvider = typeof original.tweaks?.provider === 'string' ? original.tweaks.provider : undefined
   await deps.backend.append({
     type: 'session.created',

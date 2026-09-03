@@ -2,7 +2,7 @@ import { msg } from '../tasks/taskRegistry'
 import { createContext } from './contextFactory'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
-import { AskHumanSignal } from 'agenthood/dist/tools/human/AskHumanSignal.js'
+import { AskHumanSignal } from 'agenthood/dist/tools/human/AskHumanTool.js'
 
 export interface AppLike {
   events: { subscribe(listener: (event: RunEvent) => void): () => void }
@@ -38,7 +38,7 @@ export async function runSession(params: {
     params.registry.succeed(params.session.id, { output, durationMs })
   } catch (err) {
     if (err instanceof AskHumanSignal) {
-      params.registry.park(params.session.id, { question: err.questions })
+      params.registry.park(params.session.id, { question: err.payload })
     } else {
       params.registry.fail(params.session.id, { error: msg(err) })
     }

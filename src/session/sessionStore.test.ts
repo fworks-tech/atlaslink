@@ -45,13 +45,13 @@ test('rehydrate throws StreamIntegrityError when the stream is inconsistent', ()
 })
 
 test('rehydrate projects awaiting_input: status, nextStep and atlas interaction, then user_reply preserves park', () => {
-  const awaiting: SessionEvent = { type: 'session.awaiting_input', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:03Z', question: { questions: [{ label: 'continue?' }] }, member: 'atlas' }
+  const awaiting: SessionEvent = { type: 'session.awaiting_input', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:03Z', question: { question: 'continue?' }, member: 'atlas' }
   const replyEv: SessionEvent = { type: 'session.user_reply', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:04Z', reply: 'yes' }
   const a = rehydrate([created, awaiting])
   assert.ok(a)
   assert.equal(a.status, 'awaiting_input')
   assert.equal(a.nextStep?.prompt, 'continue?')
-  assert.deepEqual(a.question, { questions: [{ label: 'continue?' }] })
+  assert.deepEqual(a.question, { question: 'continue?' })
   assert.equal(a.interaction.at(-1)?.role, 'atlas')
   const b = rehydrate([created, awaiting, replyEv])
   assert.ok(b)
@@ -74,7 +74,7 @@ test('rehydrate projects session.message as a user turn without changing status'
 })
 
 test('rehydrate keeps awaiting_input and its nextStep when a message lands', () => {
-  const awaiting: SessionEvent = { type: 'session.awaiting_input', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:03Z', question: { questions: [{ label: 'continue?' }] }, member: 'atlas' }
+  const awaiting: SessionEvent = { type: 'session.awaiting_input', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:03Z', question: { question: 'continue?' }, member: 'atlas' }
   const msg: SessionEvent = { type: 'session.message', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:04Z', message: 'one moment' }
   const s = rehydrate([created, awaiting, msg])
   assert.ok(s)
@@ -95,20 +95,20 @@ test('rehydrate projects session.steer as a user turn without changing status', 
   assert.equal(s.interaction.at(-1)?.content, 'prefer groq')
 })
 
-test('rehydrate joins multi-question labels and carries resumeOf onto the follow-up', () => {
+test('rehydrate projects the single parked question and carries resumeOf onto the follow-up', () => {
   const awaiting: SessionEvent = {
     type: 'session.awaiting_input',
     sessionId: 'ses-1',
     correlationId: 'cor-1',
     at: '2026-01-01T00:00:03Z',
-    question: { questions: [{ label: 'Ship it?' }, { label: 'Which provider?', options: ['groq', 'anthropic'] }] },
+    question: { question: 'Ship it?', context: 'release vote' },
     member: 'atlas',
   }
   const s = rehydrate([created, awaiting])
   assert.ok(s)
   assert.equal(s.nextStep?.prompt, 'Ship it?')
-  assert.equal(s.interaction.at(-1)?.content, 'Ship it?; Which provider?')
-  assert.deepEqual(s.question?.questions.length, 2)
+  assert.equal(s.interaction.at(-1)?.content, 'Ship it?')
+  assert.deepEqual(s.question, { question: 'Ship it?', context: 'release vote' })
 
   const followupCreated: SessionEvent = {
     type: 'session.created',

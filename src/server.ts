@@ -25,42 +25,25 @@ import rateLimit from '@fastify/rate-limit'
 import cors from '@fastify/cors'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
+import { ASK_HUMAN_MAX_CONTEXT_LENGTH, ASK_HUMAN_MAX_QUESTION_LENGTH } from 'agenthood/dist/tools/human/AskHumanTool.js'
 
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
 /**
  * The runner hands us `unknown` (custom AppLike fakes, future runners) — a
  * malformed question mirrors without it rather than crashing the seam or
- * storing an unusable payload the projection would choke on. Caps mirror the
- * agenthood tool schema so a compromised runner cannot park an unbounded
- * question that is stored raw and fanned out on SSE.
+ * storing an unusable payload the projection would choke on. Caps are the
+ * agenthood tool schema limits, imported so a compromised runner cannot park
+ * an unbounded question that is stored raw and fanned out on SSE.
  */
-export const MAX_SEAM_QUESTIONS = 10
-export const MAX_SEAM_LABEL_LENGTH = 500
-export const MAX_SEAM_OPTIONS = 10
-export const MAX_SEAM_OPTION_LENGTH = 200
-
 export function asAskHumanQuestion(value: unknown): AskHumanQuestion | undefined {
   if (typeof value !== 'object' || value === null) return undefined
-  const questions = (value as { questions?: unknown }).questions
-  if (!Array.isArray(questions) || questions.length === 0 || questions.length > MAX_SEAM_QUESTIONS) {
+  const { question, context } = value as { question?: unknown; context?: unknown }
+  if (typeof question !== 'string' || question.length === 0 || question.length > ASK_HUMAN_MAX_QUESTION_LENGTH) {
     return undefined
   }
-  for (const q of questions) {
-    const label = (q as { label?: unknown } | null)?.label
-    if (typeof label !== 'string' || label.length === 0 || label.length > MAX_SEAM_LABEL_LENGTH) {
-      return undefined
-    }
-    const options = (q as { options?: unknown } | null)?.options
-    if (options !== undefined) {
-      if (
-        !Array.isArray(options) ||
-        options.length > MAX_SEAM_OPTIONS ||
-        options.some((o) => typeof o !== 'string' || o.length === 0 || o.length > MAX_SEAM_OPTION_LENGTH)
-      ) {
-        return undefined
-      }
-    }
+  if (context !== undefined && (typeof context !== 'string' || context.length > ASK_HUMAN_MAX_CONTEXT_LENGTH)) {
+    return undefined
   }
   return value as AskHumanQuestion
 }

@@ -5,7 +5,8 @@ import { EventLogStore } from './bridge/EventLogStore'
 import { EventBroadcaster } from './bridge/EventBroadcaster'
 import { SessionQueue } from './bridge/SessionQueue'
 import { SseHandler, formatSse } from './bridge/sseEndpoint'
-import { createAppServer, asAskHumanQuestion, MAX_SEAM_LABEL_LENGTH, MAX_SEAM_OPTIONS, MAX_SEAM_OPTION_LENGTH, MAX_SEAM_QUESTIONS } from './server'
+import { createAppServer, asAskHumanQuestion } from './server'
+import { ASK_HUMAN_MAX_CONTEXT_LENGTH, ASK_HUMAN_MAX_QUESTION_LENGTH } from 'agenthood/dist/tools/human/AskHumanTool.js'
 import { TaskRegistry } from './tasks/taskRegistry'
 import { log as logger } from './log'
 import { tmpDataDir, runEnv, startServer, collectStream, cleanup } from './test/serverHarness'
@@ -259,33 +260,24 @@ test('createAppServer builds the HTTP layer on Fastify (ADR-006 Decision 1)', as
   }
 })
 
-test('asAskHumanQuestion accepts fx questions and rejects everything else', () => {
-  const good = { questions: [{ label: 'Ship it?', options: ['yes', 'no'] }] }
+test('asAskHumanQuestion accepts the unified payload and rejects everything else', () => {
+  const good = { question: 'Ship it?', context: 'release vote' }
   assert.deepEqual(asAskHumanQuestion(good), good)
+  assert.deepEqual(asAskHumanQuestion({ question: 'Ship it?' }), { question: 'Ship it?' })
   assert.equal(asAskHumanQuestion(undefined), undefined)
   assert.equal(asAskHumanQuestion(null), undefined)
   assert.equal(asAskHumanQuestion('continue?'), undefined)
-  assert.equal(asAskHumanQuestion({ questions: [] }), undefined)
-  assert.equal(asAskHumanQuestion({ questions: [{ description: 'no label' }] }), undefined)
-  // caps mirror the tool schema — a compromised runner cannot park unbounded input
-  assert.equal(asAskHumanQuestion({ questions: [{ label: '' }] }), undefined)
+  assert.equal(asAskHumanQuestion({}), undefined)
+  assert.equal(asAskHumanQuestion({ questions: [{ label: 'Ship it?' }] }), undefined)
+  // caps are the agenthood tool schema limits — a compromised runner cannot park unbounded input
+  assert.equal(asAskHumanQuestion({ question: '' }), undefined)
   assert.equal(
-    asAskHumanQuestion({ questions: [{ label: 'L'.repeat(MAX_SEAM_LABEL_LENGTH + 1) }] }),
+    asAskHumanQuestion({ question: 'Q'.repeat(ASK_HUMAN_MAX_QUESTION_LENGTH + 1) }),
     undefined
   )
   assert.equal(
-    asAskHumanQuestion({ questions: Array.from({ length: MAX_SEAM_QUESTIONS + 1 }, () => ({ label: 'q' })) }),
+    asAskHumanQuestion({ question: 'q', context: 'C'.repeat(ASK_HUMAN_MAX_CONTEXT_LENGTH + 1) }),
     undefined
   )
-  assert.equal(asAskHumanQuestion({ questions: [{ label: 'q', options: 'yes' }] }), undefined)
-  assert.equal(
-    asAskHumanQuestion({
-      questions: [{ label: 'q', options: Array.from({ length: MAX_SEAM_OPTIONS + 1 }, () => 'o') }],
-    }),
-    undefined
-  )
-  assert.equal(
-    asAskHumanQuestion({ questions: [{ label: 'q', options: ['O'.repeat(MAX_SEAM_OPTION_LENGTH + 1)] }] }),
-    undefined
-  )
+  assert.equal(asAskHumanQuestion({ question: 'q', context: 7 }), undefined)
 })

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { TaskRegistry, type Session } from '../tasks/taskRegistry'
 import { runSession, type AppLike } from './runTask'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
-import { AskHumanSignal } from 'agenthood/dist/tools/human/AskHumanSignal.js'
+import { AskHumanSignal } from 'agenthood/dist/tools/human/AskHumanTool.js'
 
 type FakeApp = AppLike & { subscribeCount: () => number; listenerCount: () => number }
 
@@ -151,8 +151,8 @@ test('runSession fails the session when createContext rejects', async () => {
 test('runSession parks the session on AskHumanSignal and releases the slot', async () => {
   const registry = new TaskRegistry()
   const session = baseSession(registry)
-  const questions = { questions: [{ label: 'Ship it?', options: ['yes', 'no'] }] }
-  const app = fakeApp({ error: new AskHumanSignal(questions) })
+  const payload = { question: 'Ship it?', context: 'release vote' }
+  const app = fakeApp({ error: new AskHumanSignal(payload) })
 
   const finished = await runSession({
     registry,
@@ -162,7 +162,7 @@ test('runSession parks the session on AskHumanSignal and releases the slot', asy
   })
 
   assert.equal(finished.status, 'parked')
-  assert.deepEqual(finished.question, questions)
+  assert.deepEqual(finished.question, payload)
   // park is not failure: no error, no output — and the runner promise settled
   // (it threw), so no orphan holds the pump slot when this returns
   assert.equal(finished.error, undefined)

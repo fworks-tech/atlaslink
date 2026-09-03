@@ -112,7 +112,7 @@ export function rehydrate(events: SessionEvent[]): Session | null {
           role: 'atlas',
           member: e.member,
           at: e.at,
-          content: e.question?.questions.map((q) => q.label).join('; ') ?? '',
+          content: e.question?.question ?? '',
         })
         break
       case 'session.user_reply':

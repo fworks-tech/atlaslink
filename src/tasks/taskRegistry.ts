@@ -83,6 +83,7 @@ export class TaskRegistry {
   /**
    * Park a running session: the worker returned early on AskHumanSignal, so
    * the pump slot is already free — this only records where the session went.
+   * The question is the unified ask_human payload ({question, context?}).
    * Parked is terminal for the original: resume always spawns a linked
    * follow-up session, never restarts this entry. Only legal from RUNNING.
    */
@@ -153,6 +154,6 @@ export interface Session {
   output: string | undefined
   error: string | undefined
   durationMs: number | undefined
-  /** fx question payload the run parked on (PARKED only) */
+  /** Unified ask_human payload ({question, context?}) the run parked on (PARKED only) */
   question?: unknown
 }

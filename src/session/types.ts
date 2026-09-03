@@ -1,19 +1,14 @@
 export type SessionStatus = 'queued' | 'running' | 'awaiting_input' | 'succeeded' | 'failed' | 'cancelled'
 
-/** fx-style question payload (ADR-007): what the agent asked the human. */
-export interface AskHumanQuestionItem {
-  label: string
-  description?: string
-  options?: string[]
-}
-
+/** Unified ask_human payload (agenthood AskHumanSignal.payload): the single question the agent parked on. */
 export interface AskHumanQuestion {
-  questions: AskHumanQuestionItem[]
+  question: string
+  context?: string
 }
 
-/** First question label — the human-readable summary kept in nextStep/interaction. */
+/** The parked question text — the human-readable summary kept in nextStep/interaction. */
 export function firstQuestionLabel(question: AskHumanQuestion | undefined): string | undefined {
-  return question?.questions[0]?.label
+  return question?.question
 }
 
 export interface SessionEvent {
@@ -69,7 +64,7 @@ export interface Session {
   // conversational + next-step projection (M4)
   interaction: { role: 'user' | 'atlas' | 'member'; member?: string; at: string; content: string }[]
   nextStep: { awaiting_input: boolean; prompt?: string; member?: string } | null
-  // full fx question payload behind nextStep.prompt (first label); set on awaiting_input
+  // full unified question payload behind nextStep.prompt; set on awaiting_input
   question?: AskHumanQuestion
   // parked session this follow-up continues (linked-session resume)
   resumeOf?: string
