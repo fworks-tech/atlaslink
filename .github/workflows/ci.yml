@@ -55,7 +55,7 @@ jobs:
 
       - name: Build agenthood
         working-directory: agenthood
-        run: npm ci && npm run build
+        run: npm ci --legacy-peer-deps && npm run build
 
       - name: Install atlaslink deps
         working-directory: atlaslink
