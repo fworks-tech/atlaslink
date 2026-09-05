@@ -21,7 +21,10 @@ import { VersionConflictError } from './session/types'
 import { registerTaskRoutes } from './api/tasks'
 import { registerProjectRoutes } from './api/projects'
 import { registerRoomRoutes } from './api/room'
-import { registerTokenGate } from './api/auth'
+import { registerTokenGate, registerAuthGate } from './api/auth'
+import { registerAuthRoutes } from './api/authRoutes'
+import { AuthStore } from './session/authStore'
+import type { Db } from './session/db'
 import rateLimit from '@fastify/rate-limit'
 import websocket from '@fastify/websocket'
 import cors from '@fastify/cors'
@@ -112,6 +115,7 @@ export async function createAppServer(params: {
   queue: SessionQueue
   sse: SseHandler
   backend?: SessionBackend
+  authStore?: AuthStore
   bindHost?: string
   version?: string
   rateLimit?: { max: number; timeWindow: string }
@@ -171,12 +175,23 @@ export async function createAppServer(params: {
   // --- Safety health ---
   app.get('/health', { config: { rateLimit: false } }, async () => ({ ok: true, name: 'atlaslink', version: appVersion, uptime: process.uptime() }))
 
+  // --- Auth routes (register, login, API key management) ---
+  // These are intentionally outside the auth gate — you cannot authenticate
+  // to register or login. Mounted on the root app so they are always reachable.
+  if (params.authStore) {
+    registerAuthRoutes(app, params.authStore)
+  }
+
   // --- Account-facing surface (spec §3/§6/§7) ---
   // One security boundary for /runs, /events, and the task-rest routes: the
   // pre-auth bearer gate (fail-closed on non-loopback binds) plus the root rate
   // limit. /health stays on the root app, outside the gate, unthrottled.
   app.register(async (api) => {
-    registerTokenGate(api, { bindHost: params.bindHost })
+    if (params.authStore) {
+      registerAuthGate(api, params.authStore, { bindHost: params.bindHost })
+    } else {
+      registerTokenGate(api, { bindHost: params.bindHost })
+    }
 
     // --- M4 Project API: project-scoped session workspace ---
     registerProjectRoutes(api, { backend })
@@ -244,6 +259,7 @@ export async function createAppServer(params: {
 async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseHandler; registry: TaskRegistry; queue: SessionQueue }> {
   const registry = new TaskRegistry()
   const backend = await createSessionBackend()
+  const authStore = new AuthStore(backend as unknown as Db)
 
   const log = await EventLogStore.open(config.dataDir, { maxBytes: 10 * 1024 * 1024 })
   const broadcaster = new EventBroadcaster(log)
@@ -331,6 +347,7 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
     queue,
     sse,
     backend,
+    authStore,
     bindHost: config.host,
     corsOrigins: config.corsOrigins,
   })
