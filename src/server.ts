@@ -179,7 +179,16 @@ export async function createAppServer(params: {
   })
 
   // --- Safety health ---
-  app.get('/health', { config: { rateLimit: false } }, async () => ({ ok: true, name: 'atlaslink', version: appVersion, uptime: process.uptime() }))
+  app.get('/health', { config: { rateLimit: false } }, async () => {
+    const mem = process.memoryUsage()
+    return {
+      ok: true,
+      name: 'atlaslink',
+      version: appVersion,
+      uptime: process.uptime(),
+      memory: { rss: mem.rss, heapUsed: mem.heapUsed },
+    }
+  })
 
   // --- Auth routes (register, login, API key management) ---
   // These are intentionally outside the auth gate — you cannot authenticate
