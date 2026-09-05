@@ -1,0 +1,1127 @@
+openapi: 3.0.3
+info:
+  title: Atlaslink Task API
+  description: |
+    Atlaslink is a durable session orchestration layer for agent runtimes.
+    This API manages tasks (sessions), projects, events, and real-time collaboration.
+    
+    ## Authentication
+    All endpoints under `/v1/` require authentication via:
+    - JWT Bearer token (from `/v1/auth/register` or `/v1/auth/login`)
+    - API key Bearer token (from `/v1/auth/keys`)
+    - Legacy shared token (ATLASLINK_API_TOKEN env var)
+    
+    ## Versioning
+    All API routes are prefixed with `/v1/`. The `/health` endpoint is unversioned.
+  version: 1.0.0
+  contact:
+    name: Atlaslink
+    url: https://github.com/fworks-tech/atlaslink
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+  - url: https://atlas.flabs.tech
+    description: Production
+
+tags:
+  - name: Health
+    description: Infrastructure health checks
+  - name: Auth
+    description: User authentication and API key management
+  - name: Tasks
+    description: Task (session) lifecycle management
+  - name: Projects
+    description: Project workspace management
+  - name: Events
+    description: Server-Sent Events streams
+  - name: Room
+    description: WebSocket collaboration rooms
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns server health status with memory metrics. Unversioned, rate-limit exempt.
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      description: Creates a new user account and returns a JWT token. First user registration is open (no admin gate).
+      operationId: registerUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Account created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with email and password
+      description: Authenticates a user and returns a JWT token. Failed attempts are logged for intrusion detection.
+      operationId: loginUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/auth/keys:
+    post:
+      tags: [Auth]
+      summary: Create an API key
+      description: Creates a new API key. The plaintext key is returned only once.
+      operationId: createApiKey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApiKeyRequest'
+      responses:
+        '201':
+          description: API key created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyCreatedResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags: [Auth]
+      summary: List API keys
+      description: Returns all API keys for the authenticated user.
+      operationId: listApiKeys
+      responses:
+        '200':
+          description: List of API keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/auth/keys/{keyId}:
+    delete:
+      tags: [Auth]
+      summary: Revoke an API key
+      description: Deletes an API key. Users can only revoke their own keys.
+      operationId: revokeApiKey
+      parameters:
+        - name: keyId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Key revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user
+      description: Returns the authenticated user's profile.
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tasks:
+    post:
+      tags: [Tasks]
+      summary: Create a task
+      description: |
+        Creates a new task (session) and enqueues it for execution.
+        The session is created in `queued` status and will be picked up by the worker.
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '201':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskCreatedResponse'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags: [Tasks]
+      summary: List tasks
+      description: Returns a list of tasks with optional filters.
+      operationId: listTasks
+      parameters:
+        - name: projectId
+          in: query
+          schema:
+            type: string
+          description: Filter by project ID
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [queued, running, succeeded, failed, cancelled, parked, awaiting_input]
+          description: Filter by status
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Filter tasks created after this timestamp
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+          description: Maximum number of tasks to return
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Number of tasks to skip
+      responses:
+        '200':
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tasks/{sessionId}:
+    get:
+      tags: [Tasks]
+      summary: Get a task
+      description: Returns the current state of a task (session aggregate).
+      operationId: getTask
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tasks/{sessionId}/cancel:
+    post:
+      tags: [Tasks]
+      summary: Cancel a task
+      description: |
+        Cancels a task. For queued tasks, returns 202. For running tasks, aborts the execution.
+        Terminal tasks (succeeded, failed, cancelled) cannot be cancelled.
+      operationId: cancelTask
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Optional cancellation reason
+      responses:
+        '200':
+          description: Task cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '202':
+          description: Cancel accepted (queued task)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Task already terminal
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tasks/{sessionId}/reply:
+    post:
+      tags: [Tasks]
+      summary: Reply to a parked session
+      description: |
+        Sends a human reply to a session waiting for input (parked/awaiting_input).
+        The session resumes execution with the provided text.
+      operationId: replyToTask
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplyRequest'
+      responses:
+        '200':
+          description: Reply sent, session resumed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '400':
+          description: Invalid input (blank, oversize)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Task not in awaiting_input state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tasks/{sessionId}/steer:
+    post:
+      tags: [Tasks]
+      summary: Steer a running session
+      description: |
+        Sends a steering instruction to a running session. The current execution is aborted
+        and the session continues with the new prompt.
+      operationId: steerTask
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SteerRequest'
+      responses:
+        '200':
+          description: Session steered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Task not in a steerable state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tasks/{sessionId}/message:
+    post:
+      tags: [Tasks]
+      summary: Append a chat message
+      description: Appends a user message to the session's chat history.
+      operationId: appendMessage
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessageRequest'
+      responses:
+        '200':
+          description: Message appended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '400':
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/tasks/{sessionId}/diagram:
+    post:
+      tags: [Tasks]
+      summary: Save diagram positions
+      description: Persists diagram node positions for a session.
+      operationId: saveDiagram
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiagramRequest'
+      responses:
+        '200':
+          description: Diagram saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/projects:
+    post:
+      tags: [Projects]
+      summary: Create a project
+      description: Creates a new project workspace.
+      operationId: createProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCreatedResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags: [Projects]
+      summary: List projects
+      description: Returns all projects for the authenticated user's tenant.
+      operationId: listProjects
+      responses:
+        '200':
+          description: List of projects
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/projects/{projectId}:
+    get:
+      tags: [Projects]
+      summary: Get a project
+      description: Returns a project by ID.
+      operationId: getProject
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags: [Projects]
+      summary: Delete a project
+      description: Deletes a project and its associated sessions.
+      operationId: deleteProject
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Project deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OkResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Project not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/events:
+    get:
+      tags: [Events]
+      summary: Global event stream
+      description: |
+        Server-Sent Events stream for all session events.
+        Supports reconnection via Last-Event-ID header.
+      operationId: getGlobalEvents
+      responses:
+        '200':
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /v1/events/{sessionId}:
+    get:
+      tags: [Events]
+      summary: Session event stream
+      description: |
+        Server-Sent Events stream for a specific session's events.
+        Supports reconnection via Last-Event-ID header.
+      operationId: getSessionEvents
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /v1/projects/{projectId}/events:
+    get:
+      tags: [Events]
+      summary: Project event stream
+      description: |
+        Server-Sent Events stream for all events in a project.
+        Supports reconnection via Last-Event-ID header.
+      operationId: getProjectEvents
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /v1/sessions/{id}/room/members:
+    get:
+      tags: [Room]
+      summary: Get room members
+      description: Returns the list of connected members in a session's collaboration room.
+      operationId: getRoomMembers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Session ID
+      responses:
+        '200':
+          description: List of room members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomMembersResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/sessions/{id}/room:
+    get:
+      tags: [Room]
+      summary: WebSocket room
+      description: |
+        WebSocket upgrade endpoint for real-time collaboration in a session room.
+        Browsers pass the bearer token as `?token=` query parameter.
+      operationId: connectRoom
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Session ID
+        - name: token
+          in: query
+          schema:
+            type: string
+          description: Bearer token (for browser WebSocket upgrades)
+      responses:
+        '101':
+          description: WebSocket upgrade successful
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token from /v1/auth/register or /v1/auth/login, or API key from /v1/auth/keys
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        name:
+          type: string
+        version:
+          type: string
+        uptime:
+          type: number
+        memory:
+          type: object
+          properties:
+            rss:
+              type: integer
+            heapUsed:
+              type: integer
+
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        tenantId:
+          type: string
+          description: Optional tenant ID (defaults to "default")
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    AuthResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        token:
+          type: string
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: string
+            tenant_id:
+              type: string
+
+    CreateApiKeyRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+
+    ApiKeyCreatedResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        key:
+          type: string
+          description: Plaintext API key (shown only once)
+        id:
+          type: string
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    ApiKeyListResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        keys:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+              last_used_at:
+                type: string
+                format: date-time
+
+    UserProfileResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: string
+            tenant_id:
+              type: string
+
+    CreateTaskRequest:
+      type: object
+      required: [member, prompt]
+      properties:
+        member:
+          type: string
+          description: Agent member to execute
+        prompt:
+          type: string
+          description: Task prompt/instruction
+        projectId:
+          type: string
+          description: Optional project ID to associate with
+        tweaks:
+          type: object
+          description: Optional provider/member/team overrides
+          properties:
+            provider:
+              type: string
+            member:
+              type: string
+            team:
+              type: string
+
+    TaskCreatedResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        session:
+          type: object
+          properties:
+            id:
+              type: string
+            status:
+              type: string
+              enum: [queued]
+
+    TaskResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        session:
+          $ref: '#/components/schemas/Session'
+
+    TaskListResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+        total:
+          type: integer
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+        correlationId:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, cancelled, parked, awaiting_input]
+        task:
+          type: object
+          properties:
+            member:
+              type: string
+            prompt:
+              type: string
+        output:
+          type: string
+          description: Session output (when succeeded)
+        error:
+          type: string
+          description: Error message (when failed)
+        durationMs:
+          type: integer
+        version:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        projectId:
+          type: string
+
+    ReplyRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          description: Human reply text
+
+    SteerRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          description: New steering instruction
+
+    MessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          description: Chat message content
+
+    DiagramRequest:
+      type: object
+      required: [positions]
+      properties:
+        positions:
+          type: object
+          description: Map of node ID to {x, y} coordinates
+
+    CreateProjectRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+
+    ProjectCreatedResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        project:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+
+    ProjectResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        project:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+
+    ProjectListResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        projects:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+
+    RoomMembersResponse:
+      type: object
+      properties:
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+
+    OkResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+
+    ErrorResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          enum: [false]
+        error:
+          type: string
+
+security:
+  - BearerAuth: []
