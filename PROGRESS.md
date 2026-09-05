@@ -162,3 +162,25 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
        `docs/spec/m5-hitl-room.md`. Approval round-trip proven through the
        real stubbed runner (`src/daemon/approvalRoundtrip.test.ts`, `f703571`,
        merged to `main` as `7dbbf32`).
+
+### P0 — Auth & Security Hardening (#185, shipped)
+11. [x] User authentication system — JWT sessions + API keys, scrypt password
+        hashing, per-user tenant scoping. ADR-008 accepted.
+        (`src/api/auth.ts`, `src/api/authRoutes.ts`, `src/session/authStore.ts`,
+        `src/session/jwt.ts`)
+12. [x] Tenant isolation — tenant resolved from auth identity, `x-tenant-id`
+        header rejected when authenticated. (`src/session/tenant.ts`,
+        `src/api/tenant.ts`)
+13. [x] Security headers — CSP, X-Frame-Options, X-Content-Type-Options,
+        Referrer-Policy, Permissions-Policy. (`src/api/securityHeaders.ts`)
+14. [x] Per-user rate limiting — keyed by userId, falls back to IP.
+        (`src/server.ts`)
+15. [x] SSE reconnection — Last-Event-ID persistence via sessionStorage.
+        (`dashboard/src/hooks/useEvents.ts`)
+16. [x] Error boundaries — dashboard wrapped at layout level.
+        (`dashboard/src/app/layout.tsx`)
+17. [x] Enhanced health check — memory usage (rss, heapUsed). (`src/server.ts`)
+18. [x] HMAC-SHA256 request signing — webhook payload integrity.
+        (`src/api/signing.ts`)
+19. [x] Auth API spec — `docs/spec/auth-api.md`
+20. [x] Full test coverage — 281 backend + 178 dashboard tests passing.

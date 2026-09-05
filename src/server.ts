@@ -21,7 +21,11 @@ import { VersionConflictError } from './session/types'
 import { registerTaskRoutes } from './api/tasks'
 import { registerProjectRoutes } from './api/projects'
 import { registerRoomRoutes } from './api/room'
-import { registerTokenGate } from './api/auth'
+import { registerTokenGate, registerAuthGate } from './api/auth'
+import { registerAuthRoutes, registerAuthKeyRoutes } from './api/authRoutes'
+import { registerSecurityHeaders } from './api/securityHeaders'
+import { AuthStore } from './session/authStore'
+import type { Db } from './session/db'
 import rateLimit from '@fastify/rate-limit'
 import websocket from '@fastify/websocket'
 import cors from '@fastify/cors'
@@ -112,6 +116,7 @@ export async function createAppServer(params: {
   queue: SessionQueue
   sse: SseHandler
   backend?: SessionBackend
+  authStore?: AuthStore
   bindHost?: string
   version?: string
   rateLimit?: { max: number; timeWindow: string }
@@ -139,15 +144,20 @@ export async function createAppServer(params: {
   })
 
   // Root-level rate limit registered before any route so its onRoute hook sees
-  // every route (gated scope included); /health opts out below.
+  // every route (gated scope included); /health opts out below. Per-user
+  // keying when auth is present (falls back to IP for unauthenticated).
   await app.register(rateLimit, {
     ...rateLimitOpts,
+    keyGenerator: (request) => request.auth?.userId ?? request.ip,
     errorResponseBuilder: () => ({ statusCode: 429, message: 'rate limit exceeded' }),
   })
 
   // CORS at the root so preflight short-circuits before the gated scope's auth
   // gate (OPTIONS never needs a bearer token). Allowlist only.
   await app.register(cors, { origin: corsOrigins })
+
+  // Security headers: CSP, X-Content-Type-Options, X-Frame-Options, etc.
+  registerSecurityHeaders(app, corsOrigins[0] ?? 'https://atlas.flabs.tech')
 
   // WS room channels (Stage 5): upgrade support for the gated scope below.
   // The handshake passes the same bearer gate + root rate limit as any route;
@@ -169,17 +179,42 @@ export async function createAppServer(params: {
   })
 
   // --- Safety health ---
-  app.get('/health', { config: { rateLimit: false } }, async () => ({ ok: true, name: 'atlaslink', version: appVersion, uptime: process.uptime() }))
+  app.get('/health', { config: { rateLimit: false } }, async () => {
+    const mem = process.memoryUsage()
+    return {
+      ok: true,
+      name: 'atlaslink',
+      version: appVersion,
+      uptime: process.uptime(),
+      memory: { rss: mem.rss, heapUsed: mem.heapUsed },
+    }
+  })
+
+  // --- Auth routes (register, login, API key management) ---
+  // These are intentionally outside the auth gate — you cannot authenticate
+  // to register or login. Mounted on the root app so they are always reachable.
+  if (params.authStore) {
+    registerAuthRoutes(app, params.authStore)
+  }
 
   // --- Account-facing surface (spec §3/§6/§7) ---
   // One security boundary for /runs, /events, and the task-rest routes: the
   // pre-auth bearer gate (fail-closed on non-loopback binds) plus the root rate
   // limit. /health stays on the root app, outside the gate, unthrottled.
   app.register(async (api) => {
-    registerTokenGate(api, { bindHost: params.bindHost })
+    if (params.authStore) {
+      registerAuthGate(api, params.authStore, { bindHost: params.bindHost })
+    } else {
+      registerTokenGate(api, { bindHost: params.bindHost })
+    }
 
     // --- M4 Project API: project-scoped session workspace ---
     registerProjectRoutes(api, { backend })
+
+    // --- Auth key management (requires authentication) ---
+    if (params.authStore) {
+      registerAuthKeyRoutes(api, params.authStore)
+    }
 
     // --- POST /runs (M3 preview, spec §6): delegate a session to the queue ---
     api.post(
@@ -244,6 +279,7 @@ export async function createAppServer(params: {
 async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseHandler; registry: TaskRegistry; queue: SessionQueue }> {
   const registry = new TaskRegistry()
   const backend = await createSessionBackend()
+  const authStore = new AuthStore(backend as unknown as Db)
 
   const log = await EventLogStore.open(config.dataDir, { maxBytes: 10 * 1024 * 1024 })
   const broadcaster = new EventBroadcaster(log)
@@ -331,6 +367,7 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
     queue,
     sse,
     backend,
+    authStore,
     bindHost: config.host,
     corsOrigins: config.corsOrigins,
   })

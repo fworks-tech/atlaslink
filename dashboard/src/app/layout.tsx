@@ -8,6 +8,7 @@ import theme from "../../mantine-theme.mjs";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { BackendWakingOverlay } from "@/components/BackendWakingOverlay";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export const metadata: Metadata = {
   title: "Atlaslink — Live Dashboard",
@@ -23,20 +24,22 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body className="flex min-h-screen flex-col">
         <MantineProvider theme={theme} defaultColorScheme="dark">
-          <a
-            href="#main-content"
-            className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-accent focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            Skip to content
-          </a>
-          <Header />
-          <div className="flex flex-1 flex-col">
-            <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none focus-visible:outline-none">
-              {children}
-            </main>
-            <Footer />
-          </div>
-          <BackendWakingOverlay />
+          <ErrorBoundary>
+            <a
+              href="#main-content"
+              className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-accent focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              Skip to content
+            </a>
+            <Header />
+            <div className="flex flex-1 flex-col">
+              <main id="main-content" tabIndex={-1} className="flex-1 focus:outline-none focus-visible:outline-none">
+                {children}
+              </main>
+              <Footer />
+            </div>
+            <BackendWakingOverlay />
+          </ErrorBoundary>
         </MantineProvider>
         <Analytics />
         <SpeedInsights />

@@ -124,6 +124,27 @@ The `SessionBackend` port is extended with `listProjects()`, `getProject()`, and
 `createProject()`. All three backends implement these methods (in-memory for
 `SessionStore` and `EventLogBackend`; Postgres-backed for `PostgresBackend`).
 
+## The auth layer (P0, ADR-008)
+
+Per-user authentication and tenant isolation (PR #185):
+
+- **JWT sessions** — HS256 tokens via `ATLASLINK_JWT_SECRET`, 7-day expiry. Used
+  by dashboard users.
+- **API keys** — `ak_`-prefixed, stored as SHA-256 hashes. Used by programmatic
+  consumers. `last_used_at` updated on each successful auth.
+- **Legacy bearer** — `ATLASLINK_API_TOKEN` still works as a shared token fallback.
+- **Tenant binding** — tenant is derived from `request.auth.tenantId`, not from
+  the `x-tenant-id` header (which is rejected when auth is present).
+- **Auth gate** — `registerAuthGate()` replaces `registerTokenGate()` for
+  deployments that have migrated to per-user auth. Supports all three auth methods.
+- **Security headers** — CSP, X-Frame-Options, X-Content-Type-Options,
+  Referrer-Policy, Permissions-Policy on every response.
+- **Request signing** — HMAC-SHA256 for webhook payloads via
+  `ATLASLINK_SIGNING_SECRET`.
+
+Ungated routes: `/auth/register`, `/auth/login`.
+Gated routes: `/auth/keys` (CRUD), `/auth/me`.
+
 ## Logging (ADR-005)
 
 One JSON object per line, level via `ATLASLINK_LOG_LEVEL`, `correlationId` threaded
@@ -153,7 +174,7 @@ through that facade so the logged shape stays fixed. SSE streams never emit a
 | `feat/6-postgres-backend` | `PostgresBackend`, `Db` seam, migrations | merged (#42) |
 | `feat/3-task-rest` | Task API + per-session SSE on Fastify, wired through the store | merged (#44) |
 | `feat/45-security-audit` | bearer gate over /runs + /events, rate limiting, auth-rejection logging, `execRawDdl` | merged (#46) |
-| auth ADR | accounts/tenancy at the data-access boundary | pending |
+| auth ADR | accounts/tenancy at the data-access boundary | shipped (#185, ADR-008) |
 | infra ADR | serverless API / container daemon split, Terraform | pending |
 | `feat/projects-backend` | projects table, sessions directory, project CRUD, project-scoped SSE | merged (#58) `661c992` |
 | `feat/full-dag-builder` | FULL DAG: `POST /tasks/:id/reply` (`session.awaiting_input` ↔ `user_reply`), `graph full` (hex/diamond/stadium/terminal), Inspector/Thread, deep-links `/project/:p/session/:s` + `/s/:token` + `?q=<b64url>` | shipped (#63) |

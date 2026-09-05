@@ -63,6 +63,32 @@ export const migrations: Migration[] = [
       CREATE INDEX sessions_project_idx ON sessions (tenant_id, project_id, created_at DESC);
     `,
   },
+  {
+    version: 4,
+    name: 'users_and_api_keys',
+    up: `
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
+      );
+      CREATE INDEX users_tenant_idx ON users (tenant_id);
+      CREATE TABLE api_keys (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        key_hash TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        last_used_at TIMESTAMPTZ
+      );
+      CREATE INDEX api_keys_user_idx ON api_keys (user_id);
+      CREATE INDEX api_keys_tenant_idx ON api_keys (tenant_id);
+    `,
+  },
 ]
 
 // Advisory lock key serializing the migrate loop across processes; two daemons
