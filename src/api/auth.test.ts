@@ -8,6 +8,7 @@ import { AuthStore, generateApiKey, generateRandomId, hashApiKey, hashPassword, 
 import { createToken, signJwt, verifyJwt } from '../session/jwt'
 import { runMigrations } from '../session/migrations'
 import { PgliteDb } from '../session/db'
+import { resolveAuth, checkBearer } from './auth'
 
 async function createTestStore(): Promise<{ store: AuthStore; cleanup: () => Promise<void> }> {
   const dir = mkdtempSync(join(tmpdir(), 'atlaslink-auth-'))
@@ -273,4 +274,177 @@ test('generateApiKey — produces unique keys with ak_ prefix', () => {
   assert.ok(key1.startsWith('ak_'))
   assert.ok(key2.startsWith('ak_'))
   assert.notEqual(key1, key2)
+})
+
+// --- resolveAuth tests ---
+
+test('resolveAuth — returns JWT context for valid token', async () => {
+  const previousSecret = process.env.ATLASLINK_JWT_SECRET
+  process.env.ATLASLINK_JWT_SECRET = 'test-secret-key-that-is-32-bytes!!'
+  try {
+    const { store, cleanup } = await createTestStore()
+    try {
+      const token = createToken('user-1', 'tenant-1')
+      const mockStore = { findApiKeyByKeyHash: store.findApiKeyByKeyHash.bind(store), touchApiKey: store.touchApiKey.bind(store) }
+      const ctx = await resolveAuth(token, mockStore)
+      assert.ok(ctx)
+      assert.equal(ctx!.userId, 'user-1')
+      assert.equal(ctx!.tenantId, 'tenant-1')
+      assert.equal(ctx!.kind, 'jwt')
+    } finally {
+      await cleanup()
+    }
+  } finally {
+    if (previousSecret === undefined) delete process.env.ATLASLINK_JWT_SECRET
+    else process.env.ATLASLINK_JWT_SECRET = previousSecret
+  }
+})
+
+test('resolveAuth — returns API key context and calls touchApiKey', async () => {
+  const previousSecret = process.env.ATLASLINK_JWT_SECRET
+  process.env.ATLASLINK_JWT_SECRET = 'test-secret-key-that-is-32-bytes!!'
+  try {
+    const { store, cleanup } = await createTestStore()
+    try {
+      const userId = generateRandomId()
+      await store.createUser({
+        id: userId,
+        email: 'apikey@test.com',
+        passwordHash: await hashPassword('password123'),
+        tenantId: 'key-tenant',
+      })
+      const plaintext = generateApiKey()
+      const keyHash = hashApiKey(plaintext)
+      const keyId = generateRandomId()
+      await store.createApiKey({ id: keyId, userId, keyHash, name: 'test', tenantId: 'key-tenant' })
+
+      let touched = false
+      const mockStore = {
+        findApiKeyByKeyHash: async (hash: string) => {
+          const found = await store.findApiKeyByKeyHash(hash)
+          return found ? { id: found.id, user_id: found.user_id, tenant_id: found.tenant_id } : null
+        },
+        touchApiKey: async (id: string) => { touched = true; await store.touchApiKey(id) },
+      }
+
+      const ctx = await resolveAuth(plaintext, mockStore)
+      assert.ok(ctx)
+      assert.equal(ctx!.userId, userId)
+      assert.equal(ctx!.tenantId, 'key-tenant')
+      assert.equal(ctx!.kind, 'api_key')
+      assert.equal(touched, true)
+    } finally {
+      await cleanup()
+    }
+  } finally {
+    if (previousSecret === undefined) delete process.env.ATLASLINK_JWT_SECRET
+    else process.env.ATLASLINK_JWT_SECRET = previousSecret
+  }
+})
+
+test('resolveAuth — returns legacy context for shared token', async () => {
+  const previousSecret = process.env.ATLASLINK_JWT_SECRET
+  const previousToken = process.env.ATLASLINK_API_TOKEN
+  process.env.ATLASLINK_JWT_SECRET = 'test-secret-key-that-is-32-bytes!!'
+  process.env.ATLASLINK_API_TOKEN = 'legacy-shared-token-123'
+  try {
+    const { store, cleanup } = await createTestStore()
+    try {
+      const mockStore = { findApiKeyByKeyHash: store.findApiKeyByKeyHash.bind(store), touchApiKey: store.touchApiKey.bind(store) }
+      const ctx = await resolveAuth('legacy-shared-token-123', mockStore)
+      assert.ok(ctx)
+      assert.equal(ctx!.userId, 'system')
+      assert.equal(ctx!.kind, 'legacy')
+    } finally {
+      await cleanup()
+    }
+  } finally {
+    if (previousSecret === undefined) delete process.env.ATLASLINK_JWT_SECRET
+    else process.env.ATLASLINK_JWT_SECRET = previousSecret
+    if (previousToken === undefined) delete process.env.ATLASLINK_API_TOKEN
+    else process.env.ATLASLINK_API_TOKEN = previousToken
+  }
+})
+
+test('resolveAuth — returns null for invalid token', async () => {
+  const previousSecret = process.env.ATLASLINK_JWT_SECRET
+  process.env.ATLASLINK_JWT_SECRET = 'test-secret-key-that-is-32-bytes!!'
+  try {
+    const { store, cleanup } = await createTestStore()
+    try {
+      const mockStore = { findApiKeyByKeyHash: store.findApiKeyByKeyHash.bind(store), touchApiKey: store.touchApiKey.bind(store) }
+      const ctx = await resolveAuth('not-a-valid-token', mockStore)
+      assert.equal(ctx, null)
+    } finally {
+      await cleanup()
+    }
+  } finally {
+    if (previousSecret === undefined) delete process.env.ATLASLINK_JWT_SECRET
+    else process.env.ATLASLINK_JWT_SECRET = previousSecret
+  }
+})
+
+test('resolveAuth — returns null for expired JWT', async () => {
+  const previousSecret = process.env.ATLASLINK_JWT_SECRET
+  process.env.ATLASLINK_JWT_SECRET = 'test-secret-key-that-is-32-bytes!!'
+  try {
+    const { store, cleanup } = await createTestStore()
+    try {
+      const expired = signJwt({ sub: 'u', tenant: 't', iat: Math.floor(Date.now() / 1000) - 7200, exp: Math.floor(Date.now() / 1000) - 3600 })
+      const mockStore = { findApiKeyByKeyHash: store.findApiKeyByKeyHash.bind(store), touchApiKey: store.touchApiKey.bind(store) }
+      const ctx = await resolveAuth(expired, mockStore)
+      assert.equal(ctx, null)
+    } finally {
+      await cleanup()
+    }
+  } finally {
+    if (previousSecret === undefined) delete process.env.ATLASLINK_JWT_SECRET
+    else process.env.ATLASLINK_JWT_SECRET = previousSecret
+  }
+})
+
+// --- checkBearer tests ---
+
+test('checkBearer — returns true when no expected token is set', () => {
+  const previousToken = process.env.ATLASLINK_API_TOKEN
+  delete process.env.ATLASLINK_API_TOKEN
+  try {
+    assert.equal(checkBearer('Bearer anything', undefined, undefined), true)
+  } finally {
+    if (previousToken !== undefined) process.env.ATLASLINK_API_TOKEN = previousToken
+  }
+})
+
+test('checkBearer — matches valid bearer token', () => {
+  assert.equal(checkBearer('Bearer my-token', undefined, 'my-token'), true)
+})
+
+test('checkBearer — rejects wrong bearer token', () => {
+  assert.equal(checkBearer('Bearer wrong-token', undefined, 'my-token'), false)
+})
+
+test('checkBearer — matches query token for WS upgrades', () => {
+  assert.equal(checkBearer(undefined, 'my-token', 'my-token'), true)
+})
+
+test('checkBearer — rejects non-string authorization', () => {
+  assert.equal(checkBearer(123, undefined, 'my-token'), false)
+})
+
+// --- verifyPassword edge cases ---
+
+test('verifyPassword — returns false for malformed stored hash', async () => {
+  assert.equal(await verifyPassword('password', 'no-colon-separator'), false)
+})
+
+test('verifyPassword — returns false for empty hash', async () => {
+  assert.equal(await verifyPassword('password', ''), false)
+})
+
+// --- hashPassword edge cases ---
+
+test('hashPassword — handles empty string password', async () => {
+  const hash = await hashPassword('')
+  assert.ok(hash)
+  assert.ok(await verifyPassword('', hash))
 })

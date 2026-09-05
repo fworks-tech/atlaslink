@@ -105,11 +105,13 @@ export function registerAuthRoutes(
 
       const user = await authStore.findUserByEmail(email!.toLowerCase())
       if (!user) {
+        log.warn('login failed: unknown email', { email: email!.toLowerCase() })
         return reply.code(401).send({ ok: false, error: 'invalid credentials' })
       }
 
       const valid = await verifyPassword(password!, user.password_hash)
       if (!valid) {
+        log.warn('login failed: wrong password', { userId: user.id })
         return reply.code(401).send({ ok: false, error: 'invalid credentials' })
       }
 

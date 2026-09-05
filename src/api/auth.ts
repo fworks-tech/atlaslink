@@ -139,7 +139,10 @@ function extractBearer(request: FastifyRequest): string | null {
  */
 export async function resolveAuth(
   token: string,
-  authStore: { findApiKeyByKeyHash: (hash: string) => Promise<{ id: string; user_id: string; tenant_id: string } | null> }
+  authStore: {
+    findApiKeyByKeyHash: (hash: string) => Promise<{ id: string; user_id: string; tenant_id: string } | null>
+    touchApiKey: (id: string) => Promise<void>
+  }
 ): Promise<AuthContext | null> {
   const claims = verifyJwt(token)
   if (claims) {
@@ -149,6 +152,8 @@ export async function resolveAuth(
   const keyHash = hashApiKey(token)
   const apiKey = await authStore.findApiKeyByKeyHash(keyHash)
   if (apiKey) {
+    // Fire-and-forget — do not block the request on the update.
+    authStore.touchApiKey(apiKey.id).catch(() => {})
     return { userId: apiKey.user_id, tenantId: apiKey.tenant_id, kind: 'api_key' }
   }
 
@@ -171,7 +176,10 @@ export async function resolveAuth(
  */
 export function registerAuthGate(
   app: FastifyInstance,
-  authStore: { findApiKeyByKeyHash: (hash: string) => Promise<{ id: string; user_id: string; tenant_id: string } | null> },
+  authStore: {
+    findApiKeyByKeyHash: (hash: string) => Promise<{ id: string; user_id: string; tenant_id: string } | null>
+    touchApiKey: (id: string) => Promise<void>
+  },
   opts?: { bindHost?: string }
 ): void {
   const jwtSecret = process.env.ATLASLINK_JWT_SECRET
