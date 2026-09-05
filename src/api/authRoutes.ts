@@ -30,9 +30,9 @@ interface RotateKeyBody {
 }
 
 /**
- * Auth routes — register, login, API key management. Mounted at /auth.
- * These routes are intentionally NOT behind the auth gate (you cannot
- * authenticate to register or login).
+ * Ungated auth routes — register and login. These are mounted on the root
+ * app (outside the auth gate) so unauthenticated clients can create accounts
+ * and obtain JWTs.
  */
 export function registerAuthRoutes(
   app: FastifyInstance,
@@ -123,7 +123,17 @@ export function registerAuthRoutes(
       })
     }
   )
+}
 
+/**
+ * Gated auth routes — API key management and current user. These must be
+ * mounted inside the auth gate (where `request.auth` is set by the
+ * preHandler hook).
+ */
+export function registerAuthKeyRoutes(
+  app: FastifyInstance,
+  authStore: AuthStore
+): void {
   app.post<{ Body: RotateKeyBody }>(
     '/auth/keys',
     {

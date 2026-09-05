@@ -33,33 +33,29 @@ async function createTestServer(): Promise<{
   process.env.ATLASLINK_JWT_SECRET = 'test-secret-key-that-is-32-bytes!!'
   delete process.env.ATLASLINK_API_TOKEN
 
-  try {
-    const log = await EventLogStore.open(mkdtempSync(join(tmpdir(), 'atlaslink-log-')))
-    const broadcaster = new EventBroadcaster(log)
-    const sse = new SseHandler(log, broadcaster)
-    const registry = new TaskRegistry()
-    const queue = new SessionQueue({ broadcaster, registry, runner: async () => {} })
-    const backend = new SessionStore()
-    const app = await createAppServer({ log, registry, queue, sse, backend, authStore })
-    const httpServer = app.server
-    await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
-    const port = (httpServer.address() as AddressInfo).port
+  const log = await EventLogStore.open(mkdtempSync(join(tmpdir(), 'atlaslink-log-')))
+  const broadcaster = new EventBroadcaster(log)
+  const sse = new SseHandler(log, broadcaster)
+  const registry = new TaskRegistry()
+  const queue = new SessionQueue({ broadcaster, registry, runner: async () => {} })
+  const backend = new SessionStore()
+  const app = await createAppServer({ log, registry, queue, sse, backend, authStore })
+  const httpServer = app.server
+  await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
+  const port = (httpServer.address() as AddressInfo).port
 
-    return {
-      port,
-      authStore,
-      close: () =>
-        new Promise<void>((resolve) => {
-          httpServer.closeAllConnections?.()
-          httpServer.close(() => resolve())
-        }),
-    }
-  } finally {
-    if (previousJwtSecret === undefined) delete process.env.ATLASLINK_JWT_SECRET
-    else process.env.ATLASLINK_JWT_SECRET = previousJwtSecret
-    if (previousToken === undefined) delete process.env.ATLASLINK_API_TOKEN
-    else process.env.ATLASLINK_API_TOKEN = previousToken
-    rmSync(dir, { recursive: true, force: true })
+  return {
+    port,
+    authStore,
+    close: async () => {
+      httpServer.closeAllConnections?.()
+      await new Promise<void>((resolve) => httpServer.close(() => resolve()))
+      if (previousJwtSecret === undefined) delete process.env.ATLASLINK_JWT_SECRET
+      else process.env.ATLASLINK_JWT_SECRET = previousJwtSecret
+      if (previousToken === undefined) delete process.env.ATLASLINK_API_TOKEN
+      else process.env.ATLASLINK_API_TOKEN = previousToken
+      rmSync(dir, { recursive: true, force: true })
+    },
   }
 }
 
@@ -173,12 +169,12 @@ test('POST /auth/login — rejects unknown email', async () => {
 test('POST /auth/keys — creates API key when authenticated', async () => {
   const { port, close } = await createTestServer()
   try {
-    const loginRes = await jsonRequest(port, 'POST', '/auth/login', {
+    // Register first
+    await jsonRequest(port, 'POST', '/auth/register', {
       email: 'keycreator@example.com',
       password: 'password123',
     })
-    // First register
-    await jsonRequest(port, 'POST', '/auth/register', {
+    const loginRes = await jsonRequest(port, 'POST', '/auth/login', {
       email: 'keycreator@example.com',
       password: 'password123',
     })

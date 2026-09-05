@@ -22,7 +22,7 @@ import { registerTaskRoutes } from './api/tasks'
 import { registerProjectRoutes } from './api/projects'
 import { registerRoomRoutes } from './api/room'
 import { registerTokenGate, registerAuthGate } from './api/auth'
-import { registerAuthRoutes } from './api/authRoutes'
+import { registerAuthRoutes, registerAuthKeyRoutes } from './api/authRoutes'
 import { registerSecurityHeaders } from './api/securityHeaders'
 import { AuthStore } from './session/authStore'
 import type { Db } from './session/db'
@@ -210,6 +210,11 @@ export async function createAppServer(params: {
 
     // --- M4 Project API: project-scoped session workspace ---
     registerProjectRoutes(api, { backend })
+
+    // --- Auth key management (requires authentication) ---
+    if (params.authStore) {
+      registerAuthKeyRoutes(api, params.authStore)
+    }
 
     // --- POST /runs (M3 preview, spec §6): delegate a session to the queue ---
     api.post(
