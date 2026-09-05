@@ -73,10 +73,9 @@ export function useEvents({ enabled = true }: { enabled?: boolean } = {}) {
 
     const connect = (): void => {
       setConnection("connecting");
-      const url = new URL("/api/events", window.location.origin);
       const savedId = lastEventId.current ?? sessionStorage.getItem(LAST_EVENT_ID_KEY);
-      if (savedId) url.searchParams.set("lastEventId", savedId);
-      const es = new EventSource(url.toString());
+      const url = savedId ? `/api/events?lastEventId=${savedId}` : "/api/events";
+      const es = new EventSource(url);
       esRef.current = es;
       for (const type of EVENT_TYPES) es.addEventListener(type, (msg) => onFrame(msg.data));
       es.addEventListener("message", (msg) => onFrame(msg.data));
@@ -88,11 +87,10 @@ export function useEvents({ enabled = true }: { enabled?: boolean } = {}) {
         es.close();
         esRef.current = null;
         if (cancelled) return;
-        const backoff = Math.min(RECONNECT_BASE_MS * 2 ** attempt.current, RECONNECT_MAX_MS);
-        const jitter = Math.floor(Math.random() * 1000);
+        const delay = Math.min(RECONNECT_BASE_MS * 2 ** attempt.current, RECONNECT_MAX_MS);
         attempt.current += 1;
         setConnection("disconnected");
-        timer.current = setTimeout(connect, backoff + jitter);
+        timer.current = setTimeout(connect, delay);
       };
     };
 
