@@ -1,0 +1,7 @@
+[allowlist]
+  description = "Test fixtures — not real secrets"
+  paths = [
+    '''src/api/auth\.test\.ts''',
+    '''src/api/authRoutes\.test\.ts''',
+    '''src/api/signing\.test\.ts''',
+  ]
