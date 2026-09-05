@@ -23,6 +23,7 @@ import { registerProjectRoutes } from './api/projects'
 import { registerRoomRoutes } from './api/room'
 import { registerTokenGate, registerAuthGate } from './api/auth'
 import { registerAuthRoutes } from './api/authRoutes'
+import { registerSecurityHeaders } from './api/securityHeaders'
 import { AuthStore } from './session/authStore'
 import type { Db } from './session/db'
 import rateLimit from '@fastify/rate-limit'
@@ -143,15 +144,20 @@ export async function createAppServer(params: {
   })
 
   // Root-level rate limit registered before any route so its onRoute hook sees
-  // every route (gated scope included); /health opts out below.
+  // every route (gated scope included); /health opts out below. Per-user
+  // keying when auth is present (falls back to IP for unauthenticated).
   await app.register(rateLimit, {
     ...rateLimitOpts,
+    keyGenerator: (request) => request.auth?.userId ?? request.ip,
     errorResponseBuilder: () => ({ statusCode: 429, message: 'rate limit exceeded' }),
   })
 
   // CORS at the root so preflight short-circuits before the gated scope's auth
   // gate (OPTIONS never needs a bearer token). Allowlist only.
   await app.register(cors, { origin: corsOrigins })
+
+  // Security headers: CSP, X-Content-Type-Options, X-Frame-Options, etc.
+  registerSecurityHeaders(app, corsOrigins[0] ?? 'https://atlas.flabs.tech')
 
   // WS room channels (Stage 5): upgrade support for the gated scope below.
   // The handshake passes the same bearer gate + root rate limit as any route;
