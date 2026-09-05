@@ -257,7 +257,8 @@ export function SessionBackendConformance(
             sessionId,
             correlationId,
             at: new Date().toISOString(),
-            task: { member: 'test-member', prompt: `prompt-${i}` },
+            member: 'test-member',
+            prompt: `prompt-${i}`,
             tenantId: 'default',
           })
           sessions.push(sessionId)
@@ -334,7 +335,6 @@ export function SessionBackendConformance(
             correlationId,
             at: new Date().toISOString(),
             message: `message-${i}`,
-            role: 'user',
             tenantId: 'default',
           })
         )
@@ -368,7 +368,6 @@ export function SessionBackendConformance(
             correlationId,
             at: new Date().toISOString(),
             message: `message-${i}`,
-            role: 'user',
             tenantId: 'default',
           })
         }
