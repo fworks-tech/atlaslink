@@ -30,7 +30,7 @@
     "@fastify/cors": "^11.3.0",
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/websocket": "^11.3.0",
-    "agenthood": "file:../agenthood",
+    "agenthood": "^3.55.2",
     "fastify": "^5.12.1",
     "pg": "^8.23.0"
   },
