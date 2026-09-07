@@ -37,10 +37,7 @@ export async function createSessionBackendForTenant(tenantId: string = DEFAULT_T
 }
 
 export function backendForTenant(base: SessionBackend, tenantId: string = DEFAULT_TENANT_ID): SessionBackend {
-  if (typeof (base as SessionBackend & { withTenant?: (t: string) => SessionBackend }).withTenant === 'function') {
-    return (base as SessionBackend & { withTenant: (t: string) => SessionBackend }).withTenant(tenantId)
-  }
-  return base
+  return base.withTenant(tenantId)
 }
 
 export function tenantIdFromHeaders(headers: Record<string, string | string[] | undefined>): string {

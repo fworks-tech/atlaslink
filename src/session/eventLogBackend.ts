@@ -153,16 +153,27 @@ export class EventLogBackend implements SessionBackend {
   }
 
   async list(filter: SessionFilter): Promise<SessionList> {
-    const bySession = new Map<string, SessionEvent[]>()
-    for (const { envelope } of this.log.replay(-1)) {
-      if (isStoreSessionEvent(envelope.type) && typeof envelope.sessionId === 'string') {
+    const markers = new Map<string, number>()
+    const bySession = new Map<string, { eventId: number; event: SessionEvent }[]>()
+    for (const { eventId, envelope } of this.log.replay(-1)) {
+      if (
+        envelope.type === 'session.deleted' &&
+        typeof envelope.sessionId === 'string' &&
+        ((envelope.tenantId as string) ?? DEFAULT_TENANT_ID) === this._tenantId
+      ) {
+        markers.set(envelope.sessionId, eventId)
+      } else if (isStoreSessionEvent(envelope.type) && typeof envelope.sessionId === 'string') {
         const events = bySession.get(envelope.sessionId) ?? []
-        events.push(envelope as unknown as SessionEvent)
+        events.push({ eventId, event: envelope as unknown as SessionEvent })
         bySession.set(envelope.sessionId, events)
       }
     }
-    const sessions = [...bySession.values()]
-      .map((events) => rehydrate(events))
+    const sessions = [...bySession.entries()]
+      .map(([sessionId, entries]) => {
+        const marker = markers.get(sessionId) ?? -1
+        const events = entries.filter((e) => e.eventId > marker).map((e) => e.event)
+        return events.length > 0 ? rehydrate(events) : null
+      })
       .filter((s): s is Session => s !== null)
       .filter((s) => tenantOfSession(s) === this._tenantId)
       .filter((s) => s.projectId === undefined || !this._deletedProjects.has(s.projectId))
@@ -202,9 +213,47 @@ export class EventLogBackend implements SessionBackend {
     return existed
   }
 
+  /**
+   * Deletion is a tombstone, not a purge: the NDJSON log is append-only, so a
+   * `session.deleted` envelope marks a cut-off and every event for the session
+   * with a smaller eventId disappears from get/list. Rotation is safe because
+   * the oldest records — which the tombstone already hides — leave first.
+   * Re-appending after the tombstone yields a fresh version-1 stream.
+   */
+  async deleteSession(sessionId: string): Promise<void> {
+    const eventId = this.log.nextEventId
+    const persisted = this.log.append({
+      eventId,
+      type: 'session.deleted',
+      sessionId,
+      correlationId: '',
+      at: new Date().toISOString(),
+      tenantId: this._tenantId,
+    })
+    if (!persisted) return
+    this._snapshots.delete(sessionId)
+    this._versions.delete(sessionId)
+  }
+
+  private _deletedMarker(sessionId: string): number {
+    let marker = -1
+    for (const { eventId, envelope } of this.log.replay(-1)) {
+      if (
+        envelope.type === 'session.deleted' &&
+        envelope.sessionId === sessionId &&
+        ((envelope.tenantId as string) ?? DEFAULT_TENANT_ID) === this._tenantId
+      ) {
+        marker = eventId
+      }
+    }
+    return marker
+  }
+
   private _sessionEvents(sessionId: string): SessionEvent[] {
+    const marker = this._deletedMarker(sessionId)
     const events: SessionEvent[] = []
-    for (const { envelope } of this.log.replay(-1)) {
+    for (const { eventId, envelope } of this.log.replay(-1)) {
+      if (eventId <= marker) continue
       if (isStoreSessionEvent(envelope.type) && envelope.sessionId === sessionId) {
         events.push(envelope as unknown as SessionEvent)
       }

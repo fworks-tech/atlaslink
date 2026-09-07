@@ -279,4 +279,12 @@ export class SessionStore implements SessionBackend {
     }
     return existed
   }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    const list = this._events.get(sessionId)
+    if (list && list.length > 0 && tenantOfEvent(list[0]) !== this._tenantId) return
+    this._events.delete(sessionId)
+    this._versions.delete(sessionId)
+    this._snapshots.delete(sessionId)
+  }
 }

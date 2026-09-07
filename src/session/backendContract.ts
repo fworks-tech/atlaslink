@@ -237,6 +237,98 @@ export async function backendContract(name: string, create: () => Promise<Sessio
       assert.equal(proj1Running.sessions[0].sessionId, 'ses-b')
     })
 
+    await test('concurrent appends all land', async () => {
+      const store = await create()
+      await store.append(created)
+
+      await Promise.all(
+        Array.from({ length: 5 }, (_, i) =>
+          store.append({
+            type: 'session.message',
+            sessionId: 'ses-1',
+            correlationId: 'cor-1',
+            at: `2026-01-01T00:0${i + 1}:00Z`,
+            message: `message-${i}`,
+          })
+        )
+      )
+
+      const s = await store.get('ses-1')
+      assert.ok(s)
+      assert.equal(s.version, 6)
+    })
+
+    await test('a session with many events reconstructs the full history', async () => {
+      const store = await create()
+      await store.append(created)
+      for (let i = 0; i < 100; i++) {
+        await store.append({
+          type: 'session.message',
+          sessionId: 'ses-1',
+          correlationId: 'cor-1',
+          at: '2026-01-01T00:00:01Z',
+          message: `message-${i}`,
+        })
+      }
+
+      const s = await store.get('ses-1')
+      assert.ok(s)
+      assert.equal(s.interaction.length, 101)
+    })
+
+    await test('deleteSession removes the session from get and list', async () => {
+      const store = await create()
+      await store.append(created)
+      await store.append({ ...created, sessionId: 'ses-2', correlationId: 'cor-2' })
+
+      await store.deleteSession('ses-1')
+
+      assert.equal(await store.get('ses-1'), null)
+      const after = await store.list({ limit: 50, offset: 0 })
+      assert.equal(after.total, 1)
+      assert.equal(after.sessions[0].sessionId, 'ses-2')
+    })
+
+    await test('deleteSession on an unknown session resolves as a no-op', async () => {
+      const store = await create()
+      await store.deleteSession('ses-never-existed')
+      assert.equal(await store.get('ses-never-existed'), null)
+    })
+
+    await test('re-appending after deleteSession starts a fresh version-1 stream', async () => {
+      const store = await create()
+      await store.append(created)
+      await store.append({ type: 'session.running', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:01Z' })
+
+      await store.deleteSession('ses-1')
+      await store.append(created)
+
+      const s = await store.get('ses-1')
+      assert.ok(s)
+      assert.equal(s.version, 1)
+      assert.equal(s.status, 'queued')
+    })
+
+    await test('deleteSession only affects the caller tenant', async () => {
+      const store = await create()
+      await store.append(created)
+
+      // a non-owner delete must leave the owner's stream intact
+      const other = store.withTenant('other-tenant')
+      await other.deleteSession('ses-1')
+      assert.ok(await store.get('ses-1'))
+
+      await other.append({
+        ...created,
+        sessionId: 'ses-9',
+        correlationId: 'cor-9',
+        tenantId: 'other-tenant',
+      })
+      await other.deleteSession('ses-9')
+      assert.equal(await other.get('ses-9'), null)
+      assert.ok(await store.get('ses-1'))
+    })
+
     await test('createProject / listProjects / getProject / deleteProject lifecycle', async () => {
       const store = await create()
       const p = await store.createProject('proj-x', 'probe')

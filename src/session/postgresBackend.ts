@@ -417,6 +417,22 @@ export class PostgresBackend implements SessionBackend {
       return true
     })
   }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    this.#exitBuffers.delete(sessionId)
+    this.#snapshots.delete(sessionId)
+    this.#versions.delete(sessionId)
+    await this.db.transaction(async (tx) => {
+      await tx.query(`DELETE FROM session_events WHERE tenant_id = $1 AND session_id = $2`, [
+        this.tenantId,
+        sessionId,
+      ])
+      await tx.query(`DELETE FROM sessions WHERE tenant_id = $1 AND session_id = $2`, [
+        this.tenantId,
+        sessionId,
+      ])
+    })
+  }
 }
 
 /** Ranked rows carry each session's latest status-bearing event type and
