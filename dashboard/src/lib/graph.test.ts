@@ -46,7 +46,14 @@ describe("buildSocietyGraph", () => {
   it("places one session node per session with an Atlas edge and live status", () => {
     const graph = buildSocietyGraph([session("ses-1", "cor-1")], []);
     expect(graph.nodes).toHaveLength(2);
-    expect(graph.edges).toEqual([{ id: "atlas-ses-1", source: "atlas", target: "ses-1" }]);
+    expect(graph.edges[0]).toMatchObject({
+      id: "atlas-ses-1",
+      source: "atlas",
+      target: "ses-1",
+      type: "smoothstep",
+      animated: true, // a running session's spine pulses
+      markerEnd: { type: MarkerType.ArrowClosed },
+    });
     const sessionNode = graph.nodes.find((n) => n.id === "ses-1");
     expect((sessionNode?.data as { session: Session }).session.status).toBe("running");
   });
@@ -75,20 +82,10 @@ describe("buildSocietyGraph", () => {
     const graph = buildSocietyGraph([session("ses-1", "cor-1")], events);
     const members = memberNodesOf(graph);
     expect(members.map((m) => m.member)).toEqual(["the-mediator", "the-debugger"]);
-    expect(graph.edges).toEqual([
-      { id: "atlas-ses-1", source: "atlas", target: "ses-1" },
-      {
-        id: "handoff-ses-1-0",
-        source: "ses-1",
-        target: "ses-1::the-mediator",
-        markerEnd: { type: MarkerType.ArrowClosed },
-      },
-      {
-        id: "handoff-ses-1-1",
-        source: "ses-1::the-mediator",
-        target: "ses-1::the-debugger",
-        markerEnd: { type: MarkerType.ArrowClosed },
-      },
+    expect(graph.edges.map((e) => [e.id, e.source, e.target, e.type, e.animated])).toEqual([
+      ["atlas-ses-1", "atlas", "ses-1", "smoothstep", true],
+      ["handoff-ses-1-0", "ses-1", "ses-1::the-mediator", "smoothstep", true],
+      ["handoff-ses-1-1", "ses-1::the-mediator", "ses-1::the-debugger", "smoothstep", true],
     ]);
   });
 

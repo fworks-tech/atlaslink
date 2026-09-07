@@ -65,6 +65,20 @@ export interface SocietyGraph {
   edges: Edge[];
 }
 
+/** Shared look for every edge: routed corners, arrows, and a pulse on the
+ * live segment of a running session — the diagram should read as flowing. */
+function styledEdge(source: string, target: string, id: string, live = false): Edge {
+  return {
+    id,
+    source,
+    target,
+    type: "smoothstep",
+    animated: live,
+    style: { stroke: live ? "#818cf8" : "#3f3f66", strokeWidth: 1.5 },
+    markerEnd: { type: MarkerType.ArrowClosed, color: live ? "#818cf8" : "#3f3f66" },
+  };
+}
+
 export type GraphMode = "chain" | "fanout" | "full";
 
 /**
@@ -196,7 +210,7 @@ export function buildSocietyGraph(
       position: { x: placed.x - SESSION_WIDTH / 2, y: placed.y - SESSION_HEIGHT / 2 },
       data: { session, members: chains.get(session.sessionId)! },
     });
-    edges.push({ id: `atlas-${session.sessionId}`, source: "atlas", target: session.sessionId });
+    edges.push(styledEdge("atlas", session.sessionId, `atlas-${session.sessionId}`, session.status === "running"));
 
     const chain = chains.get(session.sessionId)!;
     if (mode === "fanout") {
@@ -208,7 +222,7 @@ export function buildSocietyGraph(
           position: { x: mp.x - MEMBER_WIDTH / 2, y: mp.y - MEMBER_HEIGHT / 2 },
           data: { member, sessionId: session.sessionId, correlationId: session.correlationId, active: session.status === "running" && chain[chain.length - 1] === member },
         });
-        edges.push({ id: `handoff-${session.sessionId}-${member}`, source: session.sessionId, target: memberId(session.sessionId, member), markerEnd: { type: MarkerType.ArrowClosed } });
+        edges.push(styledEdge(session.sessionId, memberId(session.sessionId, member), `handoff-${session.sessionId}-${member}`, session.status === "running"));
       }
     } else {
       for (let i = 0; i < chain.length; i++) {
@@ -227,12 +241,12 @@ export function buildSocietyGraph(
             active: session.status === "running" && i === chain.length - 1,
           },
         });
-        edges.push({
-          id: `handoff-${session.sessionId}-${i}`,
-          source: i === 0 ? session.sessionId : memberId(session.sessionId, chain[i - 1]),
-          target: memberId(session.sessionId, chain[i]),
-          markerEnd: { type: MarkerType.ArrowClosed },
-        });
+        edges.push(styledEdge(
+          i === 0 ? session.sessionId : memberId(session.sessionId, chain[i - 1]),
+          memberId(session.sessionId, chain[i]),
+          `handoff-${session.sessionId}-${i}`,
+          session.status === "running" && i >= chain.length - 2,
+        ));
       }
     }
 
@@ -251,7 +265,7 @@ export function buildSocietyGraph(
         if (!graph.hasNode(id)) continue;
         const p = graph.node(id);
         nodes.push({ id, type: "reasoning", position: { x: p.x - REASONING_WIDTH / 2, y: p.y - REASONING_HEIGHT / 2 }, data: { sessionId: session.sessionId, step, events: byStep.get(step)! } });
-        edges.push({ id: `edge-${id}`, source: graph.predecessors(id)?.[0] ?? session.sessionId, target: id });
+        edges.push(styledEdge(graph.predecessors(id)?.[0] ?? session.sessionId, id, `edge-${id}`, session.status === "running"));
       }
       // render tool nodes in same stable order as layout phase
       let toolCursor = 0;
@@ -276,7 +290,7 @@ export function buildSocietyGraph(
         if (!id || !graph.hasNode(id)) continue;
         const p = graph.node(id);
         nodes.push({ id, type: "tool", position: { x: p.x - TOOL_WIDTH / 2, y: p.y - TOOL_HEIGHT / 2 }, data: { pair, sessionId: session.sessionId } });
-        edges.push({ id: `edge-${id}`, source: graph.predecessors(id)?.[0] ?? session.sessionId, target: id });
+        edges.push(styledEdge(graph.predecessors(id)?.[0] ?? session.sessionId, id, `edge-${id}`, session.status === "running"));
       }
       for (const d of artifacts.decisions) {
         const did = typeof d.decisionId === "string" ? (d.decisionId as string) : typeof d.eventId === "number" ? String(d.eventId) : "dec";
@@ -284,28 +298,28 @@ export function buildSocietyGraph(
         if (!graph.hasNode(id)) continue;
         const p = graph.node(id);
         nodes.push({ id, type: "decision", position: { x: p.x - DECISION_WIDTH / 2, y: p.y - DECISION_HEIGHT / 2 }, data: { event: d, sessionId: session.sessionId } });
-        edges.push({ id: `edge-${id}`, source: graph.predecessors(id)?.[0] ?? session.sessionId, target: id });
+        edges.push(styledEdge(graph.predecessors(id)?.[0] ?? session.sessionId, id, `edge-${id}`, session.status === "running"));
       }
       if (session.status === "awaiting_input") {
         const id = `${session.sessionId}::awaiting`;
         if (graph.hasNode(id)) {
           const p = graph.node(id);
           nodes.push({ id, type: "awaiting", position: { x: p.x - AWAITING_WIDTH / 2, y: p.y - AWAITING_HEIGHT / 2 }, data: { session } });
-          edges.push({ id: `edge-${id}`, source: graph.predecessors(id)?.[0] ?? session.sessionId, target: id });
+          edges.push(styledEdge(graph.predecessors(id)?.[0] ?? session.sessionId, id, `edge-${id}`));
         }
       } else if (["succeeded", "failed", "cancelled"].includes(session.status)) {
         const id = `${session.sessionId}::terminal`;
         if (graph.hasNode(id)) {
           const p = graph.node(id);
           nodes.push({ id, type: "terminal", position: { x: p.x - TERMINAL_WIDTH / 2, y: p.y - TERMINAL_HEIGHT / 2 }, data: { session } });
-          edges.push({ id: `edge-${id}`, source: graph.predecessors(id)?.[0] ?? session.sessionId, target: id });
+          edges.push(styledEdge(graph.predecessors(id)?.[0] ?? session.sessionId, id, `edge-${id}`));
         }
       }
       // dedupe edges already added via graph earlier — we rebuild from nodes; extra edges already covered, but add any remaining graph edges not yet in array
       for (const e of graph.edges()) {
         const exists = edges.some((ed) => ed.source === e.v && ed.target === e.w);
         if (!exists && e.v !== "atlas" && live.some((s) => s.sessionId === e.v || e.v.startsWith(s.sessionId + "::"))) {
-          edges.push({ id: `${e.v}->${e.w}`, source: e.v, target: e.w });
+          edges.push(styledEdge(e.v, e.w, `${e.v}->${e.w}`));
         }
       }
     }

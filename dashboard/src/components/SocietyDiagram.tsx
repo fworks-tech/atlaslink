@@ -38,6 +38,17 @@ const nodeTypes = {
 
 const DEBOUNCE_MS = 100;
 
+const NODE_COLORS: Record<string, string> = {
+  atlas: "#818cf8",
+  session: "#38bdf8",
+  member: "#fbbf24",
+  reasoning: "#a78bfa",
+  tool: "#34d399",
+  decision: "#f472b6",
+  awaiting: "#fbbf24",
+  terminal: "#64748b",
+};
+
 export function SocietyDiagram({
   selectedSessionId,
   mode = "full",
@@ -144,6 +155,8 @@ export function SocietyDiagram({
   return (
     <div className="h-[480px] overflow-hidden rounded-xl border border-white/5 bg-surface">
       <ReactFlow
+        // remount per session so fitView re-centers on the isolated chain
+        key={selectedSessionId}
         nodes={nodes}
         edges={edges}
         onNodesChange={handleNodesChange}
@@ -151,7 +164,11 @@ export function SocietyDiagram({
         onNodeClick={(_, node) => onNodeClick?.(node.id, node.type ?? "unknown", node.data)}
         nodeTypes={nodeTypes}
         fitView
+        fitViewOptions={{ padding: 0.2 }}
         minZoom={0.2}
+        snapToGrid
+        snapGrid={[8, 8]}
+        deleteKeyCode={null}
         colorMode="dark"
       >
         <Background gap={16} size={1} color="#ffffff14" />
@@ -159,6 +176,7 @@ export function SocietyDiagram({
         <MiniMap
           pannable
           zoomable
+          nodeColor={(n) => NODE_COLORS[n.type ?? ""] ?? "#64748b"}
           className="!bg-raised"
           maskColor="rgba(10, 14, 26, 0.7)"
         />
