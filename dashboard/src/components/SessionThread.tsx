@@ -12,18 +12,20 @@ export function SessionThread({ session, events, members, onJump }: { session: S
   const listRef = useRef<HTMLDivElement>(null);
   // stick-to-bottom chat behavior: follow new turns until the reader scrolls up
   const [atBottom, setAtBottom] = useState(true);
-  const atBottomRef = useRef(true);
   const turnCount = session?.interaction?.length ?? 0;
 
-  useEffect(() => {
-    atBottomRef.current = true;
+  // a new session re-sticks to the bottom; derived during render (React's
+  // "adjust state during render" pattern), not in an effect
+  const [lastSid, setLastSid] = useState(session?.sessionId);
+  if (session?.sessionId !== lastSid) {
+    setLastSid(session?.sessionId);
     setAtBottom(true);
-  }, [session?.sessionId]);
+  }
 
   useEffect(() => {
     const el = listRef.current;
-    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight;
-  }, [turnCount, events.length]);
+    if (el && atBottom) el.scrollTop = el.scrollHeight;
+  }, [atBottom, turnCount, events.length]);
 
   if (!session) return <div className="rounded-xl border border-white/5 bg-surface p-4 text-sm text-muted">Select a session to see its thread.</div>;
 
@@ -39,9 +41,7 @@ export function SessionThread({ session, events, members, onJump }: { session: S
         ref={listRef}
         onScroll={(e) => {
           const el = e.currentTarget;
-          const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-          atBottomRef.current = bottom;
-          setAtBottom(bottom);
+          setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 60);
         }}
         className="flex-1 space-y-2 overflow-auto overscroll-contain p-3"
       >
@@ -82,7 +82,6 @@ export function SessionThread({ session, events, members, onJump }: { session: S
           onClick={() => {
             const el = listRef.current;
             if (el) el.scrollTop = el.scrollHeight;
-            atBottomRef.current = true;
             setAtBottom(true);
           }}
           className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-accent/40 bg-surface/90 px-3 py-1 text-xs text-accent shadow-lg backdrop-blur hover:bg-accent/10"

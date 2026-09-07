@@ -297,4 +297,26 @@ describe("SessionInspector selectedNode", () => {
     const header = body.closest("section") as HTMLElement;
     expect(header.className).toContain("overflow-y-auto");
   });
+
+  it("closes on Escape", () => {
+    let closed = false;
+    render(<SessionInspector open onClose={() => { closed = true; }} session={session()} events={[]} />);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(closed).toBe(true);
+  });
+
+  it("marks clamped payloads with an ellipsis and full-text tooltip", () => {
+    const long = "x".repeat(600);
+    render(
+      <SessionInspector
+        open
+        onClose={() => {}}
+        session={null}
+        events={[]}
+        selectedNode={{ id: "ses-9", type: "session", data: { session: { status: "running", task: { prompt: long } } } }}
+      />,
+    );
+    const el = screen.getByTitle(long);
+    expect(el.textContent).toBe(`${long.slice(0, 500)}…`);
+  });
 });
