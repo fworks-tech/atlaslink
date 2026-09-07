@@ -26,7 +26,9 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
 
   const { path } = await ctx.params;
   // path may be an empty array for a bare /api request
-  const target = `${API_URL}/${path.join("/")}${req.nextUrl.search}`;
+  // daemon API routes are versioned under /v1; /health stays on the root app
+  const daemonPath = path.join("/");
+  const target = `${API_URL}/${daemonPath === "health" ? daemonPath : `v1/${daemonPath}`}${req.nextUrl.search}`;
 
   const headers = new Headers();
   for (const [key, value] of req.headers) {
