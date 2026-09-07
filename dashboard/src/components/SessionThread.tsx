@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { BridgeEvent, Session } from "@/lib/types";
 import { artifactsFor } from "@/lib/runProjection";
 import { pairTools } from "@/lib/eventPairing";
 import { Markdown } from "@/components/Markdown";
+
+const TURN_WINDOW = 50;
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function SessionThread({ session, events, members, onJump }: { session: Session | null; events: BridgeEvent[]; members?: Array<{ name: string }>; onJump?: (nodeId: string) => void }) {
@@ -12,6 +14,7 @@ export function SessionThread({ session, events, members, onJump }: { session: S
   const listRef = useRef<HTMLDivElement>(null);
   // stick-to-bottom chat behavior: follow new turns until the reader scrolls up
   const [atBottom, setAtBottom] = useState(true);
+  const [shown, setShown] = useState(TURN_WINDOW);
   const turnCount = session?.interaction?.length ?? 0;
 
   // a new session re-sticks to the bottom; derived during render (React's
@@ -20,6 +23,7 @@ export function SessionThread({ session, events, members, onJump }: { session: S
   if (session?.sessionId !== lastSid) {
     setLastSid(session?.sessionId);
     setAtBottom(true);
+    setShown(TURN_WINDOW);
   }
 
   useEffect(() => {
@@ -27,9 +31,20 @@ export function SessionThread({ session, events, members, onJump }: { session: S
     if (el && atBottom) el.scrollTop = el.scrollHeight;
   }, [atBottom, turnCount, events.length]);
 
+  // growing the window prepends above the viewport — keep the visible turns
+  // anchored instead of jumping up by the added height
+  const prevHeight = useRef(0);
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop += el.scrollHeight - prevHeight.current;
+    prevHeight.current = el?.scrollHeight ?? 0;
+  }, [shown]);
+
   if (!session) return <div className="rounded-xl border border-white/5 bg-surface p-4 text-sm text-muted">Select a session to see its thread.</div>;
 
-  const turns = [...(session.interaction ?? [])].sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  const allTurns = [...(session.interaction ?? [])].sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  const turns = allTurns.slice(-shown);
+  const earlier = allTurns.length - turns.length;
   const here = members ?? [];
 
   return (
@@ -45,6 +60,15 @@ export function SessionThread({ session, events, members, onJump }: { session: S
         }}
         className="flex-1 space-y-2 overflow-auto overscroll-contain p-3"
       >
+        {earlier > 0 && (
+          <button
+            type="button"
+            onClick={() => setShown((s) => s + TURN_WINDOW)}
+            className="sticky top-0 z-10 mx-auto block w-full rounded-lg bg-surface/95 px-2 py-1 text-[11px] text-muted backdrop-blur hover:text-foreground"
+          >
+            ↑ {earlier} earlier turn{earlier > 1 ? "s" : ""} — show {Math.min(TURN_WINDOW, earlier)} more
+          </button>
+        )}
         {turns.length === 0 && <div className="text-xs text-muted">No turns yet.</div>}
         {turns.map((t, i) => (
           <div key={i} className={`max-w-[85%] min-w-0 rounded-lg px-3 py-2 text-sm break-words ${t.role === "user" ? "bg-raised ml-auto" : t.role === "atlas" ? "bg-accent/10 border border-accent/30" : "bg-white/5"}`}>
