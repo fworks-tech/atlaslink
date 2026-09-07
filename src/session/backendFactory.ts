@@ -4,9 +4,16 @@ import { PostgresBackend } from './postgresBackend'
 import { runMigrations } from './migrations'
 import { SessionStore } from './sessionStore'
 import type { SessionBackend } from './sessionBackend'
+import type { DurabilityMode } from './types'
 import { DEFAULT_TENANT_ID, resolveTenantId } from './tenant'
 
 export { DEFAULT_TENANT_ID }
+
+function resolveDurability(): DurabilityMode {
+  const mode = process.env.ATLASLINK_DURABILITY
+  if (mode === 'exit' || mode === 'async' || mode === 'sync') return mode
+  return 'sync'
+}
 
 /**
  * Session backend for the daemon: the in-memory store by default (hermetic,
@@ -21,7 +28,7 @@ export async function createSessionBackend(): Promise<SessionBackend> {
 
   const db = new PgDb(new Pool({ connectionString: url }))
   await runMigrations(db)
-  return new PostgresBackend(db)
+  return new PostgresBackend(db, DEFAULT_TENANT_ID, resolveDurability())
 }
 
 export async function createSessionBackendForTenant(tenantId: string = DEFAULT_TENANT_ID): Promise<SessionBackend> {
