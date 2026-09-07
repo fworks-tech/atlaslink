@@ -34,7 +34,6 @@
       }
     }],
     "@semantic-release/changelog",
-    "@semantic-release/npm",
     ["@semantic-release/github", {
       "releasedLabels": false,
       "discussionCategoryName": "Announcements"
