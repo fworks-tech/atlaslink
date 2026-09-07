@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { BridgeEvent, Session } from "@/lib/types";
 import { artifactsFor } from "@/lib/runProjection";
 import { pairTools } from "@/lib/eventPairing";
@@ -18,6 +18,11 @@ function asRecord(v: unknown): Record<string, unknown> {
 
 function str(v: unknown, fallback = ""): string {
   return typeof v === "string" ? v : fallback;
+}
+
+function Clamped({ text, max, className }: { text: string; max: number; className?: string }) {
+  const cut = text.length > max;
+  return <div className={className} title={cut ? text : undefined}>{cut ? `${text.slice(0, max)}…` : text}</div>;
 }
 
 type InspectorTab = "overview" | "reasoning" | "tools" | "decisions";
@@ -40,7 +45,7 @@ function NodeDetail({ node }: { node: SelectedNode }) {
       <div className="space-y-1.5">
         <div className="text-xs text-muted">step {String(d.step ?? first.step ?? 0)} · {str(d.sessionId).slice(0, 14)}…</div>
         <Markdown text={content} className="rounded bg-raised p-2 text-xs leading-snug" />
-        {summary && <div className="text-xs text-muted">↳ {summary.slice(0, 500)}</div>}
+        {summary && <Clamped text={`↳ ${summary}`} max={500} className="text-xs text-muted" />}
         {events.length > 1 && <div className="text-[11px] text-muted">+{events.length - 1} more event(s) in this step</div>}
       </div>
     );
@@ -52,7 +57,7 @@ function NodeDetail({ node }: { node: SelectedNode }) {
     return (
       <div className="space-y-1.5">
         <div className="text-xs font-medium text-foreground">{str(called.name, "tool")}</div>
-        <div className="text-[11px] break-words text-muted">args: {JSON.stringify(called.args ?? called.arguments ?? "").slice(0, 500)}</div>
+        <Clamped text={`args: ${JSON.stringify(called.args ?? called.arguments ?? "")}`} max={500} className="text-[11px] break-words text-muted" />
         {result ? (
           <Markdown text={str(result.output, str(result.result, JSON.stringify(result)))} className="mt-1 rounded bg-ok/5 p-1.5 text-xs" />
         ) : (
@@ -85,12 +90,12 @@ function NodeDetail({ node }: { node: SelectedNode }) {
     const task = asRecord(session.task);
     return (
       <div className="space-y-1 text-xs">
-        <div className="font-medium text-foreground">{str(task.prompt, node.id).slice(0, 500)}</div>
+        <Clamped text={str(task.prompt, node.id)} max={500} className="font-medium text-foreground break-words" />
         <div className="text-muted">status: {str(session.status, "")}</div>
       </div>
     );
   }
-  return <div className="rounded bg-raised p-2 font-mono text-[11px] break-words whitespace-pre-wrap">{JSON.stringify(node.data ?? {}).slice(0, 500)}</div>;
+  return <Clamped text={JSON.stringify(node.data ?? {})} max={500} className="rounded bg-raised p-2 font-mono text-[11px] break-words whitespace-pre-wrap" />;
 }
 
 export function SessionInspector({
@@ -109,6 +114,7 @@ export function SessionInspector({
   contextLoading?: boolean;
 }) {
   const [tab, setTab] = useState<InspectorTab>("overview");
+  const panelRef = useRef<HTMLDivElement>(null);
   const [lastAutoId, setLastAutoId] = useState<string | null>(null);
   const artifacts = useMemo(() => (session ? artifactsFor(session.correlationId, events) : null), [session, events]);
 
@@ -125,14 +131,36 @@ export function SessionInspector({
     setLastAutoId(selectedNode.id);
     setTab(tabForNodeType(selectedNode.type));
   }
+  const counts: Record<InspectorTab, number | null> = {
+    overview: null,
+    reasoning: artifacts ? artifacts.reasoning.length : null,
+    tools: session ? pairTools(events.filter((e) => e.correlationId === session.correlationId)).length : null,
+    decisions: artifacts ? artifacts.decisions.length : null,
+  };
   const activeTab = tab;
   const handleTab = (t: InspectorTab) => {
     setTab(t);
   };
 
+  useEffect(() => {
+    if (!open) return;
+    panelRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
-    <div className="fixed inset-y-0 right-0 z-40 flex w-[380px] max-w-[90vw] flex-col border-l border-white/10 bg-surface shadow-2xl">
+    <div
+      ref={panelRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-label="Session inspector"
+      className="fixed inset-y-0 right-0 z-40 flex w-[380px] max-w-[90vw] flex-col border-l border-white/10 bg-surface shadow-2xl outline-none"
+    >
       <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
         <div className="text-xs uppercase tracking-widest text-muted">inspector</div>
         <button onClick={onClose} className="rounded px-2 py-1 text-sm text-muted hover:bg-raised">
@@ -167,14 +195,15 @@ export function SessionInspector({
                 className={`rounded px-3 py-1.5 text-xs capitalize ${activeTab === t ? "bg-raised text-foreground" : "text-muted hover:text-foreground"}`}
               >
                 {t}
+                {counts[t] ? <span className="ml-1 rounded-full bg-accent/20 px-1.5 text-[10px] text-accent">{counts[t]}</span> : null}
               </button>
             ))}
           </div>
           <div className="flex-1 overflow-auto p-4 text-sm">
             {activeTab === "overview" && (
               <div className="space-y-2">
-                <div className="font-medium text-foreground">{session.task.prompt}</div>
-                <div className="font-mono text-xs text-muted">{session.sessionId}</div>
+                <div className="font-medium text-foreground break-words">{session.task.prompt}</div>
+                <div className="font-mono text-xs text-muted break-all">{session.sessionId}</div>
                 <div className="text-xs text-muted">status: {session.status} · {session.projectId ?? "no project"}</div>
                 {session.output && <Markdown text={session.output} className="rounded bg-raised p-2 text-xs" />}
                 {session.error && <div className="rounded bg-danger/10 p-2 text-xs text-danger">{session.error}</div>}
@@ -208,7 +237,7 @@ export function SessionInspector({
                   pairTools(events.filter((e) => e.correlationId === session.correlationId)).map((p, i) => (
                     <div key={i} className="rounded border border-white/5 bg-raised/40 p-2">
                       <div className="text-xs font-medium text-foreground">{String(p.called.name ?? "tool")}</div>
-                      <div className="text-[11px] text-muted">args: {JSON.stringify(p.called.args ?? p.called.arguments ?? "").slice(0, 200)}</div>
+                      <Clamped text={`args: ${JSON.stringify(p.called.args ?? p.called.arguments ?? "")}`} max={200} className="text-[11px] break-words text-muted" />
                       {p.result ? <Markdown text={String((p.result as Record<string, unknown>).output ?? (p.result as Record<string, unknown>).result ?? JSON.stringify(p.result))} className="mt-1 rounded bg-ok/5 p-1.5 text-xs" /> : <div className="text-xs text-amber-300">running…</div>}
                     </div>
                   ))
@@ -218,7 +247,7 @@ export function SessionInspector({
             {activeTab === "decisions" && (
               <div className="space-y-2">
                 {!artifacts || artifacts.decisions.length === 0 ? <div className="text-xs text-muted">No decisions recorded.</div> : artifacts.decisions.map((e, i) => (
-                  <div key={i} className="rounded border border-violet-500/20 bg-violet-500/10 p-2 text-xs">{JSON.stringify(e).slice(0, 300)}</div>
+                  <Clamped key={i} text={JSON.stringify(e)} max={300} className="rounded border border-violet-500/20 bg-violet-500/10 p-2 text-xs break-words" />
                 ))}
               </div>
             )}
