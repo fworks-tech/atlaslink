@@ -25,6 +25,7 @@ export interface SessionEvent {
     | 'session.user_reply'
     | 'session.message'
     | 'session.steer'
+    | 'session.deleted'
   sessionId: string
   correlationId: string
   at: string

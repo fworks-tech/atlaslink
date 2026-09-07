@@ -9,7 +9,7 @@ silently clobbering.
 
 | File | Responsibility |
 |------|----------------|
-| `sessionBackend.ts` | The `SessionBackend` port: `append`, `get`, `readModifyWrite`. Implementations must keep version-check + commit atomic. |
+| `sessionBackend.ts` | The `SessionBackend` port: `append`, `get`, `readModifyWrite`, `list`, project CRUD, `deleteSession`, and a required `withTenant`. Implementations must keep version-check + commit atomic. |
 | `sessionStore.ts` | In-memory `SessionStore` plus the shared `rehydrate(events)` reducer and the `StreamIntegrityError`/`VersionConflictError` types. |
 | `deepFreeze.ts` | `deepFreeze(value)` — recursively freezes an object graph. Used by every backend to prevent snapshot mutation. |
 | `eventLogBackend.ts` | `EventLogBackend`: the same contract over the NDJSON `EventLogStore`, with a per-session `SessionSnapshot` cache and `#versions` map for zero-I/O hits; invalidated on `append` to that session. |
@@ -18,7 +18,30 @@ silently clobbering.
 | `migrations.ts` | Hand-rolled runner: applied-versions table, standard-SQL migrations in one transaction guarded by an advisory xact lock, so the identical statements run on both drivers. |
 | `backendFactory.ts` | `createSessionBackend()`: in-memory by default; `ATLASLINK_DATABASE_URL` selects Postgres (migrations applied first). |
 | `types.ts` | `Session`, `SessionEvent`, `SessionDelta`, `SessionSnapshot`, and the error classes. |
-| `backendContract.ts` | Shared test harness — every backend binds to the same behavioral suite. |
+| `backendContract.ts` | The one shared test harness — every backend must bind to it and pass. There is no second suite (see ADR-010). |
+
+## Porting a custom backend (migration guide, #189)
+
+A `SessionBackend` implements nine methods. The hard requirements a new
+implementation must honor — each is pinned by a `backendContract` case:
+
+1. **Atomic CAS.** `readModifyWrite` checks `expectedVersion` and commits with
+   no `await` in between, or two writers can both pass the guard (#32).
+2. **`deleteSession` is tenant-scoped and idempotent.** It resolves for unknown
+   ids, never touches another tenant's stream, and the next append to a deleted
+   id starts a fresh version-1 stream. EventLogBackend implements it as a
+   `session.deleted` tombstone envelope; Postgres/SessionStore purge outright.
+3. **`withTenant` is required, not optional.** It returns a backend view scoped
+   to the tenant; a session id can never be shared across tenants (append
+   rejects with `VersionConflictError` on affinity mismatch).
+4. **Frozen snapshots.** `get` returns a `deepFreeze`d aggregate, cached by
+   version and invalidated by `append` to that session.
+5. **Bind the contract.** `backendContract('MyBackend', async () => new MyBackend(...))`
+   in a `*.test.ts` is the conformance gate. If a case cannot pass without
+   weakening semantics, the backend is non-conforming — that is the point.
+
+Method names follow our event-sourced semantics (`append` *is* the checkpoint
+`put`); ADR-010 records why we did not adopt LangGraph's checkpointer names.
 
 ## Data model
 
