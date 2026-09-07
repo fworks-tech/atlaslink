@@ -1,5 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
 import { PgliteDb, type Db } from './db'
 import { migrations, runMigrations } from './migrations'
@@ -249,4 +252,33 @@ test('PostgresBackend: appending to a different session does not invalidate the 
   const b = await backend.get('ses-1')
   assert.ok(b)
   assert.equal(a, b) // still cached — the append was for ses-other
+})
+// #146: deploys must not lose sessions. pglite over a real directory is the
+// hermetic stand-in for managed Postgres: close the process, reopen, read back.
+test('PostgresBackend: sessions survive a cold restart of the daemon', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'atlaslink-pg-'))
+  try {
+    const db1 = new PGlite(dir)
+    await runMigrations(new PgliteDb(db1))
+    const before = new PostgresBackend(new PgliteDb(db1))
+    await before.append({ ...created })
+    await before.append({ ...running })
+    await db1.close()
+
+    const db2 = new PGlite(dir)
+    const after = new PostgresBackend(new PgliteDb(db2))
+    const s = await after.get('ses-1')
+    assert.ok(s)
+    assert.equal(s.status, 'running')
+    assert.equal(s.version, 2)
+
+    const listed = await after.list({ limit: 50, offset: 0 })
+    assert.deepEqual(
+      listed.sessions.map((x) => x.sessionId),
+      ['ses-1']
+    )
+    await db2.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

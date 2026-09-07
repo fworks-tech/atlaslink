@@ -105,8 +105,15 @@ npm --prefix dashboard run dev   # :3001 → http://127.0.0.1:3001 (proxies to A
 # https://atlas.flabs.tech  (Vercel, `force-dynamic` so `/?session=&mode=full` is never prerendered — see #64)
 ```
 
-Configure `dashboard/.env.local` when proxying a remote backend (Render :10000 vs local :3000):
+### Deploying (Render)
 
+`render.yaml` is the blueprint: the daemon plus a Postgres whose
+`ATLASLINK_DATABASE_URL` makes sessions survive deploys and cold starts
+(#146). Without it the store is in-process and every redeploy loses all
+sessions. Set `OPENCODE_API_KEY` (or `GROQ_API_KEY`) in the Render dashboard;
+copy the generated `ATLASLINK_API_TOKEN` into `dashboard/.env.local`.
+
+Configure `dashboard/.env.local` when proxying a remote backend (Render :10000 vs local :3000):
 ```bash
 ATLASLINK_API_URL=https://atlaslink-backend.onrender.com
 ATLASLINK_API_TOKEN=<your-atlaslink-token> # must match backend ATLASLINK_API_TOKEN (placeholder — not a real token)
