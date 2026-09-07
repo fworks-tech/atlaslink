@@ -62,7 +62,7 @@ async function createTestServer(): Promise<{
 test('POST /auth/register — creates user and returns JWT', async () => {
   const { port, close } = await createTestServer()
   try {
-    const res = await jsonRequest(port, 'POST', '/auth/register', {
+    const res = await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'newuser@example.com',
       password: 'password123',
     })
@@ -80,11 +80,11 @@ test('POST /auth/register — creates user and returns JWT', async () => {
 test('POST /auth/register — rejects duplicate email', async () => {
   const { port, close } = await createTestServer()
   try {
-    await jsonRequest(port, 'POST', '/auth/register', {
+    await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'duplicate@example.com',
       password: 'password123',
     })
-    const res = await jsonRequest(port, 'POST', '/auth/register', {
+    const res = await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'duplicate@example.com',
       password: 'password123',
     })
@@ -99,7 +99,7 @@ test('POST /auth/register — rejects duplicate email', async () => {
 test('POST /auth/register — rejects invalid email', async () => {
   const { port, close } = await createTestServer()
   try {
-    const res = await jsonRequest(port, 'POST', '/auth/register', {
+    const res = await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'not-an-email',
       password: 'password123',
     })
@@ -114,11 +114,11 @@ test('POST /auth/register — rejects invalid email', async () => {
 test('POST /auth/login — returns JWT for valid credentials', async () => {
   const { port, close } = await createTestServer()
   try {
-    await jsonRequest(port, 'POST', '/auth/register', {
+    await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'login@example.com',
       password: 'password123',
     })
-    const res = await jsonRequest(port, 'POST', '/auth/login', {
+    const res = await jsonRequest(port, 'POST', '/v1/auth/login', {
       email: 'login@example.com',
       password: 'password123',
     })
@@ -135,11 +135,11 @@ test('POST /auth/login — returns JWT for valid credentials', async () => {
 test('POST /auth/login — rejects wrong password', async () => {
   const { port, close } = await createTestServer()
   try {
-    await jsonRequest(port, 'POST', '/auth/register', {
+    await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'wrongpass@example.com',
       password: 'password123',
     })
-    const res = await jsonRequest(port, 'POST', '/auth/login', {
+    const res = await jsonRequest(port, 'POST', '/v1/auth/login', {
       email: 'wrongpass@example.com',
       password: 'wrongpassword',
     })
@@ -154,7 +154,7 @@ test('POST /auth/login — rejects wrong password', async () => {
 test('POST /auth/login — rejects unknown email', async () => {
   const { port, close } = await createTestServer()
   try {
-    const res = await jsonRequest(port, 'POST', '/auth/login', {
+    const res = await jsonRequest(port, 'POST', '/v1/auth/login', {
       email: 'unknown@example.com',
       password: 'password123',
     })
@@ -170,17 +170,17 @@ test('POST /auth/keys — creates API key when authenticated', async () => {
   const { port, close } = await createTestServer()
   try {
     // Register first
-    await jsonRequest(port, 'POST', '/auth/register', {
+    await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'keycreator@example.com',
       password: 'password123',
     })
-    const loginRes = await jsonRequest(port, 'POST', '/auth/login', {
+    const loginRes = await jsonRequest(port, 'POST', '/v1/auth/login', {
       email: 'keycreator@example.com',
       password: 'password123',
     })
     const login = JSON.parse(loginRes.body)
 
-    const res = await jsonRequest(port, 'POST', '/auth/keys', { name: 'my-app-key' }, {
+    const res = await jsonRequest(port, 'POST', '/v1/auth/keys', { name: 'my-app-key' }, {
       authorization: `Bearer ${login.token}`,
     })
     assert.equal(res.status, 201)
@@ -196,7 +196,7 @@ test('POST /auth/keys — creates API key when authenticated', async () => {
 test('POST /auth/keys — rejects unauthenticated request', async () => {
   const { port, close } = await createTestServer()
   try {
-    const res = await jsonRequest(port, 'POST', '/auth/keys', { name: 'no-auth' })
+    const res = await jsonRequest(port, 'POST', '/v1/auth/keys', { name: 'no-auth' })
     assert.equal(res.status, 401)
   } finally {
     await close()
@@ -206,24 +206,24 @@ test('POST /auth/keys — rejects unauthenticated request', async () => {
 test('GET /auth/keys — lists user keys', async () => {
   const { port, close } = await createTestServer()
   try {
-    await jsonRequest(port, 'POST', '/auth/register', {
+    await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'listkeys@example.com',
       password: 'password123',
     })
-    const loginRes = await jsonRequest(port, 'POST', '/auth/login', {
+    const loginRes = await jsonRequest(port, 'POST', '/v1/auth/login', {
       email: 'listkeys@example.com',
       password: 'password123',
     })
     const login = JSON.parse(loginRes.body)
 
-    await jsonRequest(port, 'POST', '/auth/keys', { name: 'key-1' }, {
+    await jsonRequest(port, 'POST', '/v1/auth/keys', { name: 'key-1' }, {
       authorization: `Bearer ${login.token}`,
     })
-    await jsonRequest(port, 'POST', '/auth/keys', { name: 'key-2' }, {
+    await jsonRequest(port, 'POST', '/v1/auth/keys', { name: 'key-2' }, {
       authorization: `Bearer ${login.token}`,
     })
 
-    const res = await jsonRequest(port, 'GET', '/auth/keys', undefined, {
+    const res = await jsonRequest(port, 'GET', '/v1/auth/keys', undefined, {
       authorization: `Bearer ${login.token}`,
     })
     assert.equal(res.status, 200)
@@ -238,27 +238,27 @@ test('GET /auth/keys — lists user keys', async () => {
 test('DELETE /auth/keys/:keyId — revokes key', async () => {
   const { port, close } = await createTestServer()
   try {
-    await jsonRequest(port, 'POST', '/auth/register', {
+    await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'revoke@example.com',
       password: 'password123',
     })
-    const loginRes = await jsonRequest(port, 'POST', '/auth/login', {
+    const loginRes = await jsonRequest(port, 'POST', '/v1/auth/login', {
       email: 'revoke@example.com',
       password: 'password123',
     })
     const login = JSON.parse(loginRes.body)
 
-    const createRes = await jsonRequest(port, 'POST', '/auth/keys', { name: 'to-revoke' }, {
+    const createRes = await jsonRequest(port, 'POST', '/v1/auth/keys', { name: 'to-revoke' }, {
       authorization: `Bearer ${login.token}`,
     })
     const created = JSON.parse(createRes.body)
 
-    const deleteRes = await jsonRequest(port, 'DELETE', `/auth/keys/${created.id}`, undefined, {
+    const deleteRes = await jsonRequest(port, 'DELETE', `/v1/auth/keys/${created.id}`, undefined, {
       authorization: `Bearer ${login.token}`,
     })
     assert.equal(deleteRes.status, 200)
 
-    const listRes = await jsonRequest(port, 'GET', '/auth/keys', undefined, {
+    const listRes = await jsonRequest(port, 'GET', '/v1/auth/keys', undefined, {
       authorization: `Bearer ${login.token}`,
     })
     const list = JSON.parse(listRes.body)
@@ -271,17 +271,17 @@ test('DELETE /auth/keys/:keyId — revokes key', async () => {
 test('GET /auth/me — returns current user', async () => {
   const { port, close } = await createTestServer()
   try {
-    await jsonRequest(port, 'POST', '/auth/register', {
+    await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'me@example.com',
       password: 'password123',
     })
-    const loginRes = await jsonRequest(port, 'POST', '/auth/login', {
+    const loginRes = await jsonRequest(port, 'POST', '/v1/auth/login', {
       email: 'me@example.com',
       password: 'password123',
     })
     const login = JSON.parse(loginRes.body)
 
-    const res = await jsonRequest(port, 'GET', '/auth/me', undefined, {
+    const res = await jsonRequest(port, 'GET', '/v1/auth/me', undefined, {
       authorization: `Bearer ${login.token}`,
     })
     assert.equal(res.status, 200)
@@ -296,17 +296,17 @@ test('GET /auth/me — returns current user', async () => {
 test('Auth gate — JWT bearer grants access to task routes', async () => {
   const { port, close } = await createTestServer()
   try {
-    await jsonRequest(port, 'POST', '/auth/register', {
+    await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'authed@example.com',
       password: 'password123',
     })
-    const loginRes = await jsonRequest(port, 'POST', '/auth/login', {
+    const loginRes = await jsonRequest(port, 'POST', '/v1/auth/login', {
       email: 'authed@example.com',
       password: 'password123',
     })
     const login = JSON.parse(loginRes.body)
 
-    const res = await jsonRequest(port, 'GET', '/tasks', undefined, {
+    const res = await jsonRequest(port, 'GET', '/v1/tasks', undefined, {
       authorization: `Bearer ${login.token}`,
     })
     assert.equal(res.status, 200)
@@ -320,22 +320,22 @@ test('Auth gate — JWT bearer grants access to task routes', async () => {
 test('Auth gate — API key bearer grants access to task routes', async () => {
   const { port, close } = await createTestServer()
   try {
-    await jsonRequest(port, 'POST', '/auth/register', {
+    await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'apikey@example.com',
       password: 'password123',
     })
-    const loginRes = await jsonRequest(port, 'POST', '/auth/login', {
+    const loginRes = await jsonRequest(port, 'POST', '/v1/auth/login', {
       email: 'apikey@example.com',
       password: 'password123',
     })
     const login = JSON.parse(loginRes.body)
 
-    const keyRes = await jsonRequest(port, 'POST', '/auth/keys', { name: 'test-key' }, {
+    const keyRes = await jsonRequest(port, 'POST', '/v1/auth/keys', { name: 'test-key' }, {
       authorization: `Bearer ${login.token}`,
     })
     const key = JSON.parse(keyRes.body)
 
-    const res = await jsonRequest(port, 'GET', '/tasks', undefined, {
+    const res = await jsonRequest(port, 'GET', '/v1/tasks', undefined, {
       authorization: `Bearer ${key.key}`,
     })
     assert.equal(res.status, 200)
@@ -349,7 +349,7 @@ test('Auth gate — API key bearer grants access to task routes', async () => {
 test('Auth gate — rejects invalid JWT', async () => {
   const { port, close } = await createTestServer()
   try {
-    const res = await jsonRequest(port, 'GET', '/tasks', undefined, {
+    const res = await jsonRequest(port, 'GET', '/v1/tasks', undefined, {
       authorization: 'Bearer invalid.token.here',
     })
     assert.equal(res.status, 401)
