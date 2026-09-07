@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, DurabilityMode } from './types'
 import { VersionConflictError } from './types'
 import { rehydrate } from './sessionStore'
 import { deepFreeze } from './deepFreeze'
@@ -62,6 +62,7 @@ const STATUS_PRESERVING_SQL = [...STATUS_PRESERVING_EVENTS].map((t) => `'${t}'`)
 export class PostgresBackend implements SessionBackend {
   #snapshots = new Map<string, SessionSnapshot>()
   #versions = new Map<string, number>()
+  #exitBuffers = new Map<string, SessionEvent[]>()
 
   #cachedSnapshot(sessionId: string): Session | null {
     const version = this.#versions.get(sessionId)
@@ -72,7 +73,8 @@ export class PostgresBackend implements SessionBackend {
 
   constructor(
     private readonly db: Db,
-    private readonly tenantId: string = DEFAULT_TENANT_ID
+    private readonly tenantId: string = DEFAULT_TENANT_ID,
+    private readonly durability: DurabilityMode = 'sync'
   ) {}
 
   /** Sessions-directory projection for one committed event. Shared by append
@@ -122,15 +124,28 @@ export class PostgresBackend implements SessionBackend {
 
   withTenant(tenantId: string): PostgresBackend {
     if (tenantId === this.tenantId) return this
-    return new PostgresBackend(this.db, tenantId)
+    return new PostgresBackend(this.db, tenantId, this.durability)
   }
 
   get tenant(): string {
     return this.tenantId
   }
 
+  get mode(): DurabilityMode {
+    return this.durability
+  }
+
   async append(event: SessionEvent): Promise<void> {
-    await this.db.transaction(async (tx) => {
+    if (this.durability === 'exit') {
+      const buf = this.#exitBuffers.get(event.sessionId) ?? []
+      buf.push(event)
+      this.#exitBuffers.set(event.sessionId, buf)
+      const terminal = event.type === 'session.succeeded' || event.type === 'session.failed' || event.type === 'session.cancelled'
+      if (terminal) await this.flush(event.sessionId)
+      return
+    }
+
+    const promise = this.db.transaction(async (tx) => {
       const { rows } = await tx.query<VersionRow>(
         `SELECT version FROM session_events
          WHERE tenant_id = $1 AND session_id = $2
@@ -145,12 +160,39 @@ export class PostgresBackend implements SessionBackend {
         [this.tenantId, event.sessionId, next, event.correlationId, event.at, JSON.stringify(event)]
       )
 
-      // Maintain the sessions directory projection (transactionally consistent with event commit)
       await this.projectDirectory(tx, event, event.sessionId)
     })
+
+    if (this.durability === 'sync') await promise
+    else promise.catch(() => {}) // async: fire-and-forget
+
     this.#snapshots.delete(event.sessionId)
     const prev = this.#versions.get(event.sessionId) ?? 0
     this.#versions.set(event.sessionId, prev + 1)
+  }
+
+  async flush(sessionId: string): Promise<void> {
+    const buf = this.#exitBuffers.get(sessionId)
+    if (!buf || buf.length === 0) return
+    this.#exitBuffers.delete(sessionId)
+    for (const event of buf) {
+      await this.db.transaction(async (tx) => {
+        const { rows } = await tx.query<VersionRow>(
+          `SELECT version FROM session_events
+           WHERE tenant_id = $1 AND session_id = $2
+           ORDER BY version DESC LIMIT 1
+           FOR UPDATE`,
+          [this.tenantId, sessionId]
+        )
+        const next = (rows[0]?.version ?? 0) + 1
+        await tx.query(
+          `INSERT INTO session_events (tenant_id, session_id, version, correlation_id, at, event)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [this.tenantId, sessionId, next, event.correlationId, event.at, JSON.stringify(event)]
+        )
+        await this.projectDirectory(tx, event, sessionId)
+      })
+    }
   }
 
   async get(sessionId: string): Promise<Session | null> {

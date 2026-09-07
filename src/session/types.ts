@@ -1,5 +1,8 @@
 export type SessionStatus = 'queued' | 'running' | 'awaiting_input' | 'succeeded' | 'failed' | 'cancelled'
 
+/** Durability mode for session event persistence. */
+export type DurabilityMode = 'exit' | 'async' | 'sync'
+
 /** Unified ask_human payload (agenthood AskHumanSignal.payload): the single question the agent parked on. */
 export interface AskHumanQuestion {
   question: string
