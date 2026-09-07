@@ -10,7 +10,7 @@ export function AwaitingNode(props: NodeProps) {
   return (
     <>
       <NodeResizer isVisible={props.selected} minWidth={260} minHeight={92} color="#60a5fa" />
-      <div className="w-full min-w-[260px] overflow-hidden rounded-[18px] border border-dashed border-accent/60 bg-raised p-3 shadow-lg animate-[pulse_2s_ease-in-out_infinite]">
+      <div aria-label={`Awaiting input: ${prompt.slice(0, 80)}`} className="w-full min-w-[260px] overflow-hidden rounded-[18px] border border-dashed border-accent/60 bg-raised p-3 shadow-lg animate-[pulse_2s_ease-in-out_infinite]">
         <Handle type="target" position={Position.Top} className="!bg-accent/60" />
         <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-accent">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />

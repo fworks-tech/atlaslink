@@ -12,6 +12,7 @@ export function MemberNode({ data, selected }: NodeProps<MemberGraphNode>) {
     <>
       <NodeResizer isVisible={selected} minWidth={128} minHeight={36} color="#34d399" />
       <div
+        aria-label={`Member ${member}: ${active ? "holding the podium" : "completed"}`}
         className={`flex w-full min-w-32 items-center gap-1.5 overflow-hidden rounded-full border bg-raised px-3 py-1.5 shadow-lg ${
           active ? "border-ok/60" : "border-white/10"
         }`}

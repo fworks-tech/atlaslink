@@ -74,7 +74,7 @@ function styledEdge(source: string, target: string, id: string, live = false): E
     target,
     type: "smoothstep",
     animated: live,
-    style: { stroke: live ? "#818cf8" : "#3f3f66", strokeWidth: 1.5 },
+    style: { stroke: live ? "#818cf8" : "#3f3f66", strokeWidth: live ? 2.5 : 1.5 },
     markerEnd: { type: MarkerType.ArrowClosed, color: live ? "#818cf8" : "#3f3f66" },
   };
 }

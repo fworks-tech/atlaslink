@@ -52,6 +52,7 @@ describe("buildSocietyGraph", () => {
       target: "ses-1",
       type: "smoothstep",
       animated: true, // a running session's spine pulses
+      style: { strokeWidth: 2.5 }, // width carries "live" without hue or motion
       markerEnd: { type: MarkerType.ArrowClosed },
     });
     const sessionNode = graph.nodes.find((n) => n.id === "ses-1");
