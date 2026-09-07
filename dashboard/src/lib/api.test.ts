@@ -100,6 +100,16 @@ describe("request builder contract", () => {
     expect((seen[0].init?.headers as Headers).get("Content-Type")).toBeNull();
   });
 
+  it("getTasks passes a status filter through to the query string", async () => {
+    const seen: string[] = [];
+    globalThis.fetch = vi.fn(async (url: string) => {
+      seen.push(url);
+      return jsonResponse({ ok: true, sessions: [], total: 0 });
+    }) as unknown as typeof fetch;
+    await getTasks(50, 0, undefined, "awaiting_input");
+    expect(seen[0]).toBe("/api/tasks?limit=50&offset=0&status=awaiting_input");
+  });
+
   it("replyToSession encodes hostile ids and sends JSON", async () => {
     const seen: Array<{ url: string; init?: RequestInit }> = [];
     globalThis.fetch = vi.fn(async (url: string, init?: RequestInit) => {

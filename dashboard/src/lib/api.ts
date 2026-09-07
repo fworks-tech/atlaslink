@@ -75,9 +75,10 @@ export async function fetchJSON<T>(
   }
 }
 
-export function getTasks(limit = 50, offset = 0, projectId?: string): Promise<TaskListResponse> {
+export function getTasks(limit = 50, offset = 0, projectId?: string, status?: Session["status"]): Promise<TaskListResponse> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (projectId) params.set("projectId", projectId);
+  if (status) params.set("status", status);
   return fetchJSON<TaskListResponse>(`/tasks?${params.toString()}`);
 }
 
