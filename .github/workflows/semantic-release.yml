@@ -1,5 +1,9 @@
 name: The Herald — Semantic Release
 
+concurrency:
+  group: semantic-release
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
 
