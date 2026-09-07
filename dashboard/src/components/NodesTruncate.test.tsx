@@ -17,6 +17,22 @@ function renderNode(ui: React.ReactNode) {
 }
 
 describe("diagram node truncation", () => {
+  it("names session and member nodes for assistive tech", () => {
+    renderNode(
+      // @ts-expect-error — NodeProps stub for unit test
+      <SessionNode
+        data={{ session: { sessionId: "ses-abc12345", correlationId: "cor-1", version: 1, status: "running", task: { member: "the-mediator", prompt: "p" } }, members: [] }}
+        selected={false}
+      />,
+    );
+    expect(document.querySelector('[aria-label="Session ses-abc1: running"]')).not.toBeNull();
+    renderNode(
+      // @ts-expect-error — NodeProps stub for unit test
+      <MemberNode data={{ member: "the-builder", active: true, sessionId: "ses-1" }} selected={false} />,
+    );
+    expect(document.querySelector('[aria-label="Member the-builder: holding the podium"]')).not.toBeNull();
+  });
+
   it("truncates reasoning content at 120 chars with full-text title", () => {
     const long = "x".repeat(200);
     renderNode(

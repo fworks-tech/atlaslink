@@ -11,7 +11,7 @@ export function SessionNode({ data, selected }: NodeProps<SessionGraphNode>) {
   return (
     <>
       <NodeResizer isVisible={selected} minWidth={240} minHeight={100} color="#60a5fa" />
-      <div className="w-full min-w-60 overflow-hidden rounded-xl border border-white/10 bg-surface p-3 shadow-lg">
+      <div aria-label={`Session ${session.sessionId.slice(0, 8)}: ${session.status}`} className="w-full min-w-60 overflow-hidden rounded-xl border border-white/10 bg-surface p-3 shadow-lg">
         <Handle type="target" position={Position.Top} className="!bg-white/30" />
         <div className="flex items-center justify-between gap-2">
           <div className="text-[10px] uppercase tracking-widest text-muted">session</div>
