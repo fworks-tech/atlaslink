@@ -57,14 +57,14 @@ test('GET /events does not emit a "request" log (long-lived SSE)', async () => {
   try {
     const info = mock.method(logger, 'info')
     const srv = await startServer(dir)
-    await collectStream(`http://127.0.0.1:${srv.port}/events`, {}, 500)
+    await collectStream(`http://127.0.0.1:${srv.port}/v1/events`, {}, 500)
     // query strings and trailing slashes resolve to the same SSE route
-    await collectStream(`http://127.0.0.1:${srv.port}/events?token=x`, {}, 500)
+    await collectStream(`http://127.0.0.1:${srv.port}/v1/events?token=x`, {}, 500)
     const sseReq = info.mock.calls.find(
       (c) =>
         c.arguments[0] === 'request' &&
-        ((c.arguments[1] as Record<string, unknown>).url === '/events' ||
-          (c.arguments[1] as Record<string, unknown>).url === '/events?token=x')
+        ((c.arguments[1] as Record<string, unknown>).url === '/v1/events' ||
+          (c.arguments[1] as Record<string, unknown>).url === '/v1/events?token=x')
     )
     assert.equal(sseReq, undefined, `expected no 'request' log for /events, got: ${JSON.stringify(sseReq)}`)
     info.mock.restore()
@@ -85,7 +85,7 @@ test('GET /events with Last-Event-ID replays events after that id', async () => 
 
     const sse = new SseHandler(log, broadcaster)
     const srv = await startServer(dir)
-    const body = await collectStream(`http://127.0.0.1:${srv.port}/events`, { 'Last-Event-ID': '1' }, 1200)
+    const body = await collectStream(`http://127.0.0.1:${srv.port}/v1/events`, { 'Last-Event-ID': '1' }, 1200)
     assert.ok(body.includes('id: 2'))
     assert.ok(!body.includes('id: 0'))
     await srv.close()
@@ -104,7 +104,7 @@ test('GET /events with no Last-Event-ID is live-tail only (no replay)', async ()
 
     const sse = new SseHandler(log, broadcaster)
     const srv = await startServer(dir)
-    const body = await collectStream(`http://127.0.0.1:${srv.port}/events`, {}, 1000)
+    const body = await collectStream(`http://127.0.0.1:${srv.port}/v1/events`, {}, 1000)
     assert.ok(!body.includes('id: 0'))
     await srv.close()
   } finally {
@@ -122,7 +122,7 @@ test('GET /events with a stale Last-Event-ID emits bridge.gap, never silence', a
 
     const sse = new SseHandler(log, new EventBroadcaster(log))
     const srv = await startServer(dir)
-    const body = await collectStream(`http://127.0.0.1:${srv.port}/events`, { 'Last-Event-ID': '0' }, 1000)
+    const body = await collectStream(`http://127.0.0.1:${srv.port}/v1/events`, { 'Last-Event-ID': '0' }, 1000)
     assert.ok(body.includes('event: bridge.gap'))
     assert.match(body, /"requested":0/)
     assert.match(body, /"oldest":3/)
@@ -137,7 +137,7 @@ test('POST /runs declares a session and returns 202 with its id', async () => {
   try {
     const srv = await startServer(dir)
     const res = await new Promise<{ status: number; body: string }>((resolve) => {
-      const req = request(`http://127.0.0.1:${srv.port}/runs`, { method: 'POST', headers: { 'content-type': 'application/json' } }, (r) => {
+      const req = request(`http://127.0.0.1:${srv.port}/v1/runs`, { method: 'POST', headers: { 'content-type': 'application/json' } }, (r) => {
         let body = ''
         r.setEncoding('utf8')
         r.on('data', (c: string) => (body += c))
@@ -161,7 +161,7 @@ test('POST /runs rejects non-string member or prompt with the error envelope', a
   try {
     const srv = await startServer(dir)
     const res = await new Promise<{ status: number; body: string }>((resolve) => {
-      const req = request(`http://127.0.0.1:${srv.port}/runs`, { method: 'POST', headers: { 'content-type': 'application/json' } }, (r) => {
+      const req = request(`http://127.0.0.1:${srv.port}/v1/runs`, { method: 'POST', headers: { 'content-type': 'application/json' } }, (r) => {
         let body = ''
         r.setEncoding('utf8')
         r.on('data', (c: string) => (body += c))
@@ -185,7 +185,7 @@ test('POST /runs rejects malformed JSON with the error envelope', async () => {
   try {
     const srv = await startServer(dir)
     const res = await new Promise<{ status: number; body: string }>((resolve) => {
-      const req = request(`http://127.0.0.1:${srv.port}/runs`, { method: 'POST', headers: { 'content-type': 'application/json' } }, (r) => {
+      const req = request(`http://127.0.0.1:${srv.port}/v1/runs`, { method: 'POST', headers: { 'content-type': 'application/json' } }, (r) => {
         let body = ''
         r.setEncoding('utf8')
         r.on('data', (c: string) => (body += c))
@@ -209,7 +209,7 @@ test('GET /events streams newly emitted events live while connected', async () =
   try {
     const srv = await startServer(dir)
     const collected: string[] = []
-    const connection = request(`http://127.0.0.1:${srv.port}/events`, (res) => {
+    const connection = request(`http://127.0.0.1:${srv.port}/v1/events`, (res) => {
       res.setEncoding('utf8')
       res.on('data', (chunk: string) => collected.push(chunk))
     })
