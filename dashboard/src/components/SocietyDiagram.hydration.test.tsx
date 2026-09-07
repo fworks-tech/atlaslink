@@ -27,6 +27,7 @@ vi.mock("@xyflow/react", async () => {
     return [v, s, () => {}];
   }
   return {
+    MarkerType: { ArrowClosed: "arrowclosed" },
     ReactFlow: ({
       nodes,
       onNodeClick,
