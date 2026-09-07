@@ -9,7 +9,6 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  id-token: write
 
 jobs:
   release:
@@ -27,14 +26,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Audit dependencies for vulnerabilities
-        run: npm audit --audit-level=high || echo "::warning::npm audit found vulnerabilities"
-
-      - name: Configure npm for OIDC
-        run: |
-          echo "registry=https://registry.npmjs.org/" > ~/.npmrc
-          echo "provenance=true" >> ~/.npmrc
 
       - name: The Herald — publish release
         env:
