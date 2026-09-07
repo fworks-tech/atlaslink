@@ -63,7 +63,7 @@ export function checkBearer(
 }
 
 /** Room upgrades are the one path that may carry the bearer in the query. */
-const ROOM_UPGRADE_PATTERN = /^\/sessions\/[^/]+\/room$/
+const ROOM_UPGRADE_PATTERN = /^\/v1\/sessions\/[^/]+\/room$/
 
 function roomUpgradeToken(request: {
   method: string

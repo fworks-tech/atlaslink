@@ -164,15 +164,15 @@ test('room join delivers snapshot; two clients see each other chat live', async 
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
 
-    const a = await connect(srv.port, `/sessions/${created.sessionId}/room?name=Alice`)
+    const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?name=Alice`)
     const snapshot = await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
     assert.equal((snapshot.session as { status: string }).status, 'queued')
     const joined = await waitForFrame(a.frames, (f) => f.type === 'joined', 'joined')
     assert.equal(typeof joined.clientId, 'string')
 
-    const b = await connect(srv.port, `/sessions/${created.sessionId}/room?name=Bob`)
+    const b = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?name=Bob`)
     // presence converges on both sides
     const presenceB = await waitForFrame(
       b.frames,
@@ -228,22 +228,22 @@ test('room rejects other tenants without an existence oracle', async () => {
   try {
     const srv = await trackedServer(dir)
     const created = JSON.parse(
-      (await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' }, { 'x-tenant-id': 'tenant-a' })).body
+      (await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' }, { 'x-tenant-id': 'tenant-a' })).body
     ).session
 
     // tenant B guesses the session id: same answer as a missing session
-    const intruder = await connect(srv.port, `/sessions/${created.sessionId}/room?tenant=tenant-b`)
+    const intruder = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?tenant=tenant-b`)
     await intruder.closed
     assert.equal(intruder.closeCode, 4404)
 
     // the owning tenant joins fine
-    const owner = await connect(srv.port, `/sessions/${created.sessionId}/room?tenant=tenant-a`)
+    const owner = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?tenant=tenant-a`)
     await waitForFrame(owner.frames, (f) => f.type === 'snapshot', 'owner snapshot')
     owner.ws.close()
     await owner.closed
 
     // invalid tenant values never reach the store
-    const bad = await connect(srv.port, `/sessions/${created.sessionId}/room?tenant=!!!`)
+    const bad = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?tenant=!!!`)
     await bad.closed
     assert.equal(bad.closeCode, 4400)
     await srv.close()
@@ -256,9 +256,9 @@ test('room resume replays missed events; fallen-off cursors get a gap', async ()
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
 
-    const a = await connect(srv.port, `/sessions/${created.sessionId}/room`)
+    const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
     a.ws.send(JSON.stringify({ id: 'c1', type: 'chat', content: 'first' }))
     const first = await waitForFrame(
@@ -272,9 +272,9 @@ test('room resume replays missed events; fallen-off cursors get a gap', async ()
     await a.closed
 
     // missed while away: recorded via plain HTTP, lands in the backlog
-    await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/message`, { content: 'second' })
+    await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/message`, { content: 'second' })
 
-    const b = await connect(srv.port, `/sessions/${created.sessionId}/room?since=${cursor}`)
+    const b = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?since=${cursor}`)
     const backlog = await waitForFrame(b.frames, (f) => f.type === 'backlog', 'backlog')
     const messages = (backlog.events as Array<{ message?: string }>).map((e) => e.message)
     assert.ok(messages.includes('second'))
@@ -285,7 +285,7 @@ test('room resume replays missed events; fallen-off cursors get a gap', async ()
     // eventIds start at 0, so a cursor older than retention is negative here —
     // a real client holds such a cursor after log rotation pruned its tail.
     // It gets an explicit gap, never silence.
-    const c = await connect(srv.port, `/sessions/${created.sessionId}/room?since=-1`)
+    const c = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?since=-1`)
     const gap = await waitForFrame(c.frames, (f) => f.type === 'gap', 'gap')
     assert.equal(gap.requested, -1)
     assert.ok(typeof gap.oldest === 'number' && (gap.oldest as number) >= 0)
@@ -302,11 +302,11 @@ test('room approval inbox: parked question in snapshot, reply frame resumes', as
   try {
     const srv = await trackedServer(dir)
     const created = JSON.parse(
-      (await jsonRequest(srv.port, 'POST', '/tasks', { member: 'the-architect', prompt: 'plan' })).body
+      (await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'the-architect', prompt: 'plan' })).body
     ).session
     await parkSession(srv.backend, created.sessionId, created.correlationId)
 
-    const a = await connect(srv.port, `/sessions/${created.sessionId}/room`)
+    const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`)
     const snapshot = await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
     const snap = snapshot.session as { status: string; nextStep: { awaiting_input: boolean; prompt: string }; question: { question: string; context?: string } }
     assert.equal(snap.status, 'awaiting_input')
@@ -318,7 +318,7 @@ test('room approval inbox: parked question in snapshot, reply frame resumes', as
     assert.equal(ack.ok, true)
     assert.ok(typeof ack.resumedSessionId === 'string')
 
-    const followup = JSON.parse((await jsonRequest(srv.port, 'GET', `/tasks/${ack.resumedSessionId}`)).body).session
+    const followup = JSON.parse((await jsonRequest(srv.port, 'GET', `/v1/tasks/${ack.resumedSessionId}`)).body).session
     assert.equal(followup.resumeOf, created.sessionId)
     assert.ok(followup.task.prompt.includes('yes\n</human_reply>'))
     a.ws.close()
@@ -333,14 +333,14 @@ test('room steer rewrites queued prompts and interrupts fabricated runs', async 
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'old' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'old' })).body).session
 
-    const a = await connect(srv.port, `/sessions/${created.sessionId}/room`)
+    const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
     a.ws.send(JSON.stringify({ id: 's1', type: 'steer', content: 'new' }))
     const ack = await waitForFrame(a.frames, (f) => f.type === 'ack' && f.id === 's1', 'steer ack')
     assert.equal(ack.ok, true)
-    const steered = JSON.parse((await jsonRequest(srv.port, 'GET', `/tasks/${created.sessionId}`)).body).session
+    const steered = JSON.parse((await jsonRequest(srv.port, 'GET', `/v1/tasks/${created.sessionId}`)).body).session
     assert.equal(steered.task.prompt, 'new')
 
     // fabricated live run: registry started + controller attached + store running
@@ -397,18 +397,18 @@ test('room auth refuses missing and wrong credentials; both bearer paths join', 
   process.env.ATLASLINK_API_TOKEN = 'secret'
   try {
     const srv = await trackedServer(dir, { token: 'secret' })
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' }, { authorization: 'Bearer secret' })).body)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' }, { authorization: 'Bearer secret' })).body)
       .session
 
     // no credential at all: the gate rejects the upgrade itself (401, no socket)
-    assert.equal(await probeUpgradeStatus(srv.port, `/sessions/${created.sessionId}/room`), 401)
+    assert.equal(await probeUpgradeStatus(srv.port, `/v1/sessions/${created.sessionId}/room`), 401)
     // a wrong bearer is the same refusal, never a join
-    assert.equal(await probeUpgradeStatus(srv.port, `/sessions/${created.sessionId}/room?token=wrong`), 401)
+    assert.equal(await probeUpgradeStatus(srv.port, `/v1/sessions/${created.sessionId}/room?token=wrong`), 401)
 
     // header bearer still works where clients can set it
     const viaHeader = await connect(
       srv.port,
-      `/sessions/${created.sessionId}/room`,
+      `/v1/sessions/${created.sessionId}/room`,
       { authorization: 'Bearer secret' }
     )
     await waitForFrame(viaHeader.frames, (f) => f.type === 'snapshot', 'header-auth snapshot')
@@ -416,7 +416,7 @@ test('room auth refuses missing and wrong credentials; both bearer paths join', 
     await viaHeader.closed
 
     // query bearer is the browser path (WS cannot set headers)
-    const a = await connect(srv.port, `/sessions/${created.sessionId}/room?token=secret`)
+    const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?token=secret`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'query-auth snapshot')
     a.ws.close()
     await a.closed
@@ -432,14 +432,14 @@ test('room closes unknown sessions without an oracle', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
 
-    const missing = await connect(srv.port, '/sessions/ses-missing/room')
+    const missing = await connect(srv.port, '/v1/sessions/ses-missing/room')
     await missing.closed
     assert.equal(missing.closeCode, 4404)
 
     // the real session still joins: the 4404 reveals nothing either way
-    const a = await connect(srv.port, `/sessions/${created.sessionId}/room`)
+    const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
     a.ws.close()
     await a.closed
@@ -453,9 +453,9 @@ test('room validates ingress frames without dropping the connection', async () =
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
 
-    const a = await connect(srv.port, `/sessions/${created.sessionId}/room`)
+    const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
 
     // malformed JSON errors but keeps the connection alive
@@ -499,9 +499,9 @@ test('room throttles per-connection ingress floods', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
 
-    const a = await connect(srv.port, `/sessions/${created.sessionId}/room`)
+    const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
     for (let i = 0; i < 61; i++) {
       a.ws.send(JSON.stringify({ id: `f${i}`, type: 'chat', content: `flood ${i}` }))
@@ -524,12 +524,12 @@ test('room fan-out never crosses sessions', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const first = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'one' })).body).session
-    const second = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'two' })).body).session
+    const first = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'one' })).body).session
+    const second = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'two' })).body).session
 
-    const a = await connect(srv.port, `/sessions/${first.sessionId}/room`)
+    const a = await connect(srv.port, `/v1/sessions/${first.sessionId}/room`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot A')
-    const b = await connect(srv.port, `/sessions/${second.sessionId}/room`)
+    const b = await connect(srv.port, `/v1/sessions/${second.sessionId}/room`)
     await waitForFrame(b.frames, (f) => f.type === 'snapshot', 'snapshot B')
 
     a.ws.send(JSON.stringify({ id: 'x1', type: 'chat', content: 'for A only' }))
@@ -558,10 +558,10 @@ test('room maps store failures to error acks, not silent success', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
-    await jsonRequest(srv.port, 'POST', `/tasks/${created.sessionId}/cancel`)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/cancel`)
 
-    const a = await connect(srv.port, `/sessions/${created.sessionId}/room`)
+    const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
 
     a.ws.send(JSON.stringify({ id: 'e1', type: 'chat', content: 'too late' }))
@@ -588,10 +588,10 @@ test('room sanitizes display names before they reach the roster', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
 
     const joinName = async (raw: string): Promise<string> => {
-      const client = await connect(srv.port, `/sessions/${created.sessionId}/room?name=${encodeURIComponent(raw)}`)
+      const client = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?name=${encodeURIComponent(raw)}`)
       const presence = await waitForFrame(
         client.frames,
         (f) => f.type === 'presence' && (f.members as unknown[]).length === 1,
@@ -617,15 +617,15 @@ test('room honors the tenant upgrade header, not just the query', async () => {
   try {
     const srv = await trackedServer(dir)
     const created = JSON.parse(
-      (await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' }, { 'x-tenant-id': 'tenant-a' })).body
+      (await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' }, { 'x-tenant-id': 'tenant-a' })).body
     ).session
 
-    const owner = await connect(srv.port, `/sessions/${created.sessionId}/room`, { 'x-tenant-id': 'tenant-a' })
+    const owner = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`, { 'x-tenant-id': 'tenant-a' })
     await waitForFrame(owner.frames, (f) => f.type === 'snapshot', 'header-tenant snapshot')
     owner.ws.close()
     await owner.closed
 
-    const intruder = await connect(srv.port, `/sessions/${created.sessionId}/room`, { 'x-tenant-id': 'tenant-b' })
+    const intruder = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`, { 'x-tenant-id': 'tenant-b' })
     await intruder.closed
     assert.equal(intruder.closeCode, 4404)
     await srv.close()
@@ -638,9 +638,9 @@ test('room rejects a non-numeric since cursor with an explicit error', async () 
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
 
-    const a = await connect(srv.port, `/sessions/${created.sessionId}/room?since=not-a-number`)
+    const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?since=not-a-number`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
     const err = await waitForFrame(a.frames, (f) => f.type === 'error', 'invalid-since error')
     assert.match(err.error as string, /invalid since/)
@@ -657,16 +657,16 @@ test('room members exposes the live roster without an oracle', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/tasks', { member: 'm', prompt: 'p' }, { 'x-tenant-id': 'tenant-a' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' }, { 'x-tenant-id': 'tenant-a' })).body).session
     const membersPath = (tenant?: string): string =>
-      `/sessions/${created.sessionId}/room/members${tenant ? `?tenant=${tenant}` : ''}`
+      `/v1/sessions/${created.sessionId}/room/members${tenant ? `?tenant=${tenant}` : ''}`
 
     // valid session, nobody joined: an empty roster, not a 404
     const empty = await jsonRequest(srv.port, 'GET', membersPath('tenant-a'))
     assert.equal(empty.status, 200)
     assert.deepEqual(JSON.parse(empty.body), { ok: true, members: [] })
 
-    const a = await connect(srv.port, `/sessions/${created.sessionId}/room?name=Alice&tenant=tenant-a`)
+    const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?name=Alice&tenant=tenant-a`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
     const one = JSON.parse((await jsonRequest(srv.port, 'GET', membersPath('tenant-a'))).body)
     assert.deepEqual(
@@ -685,7 +685,7 @@ test('room members exposes the live roster without an oracle', async () => {
     }
 
     // unknown ids and other tenants read the same: 404, no oracle
-    assert.equal((await jsonRequest(srv.port, 'GET', '/sessions/ses-missing/room/members')).status, 404)
+    assert.equal((await jsonRequest(srv.port, 'GET', '/v1/sessions/ses-missing/room/members')).status, 404)
     assert.equal((await jsonRequest(srv.port, 'GET', membersPath('tenant-b'))).status, 404)
     await srv.close()
   } finally {

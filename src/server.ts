@@ -167,7 +167,7 @@ export async function createAppServer(params: {
   app.addHook('onResponse', (request, reply, done) => {
     // long-lived SSE streams do not emit a request envelope (same as pre-Fastify)
     const route = request.routeOptions.url
-    if (route !== '/events' && route !== '/events/:sessionId') {
+    if (route !== '/v1/events' && route !== '/v1/events/:sessionId') {
       logger.info('request', {
         method: request.method,
         url: request.url,
@@ -192,15 +192,18 @@ export async function createAppServer(params: {
 
   // --- Auth routes (register, login, API key management) ---
   // These are intentionally outside the auth gate — you cannot authenticate
-  // to register or login. Mounted on the root app so they are always reachable.
+  // to register or login. Versioned under /v1/ for backward compatibility.
   if (params.authStore) {
-    registerAuthRoutes(app, params.authStore)
+    app.register(async (unauth) => {
+      registerAuthRoutes(unauth, params.authStore!)
+    }, { prefix: '/v1' })
   }
 
   // --- Account-facing surface (spec §3/§6/§7) ---
   // One security boundary for /runs, /events, and the task-rest routes: the
   // pre-auth bearer gate (fail-closed on non-loopback binds) plus the root rate
   // limit. /health stays on the root app, outside the gate, unthrottled.
+  // Versioned under /v1/ for backward compatibility.
   app.register(async (api) => {
     if (params.authStore) {
       registerAuthGate(api, params.authStore, { bindHost: params.bindHost })
@@ -255,7 +258,7 @@ export async function createAppServer(params: {
 
     // --- M5 room channel (spec §5): WS per-session room, same gate ---
     registerRoomRoutes(api, { backend, registry, queue, broadcaster: sse.broadcaster, log })
-  })
+  }, { prefix: '/v1' })
 
   app.setNotFoundHandler((_request, reply) => {
     reply.code(404).send({ ok: false, error: 'not found' })
