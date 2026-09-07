@@ -1,10 +1,11 @@
-import { test } from 'node:test'
+import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { EventLogStore, type BridgeEnvelope } from '../bridge/EventLogStore'
 import { EventLogBackend } from './eventLogBackend'
+import { backendContract } from './backendContract'
 import type { SessionEvent } from './types'
 import { VersionConflictError } from './types'
 
@@ -286,4 +287,16 @@ test('EventLogBackend: message/steer append to history without moving status', a
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+})
+// The NDJSON backend is the default durable store but was only tested against
+// bespoke cases; #189 binds it to the shared contract like the other backends.
+const contractDirs: string[] = []
+backendContract('EventLogBackend satisfies the backend contract', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'atlaslink-contract-'))
+  contractDirs.push(dir)
+  return new EventLogBackend(await EventLogStore.open(dir))
+})
+
+after(() => {
+  for (const dir of contractDirs) rmSync(dir, { recursive: true, force: true })
 })
