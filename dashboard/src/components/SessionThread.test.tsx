@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { SessionThread } from "./SessionThread";
 import type { Session } from "@/lib/types";
 
@@ -39,5 +39,21 @@ describe("SessionThread presence", () => {
     const root = container.firstElementChild as HTMLElement;
     expect(root.className).toContain("min-h-[320px]");
     expect(root.className).toContain("max-h-[60vh]");
+  });
+
+  it("windows long threads and grows on request", () => {
+    const s = session();
+    s.interaction = Array.from({ length: 120 }, (_, i) => ({
+      role: "user" as const,
+      at: new Date(1700000000000 + i * 1000).toISOString(),
+      content: `turn ${i}`,
+    })) as NonNullable<Session["interaction"]>;
+    render(<SessionThread session={s} events={[]} members={[]} />);
+    expect(screen.queryByText("turn 0")).toBeNull();
+    expect(screen.getByText("turn 119")).toBeDefined();
+    const more = screen.getByRole("button", { name: /earlier/ });
+    fireEvent.click(more);
+    fireEvent.click(more);
+    expect(screen.getByText("turn 0")).toBeDefined();
   });
 });
