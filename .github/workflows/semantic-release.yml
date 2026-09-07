@@ -1,8 +1,6 @@
 name: The Herald — Semantic Release
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -28,18 +26,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check if already released
-        id: check
-        run: |
-          if git describe --exact-match --tags HEAD 2>/dev/null; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Tag already exists, skipping release"
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: The Herald — publish release
-        if: steps.check.outputs.skip != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
