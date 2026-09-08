@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { rehydrate, SessionStore, StreamIntegrityError } from './sessionStore'
+import { rehydrate, SessionStore, StreamIntegrityError, INTERACTION_CAP } from './sessionStore'
 import { backendContract } from './backendContract'
 import type { SessionEvent } from './types'
 
@@ -154,4 +154,21 @@ test('SessionStore: the snapshot cache serves the same aggregate until an append
   assert.notEqual(a, c) // invalidated by the append, rebuilt fresh
   assert.equal(c.status, 'running')
   assert.equal(c.version, 2)
+})
+
+test('rehydrate caps the projected thread with a trim marker (#227)', () => {
+  const running: SessionEvent = { type: 'session.running', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:01Z' }
+  const msgs = Array.from({ length: INTERACTION_CAP + 10 }, (_, i) => ({
+    type: 'session.message',
+    sessionId: 'ses-1',
+    correlationId: 'cor-1',
+    at: new Date(Date.parse('2026-01-01T00:00:02Z') + i * 1000).toISOString(),
+    message: `m${i}`,
+  })) as SessionEvent[]
+  const s = rehydrate([created, running, ...msgs])
+  assert.ok(s)
+  assert.equal(s.interaction.length, INTERACTION_CAP + 1)
+  assert.equal(s.interaction[0].role, 'atlas')
+  assert.match(s.interaction[0].content, /11 earlier turns trimmed/)
+  assert.equal(s.interaction.at(-1)?.content, `m${INTERACTION_CAP + 9}`)
 })
