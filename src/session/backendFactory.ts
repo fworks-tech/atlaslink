@@ -1,7 +1,7 @@
 import { Pool } from 'pg'
 import { PgDb } from './db'
 import { PostgresBackend } from './postgresBackend'
-import { runMigrations } from './migrations'
+import { rollbackMigrations, runMigrations } from './migrations'
 import { SessionStore } from './sessionStore'
 import type { SessionBackend } from './sessionBackend'
 import type { DurabilityMode } from './types'
@@ -13,6 +13,25 @@ function resolveDurability(): DurabilityMode {
   const mode = process.env.ATLASLINK_DURABILITY
   if (mode === 'exit' || mode === 'async' || mode === 'sync') return mode
   return 'sync'
+}
+
+/**
+ * Rollback escape hatch for operators: `SESSION_MIGRATE_DOWN_TO=<n>` rolls the
+ * schema back to version n at boot. Absent = no rollback. Refuses to run in
+ * production without the explicit `SESSION_MIGRATE_ALLOW_DOWN=1` second key —
+ * rolling back drops tables, so the default is fail-closed.
+ */
+export function resolveRollbackTarget(env: NodeJS.ProcessEnv = process.env): number | undefined {
+  const raw = env.SESSION_MIGRATE_DOWN_TO
+  if (raw === undefined || raw === '') return undefined
+  const target = Number(raw)
+  if (!Number.isInteger(target) || target < 0) {
+    throw new Error(`SESSION_MIGRATE_DOWN_TO must be a non-negative integer, got ${JSON.stringify(raw)}`)
+  }
+  if (env.NODE_ENV === 'production' && env.SESSION_MIGRATE_ALLOW_DOWN !== '1') {
+    throw new Error('refusing schema rollback in production without SESSION_MIGRATE_ALLOW_DOWN=1')
+  }
+  return target
 }
 
 /**
@@ -28,6 +47,8 @@ export async function createSessionBackend(): Promise<SessionBackend> {
 
   const db = new PgDb(new Pool({ connectionString: url }))
   await runMigrations(db)
+  const rollbackTo = resolveRollbackTarget()
+  if (rollbackTo !== undefined) await rollbackMigrations(db, rollbackTo)
   return new PostgresBackend(db, DEFAULT_TENANT_ID, resolveDurability())
 }
 

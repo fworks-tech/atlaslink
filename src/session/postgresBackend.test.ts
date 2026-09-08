@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
 import { PgliteDb, type Db } from './db'
-import { migrations, runMigrations } from './migrations'
+import { migrations, rollbackMigrations, runMigrations } from './migrations'
 import { PostgresBackend } from './postgresBackend'
 import { createSessionBackend } from './backendFactory'
 import { SessionStore } from './sessionStore'
@@ -120,6 +120,76 @@ test('migrations apply once and are idempotent on a fresh database', async () =>
     `SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name`
   )
   assert.deepEqual(tables.map((t) => t.name), ['api_keys', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
+})
+
+async function tableNames(adapter: Db): Promise<string[]> {
+  const { rows } = await adapter.query<{ name: string }>(
+    `SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name`
+  )
+  return rows.map((t) => t.name)
+}
+
+async function appliedVersions(adapter: Db): Promise<number[]> {
+  const { rows } = await adapter.query<{ version: number }>(`SELECT version FROM schema_migrations ORDER BY version`)
+  return rows.map((r) => r.version)
+}
+
+async function seedEveryTable(adapter: Db): Promise<void> {
+  await adapter.query(
+    `INSERT INTO session_events (tenant_id, session_id, version, correlation_id, at, event) VALUES ('default', 'ses-1', 1, 'cor-1', now(), '{}')`
+  )
+  await adapter.query(`INSERT INTO projects (tenant_id, id, name) VALUES ('default', 'proj-1', 'p')`)
+  await adapter.query(
+    `INSERT INTO sessions (tenant_id, session_id, project_id, title, status, created_at, updated_at) VALUES ('default', 'ses-1', 'proj-1', 't', 'queued', now(), now())`
+  )
+  // parent before child: the v4 down script must survive the api_keys → users FK
+  await adapter.query(
+    `INSERT INTO users (id, email, password_hash, tenant_id, created_at, updated_at) VALUES ('u-1', 'a@b.c', 'h', 'default', now(), now())`
+  )
+  await adapter.query(
+    `INSERT INTO api_keys (id, user_id, key_hash, name, tenant_id, created_at) VALUES ('k-1', 'u-1', 'kh', 'k', 'default', now())`
+  )
+  await adapter.query(
+    `INSERT INTO run_checkpoints (tenant_id, id, session_id, data, updated_at) VALUES ('default', 'cor-1', 'ses-1', '{}', now())`
+  )
+}
+
+test('rollback to zero drops every table and the ledger, then ups re-apply cleanly', async () => {
+  const db = new PGlite()
+  const adapter = new PgliteDb(db)
+  await runMigrations(adapter)
+  await seedEveryTable(adapter)
+
+  await rollbackMigrations(adapter, 0)
+
+  assert.deepEqual(await tableNames(adapter), ['schema_migrations'])
+  assert.deepEqual(await appliedVersions(adapter), [])
+
+  await runMigrations(adapter)
+  assert.deepEqual(await appliedVersions(adapter), migrations.map((m) => m.version))
+  assert.deepEqual(await tableNames(adapter), ['api_keys', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
+})
+
+test('rollback to 3 keeps v1-3 and drops v4-5', async () => {
+  const db = new PGlite()
+  const adapter = new PgliteDb(db)
+  await runMigrations(adapter)
+
+  await rollbackMigrations(adapter, 3)
+
+  assert.deepEqual(await appliedVersions(adapter), [1, 2, 3])
+  assert.deepEqual(await tableNames(adapter), ['projects', 'schema_migrations', 'session_events', 'sessions'])
+})
+
+test('rollback refuses a negative target and no-ops at or below the applied version', async () => {
+  const db = new PGlite()
+  const adapter = new PgliteDb(db)
+  await runMigrations(adapter)
+
+  await assert.rejects(rollbackMigrations(adapter, -1))
+  await rollbackMigrations(adapter, 99)
+  assert.deepEqual(await appliedVersions(adapter), migrations.map((m) => m.version))
+  assert.deepEqual(await tableNames(adapter), ['api_keys', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
 })
 
 test('session events persist across backend instances (durability over the same database)', async () => {

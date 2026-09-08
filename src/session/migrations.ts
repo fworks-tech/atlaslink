@@ -6,6 +6,10 @@ export interface Migration {
   version: number
   name: string
   up: string
+  // inverse of up: drops exactly the objects up creates. Rollback is
+  // destructive by nature — the boot gate keeps it out of production
+  // unless explicitly allowed (see SESSION_MIGRATE_DOWN_TO).
+  down: string
 }
 
 /**
@@ -32,6 +36,7 @@ export const migrations: Migration[] = [
       );
       CREATE INDEX session_events_correlation ON session_events (tenant_id, correlation_id);
     `,
+    down: `DROP TABLE session_events;`,
   },
   {
     version: 2,
@@ -45,6 +50,7 @@ export const migrations: Migration[] = [
         PRIMARY KEY (tenant_id, id)
       );
     `,
+    down: `DROP TABLE projects;`,
   },
   {
     version: 3,
@@ -62,6 +68,7 @@ export const migrations: Migration[] = [
       );
       CREATE INDEX sessions_project_idx ON sessions (tenant_id, project_id, created_at DESC);
     `,
+    down: `DROP TABLE sessions;`,
   },
   {
     version: 4,
@@ -88,6 +95,8 @@ export const migrations: Migration[] = [
       CREATE INDEX api_keys_user_idx ON api_keys (user_id);
       CREATE INDEX api_keys_tenant_idx ON api_keys (tenant_id);
     `,
+    // child before parent: api_keys references users(id)
+    down: `DROP TABLE api_keys; DROP TABLE users;`,
   },
   {
     version: 5,
@@ -103,6 +112,7 @@ export const migrations: Migration[] = [
       );
       CREATE INDEX run_checkpoints_session_idx ON run_checkpoints (tenant_id, session_id);
     `,
+    down: `DROP TABLE run_checkpoints;`,
   },
 ]
 
@@ -137,6 +147,37 @@ export async function runMigrations(db: Db): Promise<void> {
         migration.version,
         migration.name,
       ])
+    }
+  })
+}
+
+/**
+ * Rolls applied migrations back to `targetVersion` in reverse version order,
+ * inside the same transaction + advisory-lock guard as the up path. Rolling
+ * back drops tables — callers must gate this out of production. A target at
+ * or above the applied head is a no-op; a negative target throws.
+ */
+export async function rollbackMigrations(db: Db, targetVersion: number): Promise<void> {
+  if (!Number.isInteger(targetVersion) || targetVersion < 0) {
+    throw new Error(`rollback target must be a non-negative integer, got ${targetVersion}`)
+  }
+  await db.transaction(async (tx) => {
+    await tx.query(`SELECT pg_advisory_xact_lock($1)`, [MIGRATION_LOCK_KEY])
+
+    await tx.execRawDdl(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL
+      )
+    `)
+
+    const { rows } = await tx.query<{ version: number }>(`SELECT version FROM schema_migrations`)
+    const applied = new Set(rows.map((r) => r.version))
+
+    for (const migration of [...migrations].reverse()) {
+      if (migration.version <= targetVersion || !applied.has(migration.version)) continue
+      await tx.execRawDdl(migration.down)
+      await tx.query(`DELETE FROM schema_migrations WHERE version = $1`, [migration.version])
     }
   })
 }
