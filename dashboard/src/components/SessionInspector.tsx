@@ -5,6 +5,8 @@ import type { BridgeEvent, Session } from "@/lib/types";
 import { artifactsFor } from "@/lib/runProjection";
 import { pairTools } from "@/lib/eventPairing";
 import { Markdown } from "@/components/Markdown";
+import { NodeConfigPanel } from "@/components/NodeConfigPanel";
+import { DEFAULT_CONFIG, isAgentConfig, tweaksToConfig, type AgentConfig } from "@/lib/config";
 
 export interface SelectedNode {
   id: string;
@@ -14,6 +16,49 @@ export interface SelectedNode {
 
 function asRecord(v: unknown): Record<string, unknown> {
   return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
+}
+
+// Shows agent config for member/session nodes. Draft nodes (composer overlay)
+// get an editable panel wired to onConfigChange; live nodes show read-only
+// values derived from the session's tweaks.
+function ConfigSection({
+  node,
+  session,
+  onConfigChange,
+}: {
+  node: SelectedNode;
+  session: Session | null;
+  onConfigChange?: (nodeId: string, config: AgentConfig) => void;
+}) {
+  const data = asRecord(node.data);
+  const isDraft = Boolean(data.draft) || node.id.startsWith("draft-");
+
+  let config: AgentConfig;
+  if (isDraft) {
+    config = isAgentConfig(data.config) ? (data.config as AgentConfig) : DEFAULT_CONFIG;
+  } else {
+    config = tweaksToConfig(session?.tweaks);
+  }
+
+  if (isDraft) {
+    return (
+      <div className="mt-2 border-t border-white/5 pt-2">
+        <div className="mb-1 text-[11px] uppercase tracking-widest text-muted">config</div>
+        <NodeConfigPanel
+          config={config}
+          editable={true}
+          onChange={(next) => onConfigChange?.(node.id, next)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 border-t border-white/5 pt-2">
+      <div className="mb-1 text-[11px] uppercase tracking-widest text-muted">config</div>
+      <NodeConfigPanel config={config} editable={false} onChange={() => {}} />
+    </div>
+  );
 }
 
 function str(v: unknown, fallback = ""): string {
@@ -34,7 +79,15 @@ function tabForNodeType(type: string): InspectorTab {
   return "overview";
 }
 
-function NodeDetail({ node }: { node: SelectedNode }) {
+function NodeDetail({
+  node,
+  session,
+  onConfigChange,
+}: {
+  node: SelectedNode;
+  session: Session | null;
+  onConfigChange?: (nodeId: string, config: AgentConfig) => void;
+}) {
   const d = asRecord(node.data);
   if (node.type === "reasoning") {
     const events = Array.isArray(d.events) ? (d.events as BridgeEvent[]) : [];
@@ -77,21 +130,24 @@ function NodeDetail({ node }: { node: SelectedNode }) {
     );
   }
   if (node.type === "member") {
+    const d = asRecord(node.data);
     return (
       <div className="space-y-1 text-xs">
         <div className="font-medium text-foreground">{str(d.member, node.id)}</div>
         <div className="text-muted">session: {str(d.sessionId).slice(0, 20)}…</div>
         <div className="text-muted">status: {d.active ? "active · holds the podium" : "completed"}</div>
+        <ConfigSection node={node} session={session} onConfigChange={onConfigChange} />
       </div>
     );
   }
   if (node.type === "session" || node.type === "awaiting" || node.type === "terminal") {
-    const session = asRecord(d.session);
-    const task = asRecord(session.task);
+    const nodeSession = asRecord(d.session);
+    const task = asRecord(nodeSession.task);
     return (
       <div className="space-y-1 text-xs">
         <Clamped text={str(task.prompt, node.id)} max={500} className="font-medium text-foreground break-words" />
-        <div className="text-muted">status: {str(session.status, "")}</div>
+        <div className="text-muted">status: {str(nodeSession.status, "")}</div>
+        <ConfigSection node={node} session={session} onConfigChange={onConfigChange} />
       </div>
     );
   }
@@ -105,6 +161,7 @@ export function SessionInspector({
   events,
   selectedNode = null,
   contextLoading = false,
+  onConfigChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -112,6 +169,7 @@ export function SessionInspector({
   events: BridgeEvent[];
   selectedNode?: SelectedNode | null;
   contextLoading?: boolean;
+  onConfigChange?: (nodeId: string, config: AgentConfig) => void;
 }) {
   const [tab, setTab] = useState<InspectorTab>("overview");
   const panelRef = useRef<HTMLDivElement>(null);
@@ -179,7 +237,7 @@ export function SessionInspector({
               </div>
               <div className="mt-1 font-mono text-[11px] break-all text-muted">{selectedNode.id}</div>
               <section aria-label="Selected node payload" className="mt-2 max-h-[45vh] min-h-0 overflow-y-auto">
-                <NodeDetail node={selectedNode} />
+                <NodeDetail node={selectedNode} session={session} onConfigChange={onConfigChange} />
               </section>
             </div>
           )}

@@ -1,4 +1,5 @@
 import type { Edge, Node, XYPosition } from "@xyflow/react";
+import { DEFAULT_CONFIG } from "@/lib/config";
 
 export const DRAFT_ID_PREFIX = "draft-";
 
@@ -29,7 +30,7 @@ export function createDraftNode(agentType: string, position: XYPosition): Node {
     id: `${DRAFT_ID_PREFIX}${Date.now().toString(36)}-${draftCounter}`,
     type: agentType,
     position: { x: position.x, y: position.y },
-    data: { label: `New ${label}`, draft: true },
+    data: { label: `New ${label}`, draft: true, config: { ...DEFAULT_CONFIG } },
   };
 }
 

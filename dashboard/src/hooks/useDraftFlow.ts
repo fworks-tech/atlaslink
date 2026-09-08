@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { applyNodeChanges, type Edge, type Node, type NodeChange, type XYPosition } from "@xyflow/react";
 import { createDraftEdge, createDraftNode, loadDraftFlow, saveDraftFlow } from "@/lib/draftFlow";
+import type { AgentConfig } from "@/lib/config";
 
 export function useDraftFlow(sessionId: string) {
   const [state, setState] = useState(() => loadDraftFlow(sessionId));
@@ -31,11 +32,19 @@ export function useDraftFlow(sessionId: string) {
     setState((s) => ({ ...s, nodes: applyNodeChanges(changes, s.nodes) }));
   }, []);
 
+  const updateNodeConfig = useCallback((nodeId: string, config: AgentConfig) => {
+    setState((s) => ({
+      ...s,
+      nodes: s.nodes.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, config } } : n)),
+    }));
+  }, []);
+
   return {
     draftNodes: state.nodes as Node[],
     draftEdges: state.edges as Edge[],
     addDraftNode,
     connectDraft,
     applyDraftChanges,
+    updateNodeConfig,
   };
 }
