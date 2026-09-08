@@ -166,3 +166,4 @@ dashboard/.env.local
 .agenthood/preferences.json
 !.agenthood/config.json
 .env*
+!deploy/oracle/.env.example
