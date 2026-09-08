@@ -42,6 +42,14 @@ describe("NodeConfigPanel", () => {
     expect(screen.getByText(/temperature must be between 0 and 2/i)).toBeDefined();
   });
 
+  it("rejects a non-integer maxTokens without emitting", () => {
+    const onChange = vi.fn()
+    render(<NodeConfigPanel config={baseConfig()} editable={true} onChange={onChange} />)
+    fireEvent.change(screen.getByLabelText("max tokens"), { target: { value: "3.5" } })
+    expect(onChange).not.toHaveBeenCalled()
+    expect(screen.getByText(/must be a whole number/i)).toBeDefined()
+  })
+
   it("shows current vs default for a drifted value", () => {
     render(<NodeConfigPanel config={{ ...baseConfig(), temperature: 0.2 }} editable={true} onChange={() => {}} />);
     expect(screen.getByText(/default: 0\.7/i)).toBeDefined();
