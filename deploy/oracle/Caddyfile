@@ -1,11 +1,17 @@
-# Zero-setup mode: serve the daemon on :80 without TLS. The Vercel dashboard BFF
-# fetches this server-side, so no browser mixed-content is involved.
+# Caddy gateway for the Oracle Free Tier daemon.
+#
+# Two hosts share this file:
+#   - :80            — plain HTTP (fallback, health checks, ACME challenge)
+#   - api.atlas.flabs.tech — TLS with Let's Encrypt (primary)
+#
+# The backend never listens directly on the internet; Caddy fronts it on
+# both :80 (redirects to HTTPS) and :443 (proxies to backend:3000).
+
 :80 {
-	reverse_proxy backend:3000
+	# Redirect plain HTTP to the HTTPS host (except ACME challenges).
+	redir https://api.atlas.flabs.tech{uri} permanent
 }
 
-# TLS upgrade path (requires a DNS A record for the host -> the VM's public IP,
-# plus TCP 443 open in the VCN security list):
-#   api.atlas.flabs.tech {
-#   	reverse_proxy backend:3000
-#   }
+api.atlas.flabs.tech {
+	reverse_proxy backend:3000
+}
