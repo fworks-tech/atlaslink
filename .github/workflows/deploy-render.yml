@@ -1,0 +1,30 @@
+name: Deploy Render
+
+# Trigger after CI completes on main — only deploy what passed the gates.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Only deploy on a successful CI run that was a push to main (not a PR,
+    # not a failure). The daemon image is rebuilt from main, so a green CI
+    # on main is the only safe trigger.
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    steps:
+      - name: Trigger Render deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        # Skip silently if the hook isn't configured yet (e.g. fresh forks)
+        # rather than failing the workflow.
+        if: env.RENDER_DEPLOY_HOOK_URL != ''
+        run: |
+          echo "Triggering Render deploy for atlaslink-daemon..."
+          curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
+          echo "Deploy hook accepted — Render is rebuilding from main."
