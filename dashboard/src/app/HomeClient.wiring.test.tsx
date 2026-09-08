@@ -45,6 +45,10 @@ vi.mock("@/lib/api", () => ({
   cancelSession: (...args: unknown[]) => cancelMock(...args),
 }));
 
+vi.mock("@/components/ApprovalInbox", () => ({
+  ApprovalInbox: () => null,
+}));
+
 // biome-ignore lint/suspicious/noExplicitAny: test stubs
 vi.mock("@/components/SocietyDiagram", () => ({
   SocietyDiagram: ({

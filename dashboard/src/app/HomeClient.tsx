@@ -8,6 +8,7 @@ import { SocietyDiagram } from "@/components/SocietyDiagram";
 import { SessionList } from "@/components/SessionList";
 import { SessionInspector } from "@/components/SessionInspector";
 import { SessionThread } from "@/components/SessionThread";
+import { ApprovalInbox } from "@/components/ApprovalInbox";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessions } from "@/hooks/useSessions";
@@ -315,6 +316,7 @@ function HomeInner() {
               <ErrorBoundary>
                 <SocietyDiagram selectedSessionId={selectedSessionId} mode={mode} onNodeClick={handleNodeClick} selectedNodeId={selectedNodeId} />
               </ErrorBoundary>
+              <ApprovalInbox onSelect={handleSelectSession} />
               <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
                 <SessionList onSelect={handleSelectSession} />
                 <SessionThread session={selectedSession} events={events} members={members} onJump={(id) => handleNodeClick(id, "thread", {})} />
