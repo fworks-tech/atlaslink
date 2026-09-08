@@ -41,4 +41,13 @@ export interface SessionBackend {
   deleteProject(id: string): Promise<boolean>
   deleteSession(sessionId: string): Promise<void>
   withTenant(tenantId: string): SessionBackend
+  /**
+   * Executor checkpoint rows (run_checkpoints, migration 5): the persisted
+   * half of the CheckpointStore the daemon injects into the agenthood runner.
+   * `data` is the opaque JSON string; rows are keyed by checkpoint id
+   * (deterministic from the session correlationId) and scoped by tenant.
+   */
+  saveCheckpoint(id: string, sessionId: string, data: string): Promise<void>
+  loadCheckpoint(id: string): Promise<{ sessionId: string; data: string } | null>
+  deleteCheckpoint(id: string): Promise<void>
 }

@@ -433,6 +433,35 @@ export class PostgresBackend implements SessionBackend {
       ])
     })
   }
+
+  async saveCheckpoint(id: string, sessionId: string, data: string): Promise<void> {
+    await this.db.query(
+      `INSERT INTO run_checkpoints (tenant_id, id, session_id, data, updated_at)
+       VALUES ($1, $2, $3, $4, now())
+       ON CONFLICT (tenant_id, id) DO UPDATE SET
+         session_id = EXCLUDED.session_id,
+         data = EXCLUDED.data,
+         updated_at = EXCLUDED.updated_at`,
+      [this.tenantId, id, sessionId, data]
+    )
+  }
+
+  async loadCheckpoint(id: string): Promise<{ sessionId: string; data: string } | null> {
+    const { rows } = await this.db.query<{ session_id: string; data: string }>(
+      `SELECT session_id, data FROM run_checkpoints
+       WHERE tenant_id = $1 AND id = $2`,
+      [this.tenantId, id]
+    )
+    if (rows.length === 0) return null
+    return { sessionId: rows[0].session_id, data: rows[0].data }
+  }
+
+  async deleteCheckpoint(id: string): Promise<void> {
+    await this.db.query(`DELETE FROM run_checkpoints WHERE tenant_id = $1 AND id = $2`, [
+      this.tenantId,
+      id,
+    ])
+  }
 }
 
 /** Ranked rows carry each session's latest status-bearing event type and

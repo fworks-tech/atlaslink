@@ -1,5 +1,8 @@
 import { msg } from '../tasks/taskRegistry'
 import { createContext } from './contextFactory'
+import { checkpointIdFor } from '../session/checkpointStore'
+import type { AtlasCheckpointStore } from '../session/checkpointStore'
+import { log } from '../log'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
 import { AskHumanSignal } from 'agenthood/dist/tools/human/AskHumanTool.js'
@@ -7,7 +10,12 @@ import { AskHumanSignal } from 'agenthood/dist/tools/human/AskHumanTool.js'
 export interface AppLike {
   events: { subscribe(listener: (event: RunEvent) => void): () => void }
   runner: {
-    runMemberTask(memberName: string, task: string, config: LLMConfig): Promise<{ output: string; durationMs: number }>
+    runMemberTask(
+      memberName: string,
+      task: string,
+      config: LLMConfig,
+      resumeFrom?: string | { checkpointId: string; reply?: string }
+    ): Promise<{ output: string; durationMs: number }>
   }
 }
 
@@ -32,22 +40,49 @@ export async function runSession(params: {
   session: import('../tasks/taskRegistry.js').Session
   config: LLMConfig
   onEvent?: (event: RunEvent) => void
-  createApp?: (params: { config: LLMConfig; correlationId: string }) => Promise<AppLike>
+  checkpointStore?: AtlasCheckpointStore
+  resume?: { checkpointId: string; reply: string }
+  createApp?: (params: {
+    config: LLMConfig
+    correlationId: string
+    checkpointStore?: AtlasCheckpointStore
+  }) => Promise<AppLike>
 }): Promise<import('../tasks/taskRegistry.js').Session> {
   params.registry.start(params.session.id)
   const controller = new AbortController()
   params.registry.attachAbort(params.session.id, controller)
   let unsubscribe = (): void => {}
   try {
+    // a resume whose checkpoint row is gone (pruned, pre-migration park)
+    // degrades to a fresh run from the follow-up prompt — never a crash
+    let resume = params.resume
+    if (resume && params.checkpointStore) {
+      const hydrated = await params.checkpointStore.hydrate(resume.checkpointId).catch(() => false)
+      if (!hydrated) {
+        log.info('resume checkpoint missing; running fresh', {
+          sessionId: params.session.id,
+          checkpointId: resume.checkpointId,
+        })
+        resume = undefined
+      }
+    }
     const app = params.createApp
-      ? await params.createApp({ config: params.config, correlationId: params.session.correlationId })
-      : await createContext({ config: params.config, correlationId: params.session.correlationId })
+      ? await params.createApp({
+          config: params.config,
+          correlationId: params.session.correlationId,
+          checkpointStore: params.checkpointStore,
+        })
+      : await createContext({
+          config: params.config,
+          correlationId: params.session.correlationId,
+          checkpointStore: params.checkpointStore,
+        })
 
     unsubscribe = app.events.subscribe(params.onEvent ?? (() => {}))
     // settled values, never rejections: the raw promise keeps exactly one
     // consumer (this chain), so the post-abort orphan cannot go unhandled
     const run = app.runner
-      .runMemberTask(params.session.task.member, params.session.task.prompt, params.config)
+      .runMemberTask(params.session.task.member, params.session.task.prompt, params.config, resume)
       .then(
         (res) => ({ aborted: false as const, ok: true as const, res }),
         (err) => ({ aborted: false as const, ok: false as const, err }),
@@ -69,6 +104,21 @@ export async function runSession(params: {
     } else if (!outcome.ok) {
       const err = outcome.err
       if (err instanceof AskHumanSignal) {
+        // persist failure must not lose the park: the reply still spawns a
+        // follow-up, which degrades to a fresh run when the row is absent.
+        // The row key is the live lineage id — a resumed run keeps the
+        // original checkpoint id, not the follow-up correlationId.
+        if (params.checkpointStore) {
+          const persistId = resume?.checkpointId ?? checkpointIdFor(params.session.correlationId)
+          try {
+            await params.checkpointStore.persist(persistId, params.session.id)
+          } catch (persistErr) {
+            log.error('checkpoint persist failed; park proceeds without resume', {
+              sessionId: params.session.id,
+              error: persistErr instanceof Error ? persistErr.message : String(persistErr),
+            })
+          }
+        }
         params.registry.park(params.session.id, { question: err.payload })
       } else {
         params.registry.fail(params.session.id, { error: msg(err) })

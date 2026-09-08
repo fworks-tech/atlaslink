@@ -1,6 +1,7 @@
 import { ApplicationContext } from 'agenthood/dist/runtime/ApplicationContext.js'
 import { MissingApiKeyError } from 'agenthood/dist/llm/validateApiKeys.js'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
+import type { CheckpointStore } from 'agenthood/dist/checkpoint/RunCheckpoint.js'
 
 /**
  * Validates the agenthood LLM config at boot. Fails fast with a clear message
@@ -18,8 +19,11 @@ export function validateConfig(config: LLMConfig): void {
 export async function createContext(params: {
   config: LLMConfig
   correlationId: string
+  checkpointStore?: CheckpointStore
 }): Promise<ApplicationContext> {
-  const app = await ApplicationContext.create(process.cwd(), params.config)
+  const app = await ApplicationContext.create(process.cwd(), params.config, {
+    checkpointStore: params.checkpointStore,
+  })
   app.ctx.source = 'api'
   app.ctx.correlationId = params.correlationId
   return app

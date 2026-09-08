@@ -8,6 +8,7 @@ import type { SseHandler } from '../bridge/sseEndpoint'
 import type { TaskRegistry } from '../tasks/taskRegistry'
 import { tenantBackendForRequest } from './tenant'
 import { appendChatMessage, isTerminal, replyToParked, steerSession } from './sessionActions'
+import { checkpointIdFor } from '../session/checkpointStore'
 import { log } from '../log'
 
 export interface TaskDeps {
@@ -190,6 +191,13 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         }
         const after = await backend.get(sessionId)
         if (!after) return reply.code(404).send({ ok: false, error: 'unknown session' })
+        // a parked original holds a checkpoint row — the run it belonged to
+        // is gone, so drop the row; a missing row is a no-op
+        try {
+          await backend.deleteCheckpoint(checkpointIdFor(current.correlationId))
+        } catch {
+          // prune is hygiene; the store commit above is the truth
+        }
         // the store commit is truth, but live subscribers (dashboard thread,
         // queue watchers) only move on SSE — fan out like every other route
         try {

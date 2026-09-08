@@ -89,6 +89,21 @@ export const migrations: Migration[] = [
       CREATE INDEX api_keys_tenant_idx ON api_keys (tenant_id);
     `,
   },
+  {
+    version: 5,
+    name: 'run_checkpoints',
+    up: `
+      CREATE TABLE run_checkpoints (
+        tenant_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL,
+        PRIMARY KEY (tenant_id, id)
+      );
+      CREATE INDEX run_checkpoints_session_idx ON run_checkpoints (tenant_id, session_id);
+    `,
+  },
 ]
 
 // Advisory lock key serializing the migrate loop across processes; two daemons

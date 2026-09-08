@@ -14,6 +14,7 @@ import { SessionQueue } from './bridge/SessionQueue'
 import { SseHandler } from './bridge/sseEndpoint'
 import { createSessionBackend } from './session/backendFactory'
 import { SessionStore } from './session/sessionStore'
+import { AtlasCheckpointStore, checkpointIdFor } from './session/checkpointStore'
 import type { SessionBackend } from './session/sessionBackend'
 import type { SessionDelta, AskHumanQuestion } from './session/types'
 import type { BridgeEnvelope } from './bridge/EventLogStore'
@@ -287,6 +288,9 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
   const log = await EventLogStore.open(config.dataDir, { maxBytes: 10 * 1024 * 1024 })
   const broadcaster = new EventBroadcaster(log)
   const sse = new SseHandler(log, broadcaster)
+  // one checkpoint mirror per daemon: the runner saves into it live, park
+  // persists it, and a reply follow-up hydrates it back for a true resume
+  const checkpoints = new AtlasCheckpointStore(backend)
 
   const queue = new SessionQueue({
     broadcaster,
@@ -308,31 +312,55 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
            // and the store already reflects the terminal decision; mirror drops
          }
        }
-       const at = (): string => new Date().toISOString()
-       try {
-         await mirror({ type: 'session.running', correlationId: session.correlationId, at: at() })
-         await runSession({
-           registry,
-           session,
-           config: config.agenthood,
-           onEvent: (event: RunEvent) => broadcaster.emit({ eventId: 0, ...event }),
-         })
-       } catch (err) {
+        const at = (): string => new Date().toISOString()
+        // checkpoint rows are consume-once: the follow-up hydrates the
+        // parked run's history, then the row is dropped so a stale resume
+        // can never replay twice; the follow-up persists its own row on park
+        const dropCheckpoint = (correlationId: string): Promise<void> =>
+          checkpoints.drop(checkpointIdFor(correlationId)).catch(() => undefined)
+        try {
+          await mirror({ type: 'session.running', correlationId: session.correlationId, at: at() })
+          let resume = session.resume
+          if (resume) {
+            const hydrated = await checkpoints.hydrate(resume.checkpointId).catch(() => false)
+            if (hydrated) {
+              const followup = await backend.get(sessionId).catch(() => null)
+              const original = followup?.resumeOf
+                ? await backend.get(followup.resumeOf).catch(() => null)
+                : null
+              if (original) await checkpoints.drop(checkpointIdFor(original.correlationId)).catch(() => undefined)
+            } else {
+              logger.info('resume checkpoint gone; follow-up runs fresh', { sessionId, checkpointId: resume.checkpointId })
+              resume = undefined
+            }
+          }
+          await runSession({
+            registry,
+            session,
+            config: config.agenthood,
+            onEvent: (event: RunEvent) => broadcaster.emit({ eventId: 0, ...event }),
+            checkpointStore: checkpoints,
+            ...(resume ? { resume } : {}),
+          })
+        } catch (err) {
          logger.error('session run threw unexpectedly', {
            sessionId,
            correlationId: session.correlationId,
            error: msg(err),
          })
        }
-        const final = registry.get(sessionId)!
+         const final = registry.get(sessionId)!
         if (final.status === 'succeeded') {
           await mirror({ type: 'session.succeeded', correlationId: final.correlationId, at: at(), output: final.output, durationMs: final.durationMs })
+          await dropCheckpoint(final.correlationId)
         } else if (final.status === 'failed') {
           await mirror({ type: 'session.failed', correlationId: final.correlationId, at: at(), error: final.error, durationMs: final.durationMs })
+          await dropCheckpoint(final.correlationId)
         } else if (final.status === 'cancelled') {
           // a steered/interrupted run: the abort race finalized CANCELLED and
           // freed the slot — mirror it so the aggregate stops reading running
           await mirror({ type: 'session.cancelled', correlationId: final.correlationId, at: at() })
+          await dropCheckpoint(final.correlationId)
         } else if (final.status === 'parked') {
           // the worker returned on AskHumanSignal — slot free, question in hand.
           // Park is the most time-sensitive transition, so it fans out live

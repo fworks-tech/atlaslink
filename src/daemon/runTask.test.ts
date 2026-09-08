@@ -4,6 +4,9 @@ import { TaskRegistry, type Session } from '../tasks/taskRegistry'
 import { runSession, type AppLike } from './runTask'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
 import { AskHumanSignal } from 'agenthood/dist/tools/human/AskHumanTool.js'
+import { AtlasCheckpointStore } from '../session/checkpointStore'
+import { SessionStore } from '../session/sessionStore'
+import type { SessionBackend } from '../session/sessionBackend'
 
 type FakeApp = AppLike & { subscribeCount: () => number; listenerCount: () => number }
 
@@ -219,4 +222,143 @@ test('runSession suppresses a late AskHumanSignal from the aborted orphan', asyn
   await new Promise((r) => setTimeout(r, 10))
   assert.equal(registry.get(session.id)!.status, 'cancelled')
   assert.equal(registry.get(session.id)!.question, undefined)
+})
+
+function liveCheckpoint(id: string, step: number): Parameters<AtlasCheckpointStore['save']>[0] {
+  return {
+    id,
+    member: 'the-architect',
+    task: 'plan the M2 bridge',
+    step,
+    messages: [],
+    usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+    model: '',
+    activatedSkills: [],
+    status: 'running',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  }
+}
+
+test('runSession persists the live checkpoint row on park', async () => {
+  const registry = new TaskRegistry()
+  const session = baseSession(registry)
+  const backend = new SessionStore()
+  const checkpoints = new AtlasCheckpointStore(backend)
+  checkpoints.save(liveCheckpoint(session.correlationId, 3))
+  const app = fakeApp({ error: new AskHumanSignal({ question: 'Ship it?' }) })
+
+  const finished = await runSession({
+    registry,
+    session,
+    config: {},
+    checkpointStore: checkpoints,
+    createApp: async () => app,
+  })
+
+  assert.equal(finished.status, 'parked')
+  const row = await backend.loadCheckpoint(session.correlationId)
+  assert.ok(row)
+  assert.equal(row.sessionId, session.id)
+  assert.ok(row.data.includes('"step":3'))
+})
+
+test('runSession still parks when the checkpoint persist fails', async () => {
+  const registry = new TaskRegistry()
+  const session = baseSession(registry)
+  const failing = {
+    saveCheckpoint: async () => { throw new Error('db down') },
+  } as unknown as SessionBackend
+  const checkpoints = new AtlasCheckpointStore(failing)
+  checkpoints.save(liveCheckpoint(session.correlationId, 1))
+  const app = fakeApp({ error: new AskHumanSignal({ question: 'Ship it?' }) })
+
+  const finished = await runSession({
+    registry,
+    session,
+    config: {},
+    checkpointStore: checkpoints,
+    createApp: async () => app,
+  })
+
+  assert.equal(finished.status, 'parked')
+  assert.deepEqual(finished.question, { question: 'Ship it?' })
+})
+
+test('runSession forwards the resume link to the runner after hydrating', async () => {
+  const registry = new TaskRegistry()
+  const session = baseSession(registry)
+  const backend = new SessionStore()
+  await backend.saveCheckpoint('cor-orig', 'ses-orig', JSON.stringify(liveCheckpoint('cor-orig', 5)))
+  const checkpoints = new AtlasCheckpointStore(backend)
+  const app = fakeApp({})
+  let seen: unknown
+  app.runner.runMemberTask = (async (...args: unknown[]) => {
+    seen = args[3]
+    return { output: 'resumed', durationMs: 1 }
+  }) as typeof app.runner.runMemberTask
+
+  const finished = await runSession({
+    registry,
+    session,
+    config: {},
+    checkpointStore: checkpoints,
+    resume: { checkpointId: 'cor-orig', reply: 'us-east' },
+    createApp: async () => app,
+  })
+
+  assert.deepEqual(seen, { checkpointId: 'cor-orig', reply: 'us-east' })
+  assert.equal(finished.status, 'succeeded')
+  assert.equal(finished.output, 'resumed')
+  // hydrated into the live mirror for the runner to consume
+  assert.equal(checkpoints.load('cor-orig')?.step, 5)
+})
+
+test('runSession degrades to a fresh run when the checkpoint row is gone', async () => {  const registry = new TaskRegistry()
+  const session = baseSession(registry)
+  const checkpoints = new AtlasCheckpointStore(new SessionStore())
+  const app = fakeApp({})
+  let seen: unknown = 'unset'
+  app.runner.runMemberTask = (async (...args: unknown[]) => {
+    seen = args[3]
+    return { output: 'fresh', durationMs: 1 }
+  }) as typeof app.runner.runMemberTask
+
+  const finished = await runSession({
+    registry,
+    session,
+    config: {},
+    checkpointStore: checkpoints,
+    resume: { checkpointId: 'cor-gone', reply: 'us-east' },
+    createApp: async () => app,
+  })
+
+  assert.equal(seen, undefined)
+  assert.equal(finished.status, 'succeeded')
+  assert.equal(finished.output, 'fresh')
+})
+
+test('runSession re-park of a resumed run persists under the lineage id', async () => {
+  const registry = new TaskRegistry()
+  const session = baseSession(registry)
+  const backend = new SessionStore()
+  await backend.saveCheckpoint('cor-orig', 'ses-orig', JSON.stringify(liveCheckpoint('cor-orig', 5)))
+  const checkpoints = new AtlasCheckpointStore(backend)
+  const app = fakeApp({ error: new AskHumanSignal({ question: 'And now?' }) })
+
+  const finished = await runSession({
+    registry,
+    session,
+    config: {},
+    checkpointStore: checkpoints,
+    resume: { checkpointId: 'cor-orig', reply: 'us-east' },
+    createApp: async () => app,
+  })
+
+  assert.equal(finished.status, 'parked')
+  // lineage id, not the follow-up correlationId — the next reply resumes it again
+  const row = await backend.loadCheckpoint('cor-orig')
+  assert.ok(row)
+  assert.equal(row.sessionId, session.id)
+  assert.equal(await backend.loadCheckpoint(session.correlationId), null)
 })
