@@ -34,11 +34,11 @@ export function NodeConfigPanel({
     }
   }
 
-  const commitNumber = (field: "temperature" | "maxTokens", raw: string, min: number, max: number, label: string) => {
+  const commitNumber = (field: "temperature" | "maxTokens", raw: string, min: number, max: number, label: string, integer = false) => {
     setDraft((d) => ({ ...d, [field]: raw }))
     const n = num(raw)
-    if (Number.isNaN(n) || n < min || n > max) {
-      setError(`${label} must be between ${min} and ${max}`)
+    if (Number.isNaN(n) || n < min || n > max || (integer && !Number.isInteger(n))) {
+      setError(integer ? `${label} must be a whole number between ${min} and ${max}` : `${label} must be between ${min} and ${max}`)
       return
     }
     setError(null)
@@ -108,7 +108,7 @@ export function NodeConfigPanel({
         <input
           aria-label="max tokens"
           value={resolve("maxTokens")}
-          onChange={(e) => commitNumber("maxTokens", e.target.value, 1, 1000000, "max tokens")}
+          onChange={(e) => commitNumber("maxTokens", e.target.value, 1, 1000000, "max tokens", true)}
           className="mt-0.5 w-full rounded border border-white/10 bg-raised px-2 py-1 text-foreground"
         />
       </label>
