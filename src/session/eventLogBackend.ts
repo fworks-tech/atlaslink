@@ -44,8 +44,10 @@ export class EventLogBackend implements SessionBackend {
   private readonly _projects: Map<string, Project>
   private readonly _deletedProjects: Set<string>
   private readonly _tenantId: string
+  /** Checkpoints ride in memory only — same durability as this backend's projects. */
+  private readonly _checkpoints: Map<string, { sessionId: string; data: string }>
 
-  constructor(log: EventLogStore, tenantId: string = DEFAULT_TENANT_ID, shared?: { snapshots: Map<string, SessionSnapshot>; versions: Map<string, number>; projects: Map<string, Project>; deletedProjects: Set<string> }) {
+  constructor(log: EventLogStore, tenantId: string = DEFAULT_TENANT_ID, shared?: { snapshots: Map<string, SessionSnapshot>; versions: Map<string, number>; projects: Map<string, Project>; deletedProjects: Set<string>; checkpoints: Map<string, { sessionId: string; data: string }> }) {
     this.log = log
     this._tenantId = tenantId
     if (shared) {
@@ -53,11 +55,13 @@ export class EventLogBackend implements SessionBackend {
       this._versions = shared.versions
       this._projects = shared.projects
       this._deletedProjects = shared.deletedProjects
+      this._checkpoints = shared.checkpoints
     } else {
       this._snapshots = new Map<string, SessionSnapshot>()
       this._versions = new Map<string, number>()
       this._projects = new Map<string, Project>()
       this._deletedProjects = new Set<string>()
+      this._checkpoints = new Map<string, { sessionId: string; data: string }>()
     }
   }
 
@@ -68,6 +72,7 @@ export class EventLogBackend implements SessionBackend {
       versions: this._versions,
       projects: this._projects,
       deletedProjects: this._deletedProjects,
+      checkpoints: this._checkpoints,
     })
   }
 
@@ -233,6 +238,18 @@ export class EventLogBackend implements SessionBackend {
     if (!persisted) return
     this._snapshots.delete(sessionId)
     this._versions.delete(sessionId)
+  }
+
+  async saveCheckpoint(id: string, sessionId: string, data: string): Promise<void> {
+    this._checkpoints.set(`${this._tenantId}:${id}`, { sessionId, data })
+  }
+
+  async loadCheckpoint(id: string): Promise<{ sessionId: string; data: string } | null> {
+    return this._checkpoints.get(`${this._tenantId}:${id}`) ?? null
+  }
+
+  async deleteCheckpoint(id: string): Promise<void> {
+    this._checkpoints.delete(`${this._tenantId}:${id}`)
   }
 
   private _deletedMarker(sessionId: string): number {

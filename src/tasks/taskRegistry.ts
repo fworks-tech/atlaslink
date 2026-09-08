@@ -37,6 +37,7 @@ export class TaskRegistry {
     provider?: string
     id?: string
     correlationId?: string
+    resume?: { checkpointId: string; reply: string }
   }): Session {
     if (!params.member || typeof params.member !== 'string') {
       throw new Error('member is required')
@@ -55,6 +56,7 @@ export class TaskRegistry {
       output: undefined,
       error: undefined,
       durationMs: undefined,
+      ...(params.resume ? { resume: params.resume } : {}),
     }
     this.#sessions.set(session.id, session)
     return session
@@ -204,4 +206,6 @@ export interface Session {
   durationMs: number | undefined
   /** Unified ask_human payload ({question, context?}) the run parked on (PARKED only) */
   question?: unknown
+  /** True-resume link for a reply follow-up: checkpoint row + sanitized reply (QUEUED only) */
+  resume?: { checkpointId: string; reply: string }
 }

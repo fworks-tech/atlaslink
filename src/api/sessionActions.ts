@@ -6,6 +6,7 @@ import type { BridgeEnvelope } from '../bridge/EventLogStore'
 import type { SessionQueue } from '../bridge/SessionQueue'
 import type { TaskRegistry } from '../tasks/taskRegistry'
 import { log } from '../log'
+import { checkpointIdFor } from '../session/checkpointStore'
 import { ASK_HUMAN_MAX_CONTEXT_LENGTH, ASK_HUMAN_MAX_QUESTION_LENGTH } from 'agenthood/dist/tools/human/AskHumanTool.js'
 
 /**
@@ -98,6 +99,16 @@ function truncateFold(text: string, max: number): string {
 }
 
 /**
+ * Resume-path reply hygiene: the same truncation and closing-tag
+ * neutralization the fold applies, so a hostile or verbose reply cannot
+ * smuggle an unbounded or breakout payload into the resumed loop's tool
+ * message. Question/context caps don't apply — there is no fold here.
+ */
+export function sanitizeResumeReply(reply: string): string {
+  return truncateFold(reply, MAX_FOLD_REPLY).replace(/<\/human_reply/gi, '</ human_reply')
+}
+
+/**
  * Follow-up prompt: the original prompt plus the answered Q&A. Delimited so
  * the model cannot mistake human text for instructions; capped so a hostile
  * or verbose reply cannot smuggle an unbounded prompt into the resumed run;
@@ -115,20 +126,24 @@ export function foldReplyPrompt(originalPrompt: string, question: string, contex
     .replace(/[<>\r\n]+/g, ' ')
     .replace(/<\/human_reply/gi, '</ human_reply')
     .trim()
-  const a = truncateFold(reply, MAX_FOLD_REPLY).replace(/<\/human_reply/gi, '</ human_reply')
+  const a = sanitizeResumeReply(reply)
   return `${originalPrompt}\n\n<human_reply${q ? ` question="${q}"` : ''}${c ? ` context="${c}"` : ''}>\n${a}\n</human_reply>`
 }
 
 /**
- * Linked follow-up for a replied-to park: the original prompt plus the Q&A
- * folded in, so the new run sees the answer without sharing the parked run's
- * scratchpad. Committed to the store first, then created + enqueued to the
- * interactive lane (a human is waiting on this answer). The provider override
- * rides along — a pinned provider must not silently revert on resume;
- * member/team tweaks persist on the store entry but the registry runner takes
- * only provider today, same as the create route (pre-existing gap, not
- * something resume may diverge on). A declare failure after the store commit
- * cancels the follow-up instead of orphaning it queued-forever.
+ * Linked follow-up for a replied-to park. When the parked run persisted its
+ * executor checkpoint, the follow-up carries the raw original prompt plus a
+ * resume link (checkpoint row + sanitized reply) so the pump relaunches the
+ * loop from pre-park history instead of re-executing it. Without a checkpoint
+ * row (pre-migration park, persist failure, prune) it falls back to the
+ * folded prompt — the new run sees the answer without sharing the parked
+ * run's scratchpad. Committed to the store first, then created + enqueued to
+ * the interactive lane (a human is waiting on this answer). The provider
+ * override rides along — a pinned provider must not silently revert on
+ * resume; member/team tweaks persist on the store entry but the registry
+ * runner takes only provider today, same as the create route (pre-existing
+ * gap, not something resume may diverge on). A declare failure after the
+ * store commit cancels the follow-up instead of orphaning it queued-forever.
  */
 async function spawnResumeFollowup(
   deps: IngressDeps,
@@ -138,7 +153,12 @@ async function spawnResumeFollowup(
   const followupId = `ses-${randomUUID()}`
   const followupCorrelationId = `cor-${randomUUID()}`
   const at = new Date().toISOString()
-  const prompt = foldReplyPrompt(original.task.prompt, original.question?.question ?? '', original.question?.context, content)
+  const checkpointId = checkpointIdFor(original.correlationId)
+  const checkpoint = await deps.backend.loadCheckpoint(checkpointId)
+  const resume = checkpoint ? { checkpointId, reply: sanitizeResumeReply(content) } : undefined
+  const prompt = resume
+    ? original.task.prompt
+    : foldReplyPrompt(original.task.prompt, original.question?.question ?? '', original.question?.context, content)
   const resumeProvider = typeof original.tweaks?.provider === 'string' ? original.tweaks.provider : undefined
   await deps.backend.append({
     type: 'session.created',
@@ -159,6 +179,7 @@ async function spawnResumeFollowup(
       ...(resumeProvider !== undefined ? { provider: resumeProvider } : {}),
       id: followupId,
       correlationId: followupCorrelationId,
+      ...(resume ? { resume } : {}),
     })
     deps.queue.declareSession(created, { lane: 'interactive' })
   } catch (err) {
@@ -234,9 +255,11 @@ export type ReplyResult =
 /**
  * Answer a parked agent question: records `session.user_reply` on the parked
  * original (which stays `awaiting_input`, still cancellable) and spawns the
- * linked follow-up. Single-reply-per-park: the original parks exactly once,
- * so a second reply would fork a second follow-up (double LLM spend, lane
- * flood). Multi-turn Q&A still works — the follow-up can park and ask again.
+ * linked follow-up. The follow-up truly resumes when the parked run persisted
+ * its checkpoint (raw prompt + resume link) and restarts folded otherwise.
+ * Single-reply-per-park: the original parks exactly once, so a second reply
+ * would fork a second follow-up (double LLM spend, lane flood). Multi-turn
+ * Q&A still works — the follow-up can park and ask again.
  */
 export async function replyToParked(
   deps: IngressDeps,

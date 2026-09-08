@@ -360,5 +360,29 @@ export async function backendContract(name: string, create: () => Promise<Sessio
       assert.equal(after.total, 0)
       assert.equal(await store.get('ses-proj'), null)
     })
+
+    await test('checkpoints round-trip: save, load, overwrite, delete', async () => {
+      const store = await create()
+      assert.equal(await store.loadCheckpoint('cor-x'), null)
+
+      await store.saveCheckpoint('cor-x', 'ses-1', '{"step":2}')
+      assert.deepEqual(await store.loadCheckpoint('cor-x'), { sessionId: 'ses-1', data: '{"step":2}' })
+
+      await store.saveCheckpoint('cor-x', 'ses-1', '{"step":3}')
+      assert.deepEqual(await store.loadCheckpoint('cor-x'), { sessionId: 'ses-1', data: '{"step":3}' })
+
+      await store.deleteCheckpoint('cor-x')
+      assert.equal(await store.loadCheckpoint('cor-x'), null)
+      // deleting a missing row is a no-op, never a throw
+      await store.deleteCheckpoint('cor-x')
+    })
+
+    await test('checkpoints are invisible across tenants', async () => {
+      const store = await create()
+      await store.saveCheckpoint('cor-t', 'ses-1', '{}')
+      const other = store.withTenant('other-tenant')
+      assert.equal(await other.loadCheckpoint('cor-t'), null)
+      assert.ok(await store.loadCheckpoint('cor-t'))
+    })
   })
 }

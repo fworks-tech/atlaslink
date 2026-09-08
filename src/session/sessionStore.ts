@@ -19,6 +19,7 @@ interface SharedStore {
   versions: Map<string, number>
   snapshots: Map<string, SessionSnapshot>
   projects: Map<string, Project>
+  checkpoints: Map<string, { sessionId: string; data: string }>
 }
 
 export { StreamIntegrityError, VersionConflictError }
@@ -158,6 +159,7 @@ export class SessionStore implements SessionBackend {
   private readonly _versions: Map<string, number>
   private readonly _snapshots: Map<string, SessionSnapshot>
   private readonly _projects: Map<string, Project>
+  private readonly _checkpoints: Map<string, { sessionId: string; data: string }>
   private readonly _tenantId: string
 
   constructor(tenantId: string = DEFAULT_TENANT_ID, shared?: SharedStore) {
@@ -167,11 +169,13 @@ export class SessionStore implements SessionBackend {
       this._versions = shared.versions
       this._snapshots = shared.snapshots
       this._projects = shared.projects
+      this._checkpoints = shared.checkpoints
     } else {
       this._events = new Map<string, SessionEvent[]>()
       this._versions = new Map<string, number>()
       this._snapshots = new Map<string, SessionSnapshot>()
       this._projects = new Map<string, Project>()
+      this._checkpoints = new Map<string, { sessionId: string; data: string }>()
     }
   }
 
@@ -182,6 +186,7 @@ export class SessionStore implements SessionBackend {
       versions: this._versions,
       snapshots: this._snapshots,
       projects: this._projects,
+      checkpoints: this._checkpoints,
     })
   }
 
@@ -298,5 +303,17 @@ export class SessionStore implements SessionBackend {
     this._events.delete(sessionId)
     this._versions.delete(sessionId)
     this._snapshots.delete(sessionId)
+  }
+
+  async saveCheckpoint(id: string, sessionId: string, data: string): Promise<void> {
+    this._checkpoints.set(`${this._tenantId}:${id}`, { sessionId, data })
+  }
+
+  async loadCheckpoint(id: string): Promise<{ sessionId: string; data: string } | null> {
+    return this._checkpoints.get(`${this._tenantId}:${id}`) ?? null
+  }
+
+  async deleteCheckpoint(id: string): Promise<void> {
+    this._checkpoints.delete(`${this._tenantId}:${id}`)
   }
 }
