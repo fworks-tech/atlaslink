@@ -4,6 +4,7 @@ import { Suspense, useEffect, useRef, useState, useMemo, useCallback } from "rea
 import { useRouter, useSearchParams } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { SessionComposer } from "@/components/SessionComposer";
+import { NodePalette } from "@/components/NodePalette";
 import { SocietyDiagram } from "@/components/SocietyDiagram";
 import { SessionList } from "@/components/SessionList";
 import { SessionInspector } from "@/components/SessionInspector";
@@ -12,6 +13,7 @@ import { ApprovalInbox } from "@/components/ApprovalInbox";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessions } from "@/hooks/useSessions";
+import { useDraftFlow } from "@/hooks/useDraftFlow";
 import { useEvents } from "@/hooks/useEvents";
 import { decodeShareLink, encodeShareLink, canonicalUrl } from "@/lib/shareLink";
 import { replyToSession, sendChatMessage, steerSession, cancelSession } from "@/lib/api";
@@ -36,6 +38,9 @@ function HomeInner() {
   const { sessions, loading: sessionsLoading, error: sessionsError, refresh: refreshSessions, hydrateSession } = useSessions();
   const { events } = useEvents();
   const { members } = useRoomPresence(selectedSessionId);
+  // Composer drafts are per-session overlay state — empty until the user
+  // drops the first palette agent, so the live diagram renders untouched.
+  const drafts = useDraftFlow(selectedSessionId ?? "");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const copyTimer = useRef<number | null>(null);
@@ -314,7 +319,18 @@ function HomeInner() {
             ) : null}
             <div className="space-y-6">
               <ErrorBoundary>
-                <SocietyDiagram selectedSessionId={selectedSessionId} mode={mode} onNodeClick={handleNodeClick} selectedNodeId={selectedNodeId} />
+                <NodePalette />
+                <SocietyDiagram
+                  selectedSessionId={selectedSessionId}
+                  mode={mode}
+                  onNodeClick={handleNodeClick}
+                  selectedNodeId={selectedNodeId}
+                  draftNodes={drafts.draftNodes}
+                  draftEdges={drafts.draftEdges}
+                  onDraftDrop={drafts.addDraftNode}
+                  onDraftConnect={drafts.connectDraft}
+                  onDraftNodesChange={drafts.applyDraftChanges}
+                />
               </ErrorBoundary>
               <ApprovalInbox onSelect={handleSelectSession} />
               <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
