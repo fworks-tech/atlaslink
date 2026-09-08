@@ -6,15 +6,23 @@ import {
   Background,
   Controls,
   MiniMap,
+  ReactFlowProvider,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  type Connection,
+  type Edge,
+  type Node,
   type NodeTypes,
   type OnNodesChange,
+  type XYPosition,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useSessions } from "@/hooks/useSessions";
 import { useEvents } from "@/hooks/useEvents";
 import { buildSocietyGraph, mergeNodesWithLayout } from "@/lib/graph";
+import { DRAG_MIME } from "@/components/NodePalette";
+import { isDraftId, withDrafts } from "@/lib/draftFlow";
 import { AtlasNode } from "@/components/AtlasNode";
 import { SessionNode } from "@/components/SessionNode";
 import { MemberNode } from "@/components/MemberNode";
@@ -54,11 +62,23 @@ export function SocietyDiagram({
   mode = "full",
   onNodeClick,
   selectedNodeId,
+  draftNodes = [],
+  draftEdges = [],
+  onDraftDrop,
+  onDraftConnect,
+  onDraftNodesChange,
 }: {
   selectedSessionId: string;
   mode?: GraphMode;
   onNodeClick?: (nodeId: string, type: string, data: unknown) => void;
   selectedNodeId?: string;
+  // Composer overlay (#106): caller-owned draft nodes unioned after the
+  // projection merge, so live rebuilds can neither prune nor absorb them.
+  draftNodes?: Node[];
+  draftEdges?: Edge[];
+  onDraftDrop?: (agentType: string, position: XYPosition) => void;
+  onDraftConnect?: (source: string, target: string) => void;
+  onDraftNodesChange?: OnNodesChange;
 }) {
   const { sessions, loading } = useSessions();
   const { events } = useEvents();
@@ -105,15 +125,26 @@ export function SocietyDiagram({
   const [nodes, setNodes, onNodesChange] = useNodesState(nextNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(nextEdges);
 
-  // Ids the user positioned by hand — the only nodes that keep canvas
-  // positions across rebuilds; everything else follows the fresh layout.
+  // Ids the user positioned by hand — the only live nodes that keep canvas
+  // positions across rebuilds. Draft nodes are caller-owned and skip this
+  // tracker entirely, so they can't pin themselves into the projection.
   const draggedRef = useRef(new Set<string>());
   const handleNodesChange: OnNodesChange = (changes) => {
-    for (const c of changes) {
-      if (c.type === "position" && c.dragging) draggedRef.current.add(c.id);
-      if (c.type === "remove") draggedRef.current.delete(c.id);
+    const draftChanges = changes.filter((c) => "id" in c && isDraftId(c.id));
+    const liveChanges = changes.filter((c) => !("id" in c) || !isDraftId(c.id));
+    if (draftChanges.length > 0) onDraftNodesChange?.(draftChanges);
+    if (liveChanges.length === 0) return;
+    for (const c of liveChanges) {
+      if (c.type === "position" && c.dragging && "id" in c) draggedRef.current.add(c.id);
+      if (c.type === "remove" && "id" in c) draggedRef.current.delete(c.id);
     }
-    onNodesChange(changes);
+    onNodesChange(liveChanges);
+  };
+
+  const handleConnect = (connection: Connection) => {
+    const { source, target } = connection;
+    if (!source || !target || !onDraftConnect) return;
+    if (isDraftId(source) || isDraftId(target)) onDraftConnect(source, target);
   };
 
   // The projection wins for data (a session's status/members move on) and for
@@ -152,35 +183,75 @@ export function SocietyDiagram({
     return <p className="py-12 text-center text-sm text-muted">Loading diagram…</p>;
   }
 
+  // Drafts union after the projection at render time — the projection owns
+  // `nodes`, the caller owns `draftNodes`, and the id prefix keeps them
+  // distinct. Computing here (not in state) means a fresh draft array on
+  // each parent render can't loop the merge effect.
+  const visibleNodes = withDrafts(nodes, draftNodes);
+
   return (
-    <div className="h-[480px] overflow-hidden rounded-xl border border-white/5 bg-surface">
-      <ReactFlow
-        // remount per session so fitView re-centers on the isolated chain
-        key={selectedSessionId}
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={handleNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={(_, node) => onNodeClick?.(node.id, node.type ?? "unknown", node.data)}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
-        minZoom={0.2}
-        snapToGrid
-        snapGrid={[8, 8]}
-        deleteKeyCode={null}
-        colorMode="dark"
-      >
-        <Background gap={16} size={1} color="#ffffff14" />
-        <Controls />
-        <MiniMap
-          pannable
-          zoomable
-          nodeColor={(n) => NODE_COLORS[n.type ?? ""] ?? "#64748b"}
-          className="!bg-raised"
-          maskColor="rgba(10, 14, 26, 0.7)"
-        />
-      </ReactFlow>
+    <ReactFlowProvider>
+      <Dropzone onDraftDrop={onDraftDrop}>
+        <ReactFlow
+          // remount per session so fitView re-centers on the isolated chain
+          key={selectedSessionId}
+          nodes={visibleNodes}
+          edges={[...edges, ...draftEdges]}
+          onNodesChange={handleNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={handleConnect}
+          onNodeClick={(_, node) => onNodeClick?.(node.id, node.type ?? "unknown", node.data)}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.2 }}
+          minZoom={0.2}
+          snapToGrid
+          snapGrid={[8, 8]}
+          deleteKeyCode={null}
+          colorMode="dark"
+        >
+          <Background gap={16} size={1} color="#ffffff14" />
+          <Controls />
+          <MiniMap
+            pannable
+            zoomable
+            nodeColor={(n) => NODE_COLORS[n.type ?? ""] ?? "#64748b"}
+            className="!bg-raised"
+            maskColor="rgba(10, 14, 26, 0.7)"
+          />
+        </ReactFlow>
+      </Dropzone>
+    </ReactFlowProvider>
+  );
+}
+
+// Drop target inside the flow provider so palette drops convert to flow
+// coordinates. Without an agent payload (or without a composer handler) the
+// drop is ignored and the live canvas is untouched.
+function Dropzone({
+  onDraftDrop,
+  children,
+}: {
+  onDraftDrop?: (agentType: string, position: XYPosition) => void;
+  children: React.ReactNode;
+}) {
+  const { screenToFlowPosition } = useReactFlow();
+  return (
+    <div
+      data-testid="flow-dropzone"
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDrop={(e) => {
+        const agentType = e.dataTransfer?.getData(DRAG_MIME);
+        if (!agentType || !onDraftDrop) return;
+        e.preventDefault();
+        onDraftDrop(agentType, screenToFlowPosition({ x: e.clientX, y: e.clientY }));
+      }}
+      className="h-[480px] overflow-hidden rounded-xl border border-white/5 bg-surface"
+    >
+      {children}
     </div>
   );
 }

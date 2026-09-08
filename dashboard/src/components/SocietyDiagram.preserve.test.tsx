@@ -47,6 +47,8 @@ vi.mock("@xyflow/react", async (importOriginal) => {
     Background: () => null,
     Controls: () => null,
     MiniMap: () => null,
+    ReactFlowProvider: ({ children }: { children: React.ReactNode }) => children,
+    useReactFlow: () => ({ screenToFlowPosition: (p: { x: number; y: number }) => p }),
   };
 });
 
