@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { SessionInspector } from "./SessionInspector";
 import type { BridgeEvent, Session } from "@/lib/types";
@@ -303,6 +303,43 @@ describe("SessionInspector selectedNode", () => {
     render(<SessionInspector open onClose={() => { closed = true; }} session={session()} events={[]} />);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(closed).toBe(true);
+  });
+
+  it("renders an editable config panel for a draft member node", () => {
+    const onConfigChange = vi.fn();
+    render(
+      <SessionInspector
+        open
+        onClose={() => {}}
+        session={null}
+        events={[]}
+        selectedNode={{
+          id: "draft-abc",
+          type: "member",
+          data: { member: "the-builder", sessionId: "ses-1", active: true, draft: true, config: { provider: "opencode", model: "claude-sonnet-4-20250514", temperature: 0.7, maxTokens: 4096, tools: [] } },
+        }}
+        onConfigChange={onConfigChange}
+      />,
+    );
+    expect(screen.getByLabelText("provider")).toBeDefined();
+    expect(screen.getByLabelText("temperature")).toBeDefined();
+    fireEvent.change(screen.getByLabelText("temperature"), { target: { value: "0.3" } });
+    expect(onConfigChange).toHaveBeenCalledWith("draft-abc", expect.objectContaining({ temperature: 0.3 }));
+  });
+
+  it("renders a read-only config for a live session node", () => {
+    render(
+      <SessionInspector
+        open
+        onClose={() => {}}
+        session={{ ...session(), tweaks: { provider: "groq", member: { model: "llama-3.3", temperature: 0.2, maxTokens: 2048, tools: [] } } }}
+        events={[]}
+        selectedNode={{ id: "ses-1", type: "session", data: { session: { task: { prompt: "p" }, status: "running" } } }}
+      />,
+    );
+    expect(screen.getByText("groq")).toBeDefined();
+    expect(screen.getByText("llama-3.3")).toBeDefined();
+    expect(screen.queryByLabelText("provider")).toBeNull();
   });
 
   it("marks clamped payloads with an ellipsis and full-text tooltip", () => {

@@ -14,6 +14,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessions } from "@/hooks/useSessions";
 import { useDraftFlow } from "@/hooks/useDraftFlow";
+import type { AgentConfig } from "@/lib/config";
 import { useEvents } from "@/hooks/useEvents";
 import { decodeShareLink, encodeShareLink, canonicalUrl } from "@/lib/shareLink";
 import { replyToSession, sendChatMessage, steerSession, cancelSession } from "@/lib/api";
@@ -108,6 +109,10 @@ function HomeInner() {
     router.push(qs ? `?${qs}` : "/");
     setInspectorNode(null);
   }, [router, searchParams]);
+
+  const handleNodeConfigChange = useCallback((nodeId: string, config: AgentConfig) => {
+    drafts.updateNodeConfig(nodeId, config);
+  }, [drafts]);
 
   const handleNodeClick = useCallback(
     (id: string, type: string, data: unknown) => {
@@ -377,7 +382,7 @@ function HomeInner() {
                 </div>
               ) : null}
             </div>
-            <SessionInspector open={Boolean(inspectorNode)} onClose={handleCloseInspector} session={selectedSession} events={events} selectedNode={inspectorNode} contextLoading={inspectorContextLoading} />
+            <SessionInspector open={Boolean(inspectorNode)} onClose={handleCloseInspector} session={selectedSession} events={events} selectedNode={inspectorNode} contextLoading={inspectorContextLoading} onConfigChange={handleNodeConfigChange} />
           </div>
         ) : (
           <ErrorBoundary>
