@@ -4,6 +4,8 @@ import type { SessionBackend, SessionFilter, SessionList } from './sessionBacken
 import { deepFreeze } from './deepFreeze'
 import { DEFAULT_TENANT_ID } from './migrations'
 
+export const INTERACTION_CAP = 500
+
 function tenantOf(session: Session | null): string {
   return session?.tenantId ?? DEFAULT_TENANT_ID
 }
@@ -138,6 +140,16 @@ export function rehydrate(events: SessionEvent[]): Session | null {
   session.createdAt = createdAt
   session.startedAt = startedAt
   session.finishedAt = finishedAt
+  // the event log is the source of truth; the projection keeps only the tail
+  // of the thread so payloads stop growing without bound (#227). The marker
+  // is part of the projection, never an event — nothing is lost on replay.
+  if (session.interaction.length > INTERACTION_CAP) {
+    const trimmed = session.interaction.length - INTERACTION_CAP
+    session.interaction = [
+      { role: 'atlas', at: session.interaction[trimmed - 1].at, content: `… ${trimmed} earlier turns trimmed …` },
+      ...session.interaction.slice(-INTERACTION_CAP),
+    ]
+  }
   return session
 }
 
