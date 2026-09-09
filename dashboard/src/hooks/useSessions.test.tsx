@@ -35,6 +35,31 @@ describe("useSessions", () => {
     expect(result.current.total).toBe(1);
   });
 
+  it("retries wake-class failures on initial load", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("not found", { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ ok: true, sessions: [{ sessionId: "ses-1", correlationId: "cor-1", status: "queued", version: 1, task: { member: "m", prompt: "p" } }], total: 1, limit: 50, offset: 0 }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      ) as unknown as typeof fetch;
+    const { result } = renderHook(() => useSessions());
+    await waitFor(() => expect(result.current.loading).toBe(false), { timeout: 5000 });
+    expect(result.current.error).toBeNull();
+    expect(result.current.sessions).toHaveLength(1);
+    expect((fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
+  });
+
+  it("does not retry domain errors on initial load", async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ error: "boom" }), { status: 500 })) as unknown as typeof fetch;
+    const { result } = renderHook(() => useSessions());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toMatch(/boom|failed/);
+    expect((fetch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+  });
+
   it("surfaces fetch errors", async () => {
     globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ error: "boom" }), { status: 500 })) as unknown as typeof fetch;
     const { result } = renderHook(() => useSessions());

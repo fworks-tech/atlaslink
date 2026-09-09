@@ -337,7 +337,9 @@ function HomeInner() {
             </header>
             {sessionsError && !selectedSession ? (
               <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">
-                <span>Couldn&apos;t load sessions ({sessionsError}).</span>
+                <span className="flex flex-wrap items-center gap-2">
+                  {sessionsError.includes("Server is starting") ? "Backend is waking — retrying automatically…" : `Couldn't load sessions (${sessionsError}).`}
+                </span>
                 <button type="button" onClick={() => void refreshSessions()} className="underline hover:text-red-200">Retry</button>
               </div>
             ) : null}

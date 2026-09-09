@@ -75,6 +75,14 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   // string is stripped — ids stay out of the server logs.
   if (!upstream.ok) {
     console.warn(`[bff] ${req.method} /${path.join("/")} -> ${upstream.status}`);
+    // The daemon answers every failure with JSON. A non-JSON failure body can
+    // only come from Render's edge (paused/spinning free-tier service → 404 or
+    // 502 pages) — normalize those into the waking 504 so the client keeps
+    // retrying instead of rendering a dead 404.
+    const contentType = upstream.headers.get("content-type") ?? "";
+    if (!contentType.includes("application/json")) {
+      return NextResponse.json({ ok: false, error: "Server is starting — please wait" }, { status: 504 });
+    }
   }
   // upstream.body streams — SSE frames pass through verbatim instead of buffering
   return new NextResponse(upstream.body, { status: upstream.status, headers: responseHeaders });
