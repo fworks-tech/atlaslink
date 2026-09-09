@@ -16,7 +16,7 @@ silently clobbering.
 | `postgresBackend.ts` | `PostgresBackend` over Postgres event tables. CAS is enforced inside a `FOR UPDATE` transaction. Per-session `SessionSnapshot` cache with `#versions` in-memory counter for zero-I/O hits; the cache is single-process state — cross-process writes fall through to Postgres and re-sync. |
 | `db.ts` | Minimal `Db` seam (`query`/`exec`/`transaction`) with `pglite` (hermetic CI) and `pg` (managed) adapters. |
 | `migrations.ts` | Hand-rolled runner: applied-versions table, standard-SQL migrations in one transaction guarded by an advisory xact lock, so the identical statements run on both drivers. |
-| `backendFactory.ts` | `createSessionBackend()`: in-memory by default; `ATLASLINK_DATABASE_URL` selects Postgres (migrations applied first). |
+| `backendFactory.ts` | `createSessionBackend()`: three tiers — `ATLASLINK_DATABASE_URL` selects managed Postgres, SQLite at `ATLASLINK_SQLITE_DIR` is the durable default, `ATLASLINK_DURABILITY=inmemory` selects the in-process store. Migrations applied first. |
 | `types.ts` | `Session`, `SessionEvent`, `SessionDelta`, `SessionSnapshot`, and the error classes. |
 | `backendContract.ts` | The one shared test harness — every backend must bind to it and pass. There is no second suite (see ADR-010). |
 

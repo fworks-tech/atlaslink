@@ -1,6 +1,6 @@
 services:
-  # The Fastify daemon (docker/Dockerfile). /app/data persists both the NDJSON
-  # event log and the PGlite database (WASM Postgres in-process). No external
+  # The Fastify daemon (Dockerfile). /app/data persists the NDJSON event log
+  # and the embedded SQLite database (better-sqlite3 in-process). No external
   # database service needed — sessions survive restarts via the bind mount.
   backend:
     build: .
