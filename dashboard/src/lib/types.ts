@@ -15,6 +15,8 @@ export interface Session {
   error?: string;
   durationMs?: number;
   interaction?: { role: "user" | "atlas" | "member"; member?: string; at: string; content: string }[];
+  // raw RunEvents hydrated from the store for past/failed sessions
+  memberEvents?: Record<string, unknown>[];
   nextStep?: { awaiting_input: boolean; prompt?: string; member?: string } | null;
   // unified ask_human payload behind nextStep.prompt; drives the inbox question + context + composer
   question?: { question: string; context?: string };

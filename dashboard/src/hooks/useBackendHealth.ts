@@ -40,7 +40,9 @@ export function useBackendHealth() {
       if (!res.ok) {
         consecutiveFailures.current += 1;
         setAttempt((a) => a + 1);
-        if ([502, 503, 504].includes(res.status)) {
+        if ([404, 502, 503, 504].includes(res.status)) {
+          // 404 included: Render's paused free-tier edge answers 404 (non-JSON)
+          // while spinning — same wake path as a gateway blip, never instant "down"
           setHealth(consecutiveFailures.current >= 3 ? "down" : "waking");
         } else {
           setHealth("down");

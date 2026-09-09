@@ -56,4 +56,30 @@ describe("SessionThread presence", () => {
     fireEvent.click(more);
     expect(screen.getByText("turn 0")).toBeDefined();
   });
+
+  it("renders a run.failed event as a red error row", () => {
+    render(
+      <SessionThread
+        session={session()}
+        events={[{ eventId: 1, type: "run.failed", correlationId: "cor-1", error: "boom", at: "2026-01-01T00:00:00Z" }]}
+        members={[]}
+      />,
+    );
+    const row = screen.getByRole("alert");
+    expect(row.textContent).toContain("boom");
+    expect(row.className).toContain("text-danger");
+  });
+
+  it("renders the failed-session terminal error even without a run.failed event", () => {
+    const s = session();
+    s.status = "failed";
+    s.error = "kaput";
+    render(<SessionThread session={s} events={[]} members={[]} />);
+    expect(screen.getByRole("alert").textContent).toContain("kaput");
+  });
+
+  it("shows no error row for healthy sessions", () => {
+    render(<SessionThread session={session()} events={[]} members={[]} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });

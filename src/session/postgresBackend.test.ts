@@ -107,6 +107,30 @@ test('PostgresBackend: user_reply preserves awaiting_input in the directory', as
   assert.equal(s.replyCount, 1)
 })
 
+test('PostgresBackend: member.event appends without throwing and keeps list/get intact', async () => {
+  const backend = await backendWithMigrations()
+  await backend.append({ ...created, projectId: 'proj-1' })
+  await backend.append({ ...running })
+  await backend.append({
+    type: 'member.event',
+    sessionId: 'ses-1',
+    correlationId: 'cor-1',
+    at: '2026-01-01T00:00:02Z',
+    payload: { type: 'reasoning', step: 1, content: 'think' },
+  })
+
+  const runningList = await backend.list({ status: 'running', limit: 50, offset: 0 })
+  assert.deepEqual(
+    runningList.sessions.map((s) => s.sessionId),
+    ['ses-1']
+  )
+
+  const s = await backend.get('ses-1')
+  assert.ok(s)
+  assert.equal(s.status, 'running')
+  assert.deepEqual(s.memberEvents, [{ type: 'reasoning', step: 1, content: 'think' }])
+})
+
 test('migrations apply once and are idempotent on a fresh database', async () => {
   const db = new PGlite()
   const adapter = new PgliteDb(db)
