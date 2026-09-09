@@ -63,6 +63,9 @@ export class PostgresBackend implements SessionBackend {
   #snapshots = new Map<string, SessionSnapshot>()
   #versions = new Map<string, number>()
   #exitBuffers = new Map<string, SessionEvent[]>()
+  #db: Db
+  #tenantId: string
+  #durability: DurabilityMode
 
   #cachedSnapshot(sessionId: string): Session | null {
     const version = this.#versions.get(sessionId)
@@ -71,11 +74,11 @@ export class PostgresBackend implements SessionBackend {
     return snap !== undefined && snap.version === version ? snap.session : null
   }
 
-  constructor(
-    private readonly db: Db,
-    private readonly tenantId: string = DEFAULT_TENANT_ID,
-    private readonly durability: DurabilityMode = 'sync'
-  ) {}
+  constructor(db: Db, tenantId: string = DEFAULT_TENANT_ID, durability: DurabilityMode = 'sync') {
+    this.#db = db
+    this.#tenantId = tenantId
+    this.#durability = durability
+  }
 
   /** Sessions-directory projection for one committed event. Shared by append
    * and readModifyWrite so the two paths cannot diverge on new event types. */
@@ -93,13 +96,13 @@ export class PostgresBackend implements SessionBackend {
            project_id = EXCLUDED.project_id,
            title = EXCLUDED.title,
            updated_at = EXCLUDED.updated_at`,
-        [this.tenantId, sessionId, event.projectId, title, event.at]
+        [this.#tenantId, sessionId, event.projectId, title, event.at]
       )
     } else if (STATUS_PRESERVING_EVENTS.has(event.type)) {
       await tx.query(
         `UPDATE sessions SET updated_at = $3
          WHERE tenant_id = $1 AND session_id = $2`,
-        [this.tenantId, sessionId, event.at]
+        [this.#tenantId, sessionId, event.at]
       )
     } else if (event.type !== 'session.created') {
       // status mapping is exhaustive; unknown types fail-fast to surface new SessionEvent variants
@@ -117,26 +120,30 @@ export class PostgresBackend implements SessionBackend {
       await tx.query(
         `UPDATE sessions SET status = $3, updated_at = $4
          WHERE tenant_id = $1 AND session_id = $2`,
-        [this.tenantId, sessionId, status, event.at]
+        [this.#tenantId, sessionId, status, event.at]
       )
     }
   }
 
+  get db(): Db {
+    return this.#db
+  }
+
   withTenant(tenantId: string): PostgresBackend {
-    if (tenantId === this.tenantId) return this
-    return new PostgresBackend(this.db, tenantId, this.durability)
+    if (tenantId === this.#tenantId) return this
+    return new PostgresBackend(this.#db, tenantId, this.#durability)
   }
 
   get tenant(): string {
-    return this.tenantId
+    return this.#tenantId
   }
 
   get mode(): DurabilityMode {
-    return this.durability
+    return this.#durability
   }
 
   async append(event: SessionEvent): Promise<void> {
-    if (this.durability === 'exit') {
+    if (this.#durability === 'exit') {
       const buf = this.#exitBuffers.get(event.sessionId) ?? []
       buf.push(event)
       this.#exitBuffers.set(event.sessionId, buf)
@@ -151,19 +158,19 @@ export class PostgresBackend implements SessionBackend {
          WHERE tenant_id = $1 AND session_id = $2
          ORDER BY version DESC LIMIT 1
          FOR UPDATE`,
-        [this.tenantId, event.sessionId]
+        [this.#tenantId, event.sessionId]
       )
       const next = (rows[0]?.version ?? 0) + 1
       await tx.query(
         `INSERT INTO session_events (tenant_id, session_id, version, correlation_id, at, event)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [this.tenantId, event.sessionId, next, event.correlationId, event.at, JSON.stringify(event)]
+        [this.#tenantId, event.sessionId, next, event.correlationId, event.at, JSON.stringify(event)]
       )
 
       await this.projectDirectory(tx, event, event.sessionId)
     })
 
-    if (this.durability === 'sync') await promise
+    if (this.#durability === 'sync') await promise
     else promise.catch(() => {}) // async: fire-and-forget
 
     this.#snapshots.delete(event.sessionId)
@@ -182,13 +189,13 @@ export class PostgresBackend implements SessionBackend {
            WHERE tenant_id = $1 AND session_id = $2
            ORDER BY version DESC LIMIT 1
            FOR UPDATE`,
-          [this.tenantId, sessionId]
+          [this.#tenantId, sessionId]
         )
         const next = (rows[0]?.version ?? 0) + 1
         await tx.query(
           `INSERT INTO session_events (tenant_id, session_id, version, correlation_id, at, event)
            VALUES ($1, $2, $3, $4, $5, $6)`,
-          [this.tenantId, sessionId, next, event.correlationId, event.at, JSON.stringify(event)]
+          [this.#tenantId, sessionId, next, event.correlationId, event.at, JSON.stringify(event)]
         )
         await this.projectDirectory(tx, event, sessionId)
       })
@@ -203,7 +210,7 @@ export class PostgresBackend implements SessionBackend {
       `SELECT event FROM session_events
        WHERE tenant_id = $1 AND session_id = $2
        ORDER BY version`,
-      [this.tenantId, sessionId]
+      [this.#tenantId, sessionId]
     )
     if (rows.length === 0) return null
 
@@ -235,7 +242,7 @@ export class PostgresBackend implements SessionBackend {
            WHERE tenant_id = $1 AND session_id = $2
            ORDER BY version DESC LIMIT 1
            FOR UPDATE`,
-          [this.tenantId, sessionId]
+          [this.#tenantId, sessionId]
         )
         const actual = rows[0]?.version ?? 0
         if (actual !== expectedVersion) {
@@ -246,7 +253,7 @@ export class PostgresBackend implements SessionBackend {
           `SELECT event FROM session_events
            WHERE tenant_id = $1 AND session_id = $2
            ORDER BY version`,
-          [this.tenantId, sessionId]
+          [this.#tenantId, sessionId]
         )
         const current = eventRows.length > 0 ? rehydrate(eventRows.map((r) => parseEvent(r.event))) : null
 
@@ -257,7 +264,7 @@ export class PostgresBackend implements SessionBackend {
           await tx.query(
             `INSERT INTO session_events (tenant_id, session_id, version, correlation_id, at, event)
              VALUES ($1, $2, $3, $4, $5, $6)`,
-            [this.tenantId, sessionId, version, event.correlationId, event.at, JSON.stringify(event)]
+            [this.#tenantId, sessionId, version, event.correlationId, event.at, JSON.stringify(event)]
           )
           // Maintain sessions directory for each delta (same logic as append)
           await this.projectDirectory(tx, event, sessionId)
@@ -274,7 +281,7 @@ export class PostgresBackend implements SessionBackend {
         const { rows } = await this.db.query<VersionRow>(
           `SELECT COALESCE(MAX(version), 0) AS version FROM session_events
            WHERE tenant_id = $1 AND session_id = $2`,
-          [this.tenantId, sessionId]
+          [this.#tenantId, sessionId]
         )
         throw new VersionConflictError(sessionId, expectedVersion, rows[0]?.version ?? 0)
       }
@@ -305,7 +312,7 @@ export class PostgresBackend implements SessionBackend {
          WHERE tenant_id = $1 AND project_id = $2
            AND ($3::text IS NULL OR status = $3)
            AND ($4::text IS NULL OR created_at >= $4::timestamptz)`,
-        [this.tenantId, projectId, status, since]
+        [this.#tenantId, projectId, status, since]
       ),
       this.db.query<SessionDirectoryRow>(
         `SELECT session_id, project_id, title, status, created_at FROM sessions
@@ -314,7 +321,7 @@ export class PostgresBackend implements SessionBackend {
            AND ($4::text IS NULL OR created_at >= $4::timestamptz)
          ORDER BY created_at DESC
          LIMIT $5 OFFSET $6`,
-        [this.tenantId, projectId, status, since, filter.limit, filter.offset]
+        [this.#tenantId, projectId, status, since, filter.limit, filter.offset]
       ),
     ])
 
@@ -331,11 +338,11 @@ export class PostgresBackend implements SessionBackend {
     const [countRes, pageRes] = await Promise.all([
       this.db.query<{ total: number }>(
         `${rankedSessionCte()} SELECT count(*) AS total FROM ranked${rankedMatchClause()}`,
-        [this.tenantId, status, since]
+        [this.#tenantId, status, since]
       ),
       this.db.query<{ sessionId: string }>(
         `${rankedSessionCte()} SELECT session_id AS "sessionId" FROM ranked${rankedMatchClause()} ORDER BY created_at DESC LIMIT $4 OFFSET $5`,
-        [this.tenantId, status, since, filter.limit, filter.offset]
+        [this.#tenantId, status, since, filter.limit, filter.offset]
       ),
     ])
 
@@ -351,7 +358,7 @@ export class PostgresBackend implements SessionBackend {
       `SELECT session_id AS "sessionId", event FROM session_events
        WHERE tenant_id = $1 AND session_id = ANY($2::text[])
        ORDER BY session_id, version`,
-      [this.tenantId, ids]
+      [this.#tenantId, ids]
     )
     const bySession = new Map<string, SessionEvent[]>()
     for (const row of rows) {
@@ -372,7 +379,7 @@ export class PostgresBackend implements SessionBackend {
       `SELECT id, name, created_at FROM projects
        WHERE tenant_id = $1
        ORDER BY created_at DESC`,
-      [this.tenantId]
+      [this.#tenantId]
     )
     return rows.map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at }))
   }
@@ -381,7 +388,7 @@ export class PostgresBackend implements SessionBackend {
     const { rows } = await this.db.query<ProjectRow>(
       `SELECT id, name, created_at FROM projects
        WHERE tenant_id = $1 AND id = $2`,
-      [this.tenantId, id]
+      [this.#tenantId, id]
     )
     if (rows.length === 0) return null
     return { id: rows[0].id, name: rows[0].name, createdAt: rows[0].created_at }
@@ -392,7 +399,7 @@ export class PostgresBackend implements SessionBackend {
     await this.db.query(
       `INSERT INTO projects (tenant_id, id, name, created_at)
        VALUES ($1, $2, $3, $4)`,
-      [this.tenantId, id, name, at]
+      [this.#tenantId, id, name, at]
     )
     return { id, name, createdAt: at }
   }
@@ -401,17 +408,17 @@ export class PostgresBackend implements SessionBackend {
     return this.db.transaction(async (tx) => {
       const { rows } = await tx.query<{ id: string }>(
         `DELETE FROM projects WHERE tenant_id = $1 AND id = $2 RETURNING id`,
-        [this.tenantId, id]
+        [this.#tenantId, id]
       )
       if (rows.length === 0) return false
       // Delete events by session_id — projectId only lives on session.created, so direct
       // event->>'projectId' leaves orphans. Collect session_ids first, then delete events, then directory.
       await tx.query(
         `DELETE FROM session_events WHERE tenant_id = $1 AND session_id IN (SELECT session_id FROM sessions WHERE tenant_id = $1 AND project_id = $2)`,
-        [this.tenantId, id]
+        [this.#tenantId, id]
       )
       await tx.query(`DELETE FROM sessions WHERE tenant_id = $1 AND project_id = $2`, [
-        this.tenantId,
+        this.#tenantId,
         id,
       ])
       return true
@@ -424,11 +431,11 @@ export class PostgresBackend implements SessionBackend {
     this.#versions.delete(sessionId)
     await this.db.transaction(async (tx) => {
       await tx.query(`DELETE FROM session_events WHERE tenant_id = $1 AND session_id = $2`, [
-        this.tenantId,
+        this.#tenantId,
         sessionId,
       ])
       await tx.query(`DELETE FROM sessions WHERE tenant_id = $1 AND session_id = $2`, [
-        this.tenantId,
+        this.#tenantId,
         sessionId,
       ])
     })
@@ -442,7 +449,7 @@ export class PostgresBackend implements SessionBackend {
          session_id = EXCLUDED.session_id,
          data = EXCLUDED.data,
          updated_at = EXCLUDED.updated_at`,
-      [this.tenantId, id, sessionId, data]
+      [this.#tenantId, id, sessionId, data]
     )
   }
 
@@ -450,7 +457,7 @@ export class PostgresBackend implements SessionBackend {
     const { rows } = await this.db.query<{ session_id: string; data: string }>(
       `SELECT session_id, data FROM run_checkpoints
        WHERE tenant_id = $1 AND id = $2`,
-      [this.tenantId, id]
+      [this.#tenantId, id]
     )
     if (rows.length === 0) return null
     return { sessionId: rows[0].session_id, data: rows[0].data }
@@ -458,7 +465,7 @@ export class PostgresBackend implements SessionBackend {
 
   async deleteCheckpoint(id: string): Promise<void> {
     await this.db.query(`DELETE FROM run_checkpoints WHERE tenant_id = $1 AND id = $2`, [
-      this.tenantId,
+      this.#tenantId,
       id,
     ])
   }

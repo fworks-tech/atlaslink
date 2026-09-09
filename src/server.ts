@@ -13,6 +13,7 @@ import { EventBroadcaster } from './bridge/EventBroadcaster'
 import { SessionQueue } from './bridge/SessionQueue'
 import { SseHandler } from './bridge/sseEndpoint'
 import { createSessionBackend } from './session/backendFactory'
+import { PostgresBackend } from './session/postgresBackend'
 import { SessionStore } from './session/sessionStore'
 import { AtlasCheckpointStore, checkpointIdFor } from './session/checkpointStore'
 import type { SessionBackend } from './session/sessionBackend'
@@ -26,7 +27,6 @@ import { registerTokenGate, registerAuthGate } from './api/auth'
 import { registerAuthRoutes, registerAuthKeyRoutes } from './api/authRoutes'
 import { registerSecurityHeaders } from './api/securityHeaders'
 import { AuthStore } from './session/authStore'
-import type { Db } from './session/db'
 import rateLimit from '@fastify/rate-limit'
 import websocket from '@fastify/websocket'
 import cors from '@fastify/cors'
@@ -117,7 +117,7 @@ export async function createAppServer(params: {
   queue: SessionQueue
   sse: SseHandler
   backend?: SessionBackend
-  authStore?: AuthStore
+  authStore?: AuthStore | null
   bindHost?: string
   version?: string
   rateLimit?: { max: number; timeWindow: string }
@@ -283,7 +283,8 @@ export async function createAppServer(params: {
 async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseHandler; registry: TaskRegistry; queue: SessionQueue }> {
   const registry = new TaskRegistry()
   const backend = await createSessionBackend()
-  const authStore = new AuthStore(backend as unknown as Db)
+  const db = backend instanceof PostgresBackend ? backend.db : null
+  const authStore = db ? new AuthStore(db) : null
 
   const log = await EventLogStore.open(config.dataDir, { maxBytes: 10 * 1024 * 1024 })
   const broadcaster = new EventBroadcaster(log)
