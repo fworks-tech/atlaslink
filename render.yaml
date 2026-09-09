@@ -1,7 +1,8 @@
-# Render blueprint — issue #146: session persistence across deploys.
-# The free filesystem is ephemeral, so the daemon runs Postgres-backed
-# (ATLASLINK_DATABASE_URL). Without it the factory falls back to the
-# in-process store and every cold start loses sessions.
+# Render blueprint — session persistence via the embedded SQLite store
+# (better-sqlite3 at ATLASLINK_SQLITE_DIR, created by the Dockerfile). The
+# free filesystem is ephemeral across deploys, but sessions survive restarts.
+# For a managed database set ATLASLINK_DATABASE_URL and the factory switches
+# to Postgres (ADR-006 Decision 4).
 services:
   - type: web
     name: atlaslink-daemon
@@ -16,19 +17,9 @@ services:
         value: "10000" # Render's routable port; the daemon ignores plain PORT
       - key: ATLASLINK_API_TOKEN # the server refuses 0.0.0.0 without it (ADR-008)
         generate: random
-      - key: ATLASLINK_DATABASE_URL
-        fromDatabase:
-          name: atlaslink-pg
-          property: connectionString
+      - key: ATLASLINK_JWT_SECRET # signs dashboard login JWTs; unset = JWT auth disabled
+        generate: random
       - key: OPENCODE_API_KEY
         sync: false
       - key: GROQ_API_KEY
         sync: false
-
-  - type: pg
-    name: atlaslink-pg
-    # free-tier Postgres is deleted after 30 days of dormancy — upgrade the
-    # plan before this carries real production sessions
-    plan: free
-    databaseName: atlaslink
-    user: atlaslink
