@@ -70,3 +70,13 @@ export async function loadDaemonConfig(): Promise<DaemonConfig> {
   const agenthood = await loadAgenthoodConfig()
   return { host, port, dataDir, corsOrigins, agenthood }
 }
+
+/**
+ * Applies a session's per-task provider tweak (POST /tasks `tweaks.provider`).
+ * The global config stays untouched — one session's provider choice must not
+ * leak into the next.
+ */
+export function resolveSessionConfig(global: LLMConfig, task: { provider?: string }): LLMConfig {
+  if (!task.provider || task.provider === global.provider) return global
+  return { ...global, provider: task.provider }
+}

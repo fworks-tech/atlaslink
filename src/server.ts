@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify'
-import { loadDaemonConfig } from './config'
+import { loadDaemonConfig, resolveSessionConfig } from './config'
 import type { DaemonConfig } from './config'
 import { validateConfig, MissingApiKeyError } from './daemon/contextFactory'
 import { TaskRegistry, msg } from './tasks/taskRegistry'
@@ -360,7 +360,7 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
           await runSession({
             registry,
             session,
-            config: config.agenthood,
+            config: resolveSessionConfig(config.agenthood, session.task),
             onEvent: (event: RunEvent) => {
               broadcaster.emit({ eventId: 0, ...event })
               // fire-and-forget on a serialized chain: the live run is never
