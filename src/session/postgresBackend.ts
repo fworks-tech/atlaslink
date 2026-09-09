@@ -4,6 +4,7 @@ import { rehydrate } from './sessionStore'
 import { deepFreeze } from './deepFreeze'
 import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
 import type { Db } from './db'
+import { isUniqueViolation } from './db'
 import { DEFAULT_TENANT_ID } from './migrations'
 
 interface EventRow {
@@ -156,7 +157,7 @@ export class PostgresBackend implements SessionBackend {
       const { rows } = await tx.query<VersionRow>(
         `SELECT version FROM session_events
          WHERE tenant_id = $1 AND session_id = $2
-         ORDER BY version DESC LIMIT 1${ROW_LOCK_CLAUSE()}`,
+         ORDER BY version DESC LIMIT 1${ROW_LOCK_CLAUSE(this.#db.dialect)}`,
         [this.#tenantId, event.sessionId]
       )
       const next = (rows[0]?.version ?? 0) + 1
@@ -186,7 +187,7 @@ export class PostgresBackend implements SessionBackend {
         const { rows } = await tx.query<VersionRow>(
           `SELECT version FROM session_events
            WHERE tenant_id = $1 AND session_id = $2
-           ORDER BY version DESC LIMIT 1${ROW_LOCK_CLAUSE()}`,
+           ORDER BY version DESC LIMIT 1${ROW_LOCK_CLAUSE(this.#db.dialect)}`,
           [this.#tenantId, sessionId]
         )
         const next = (rows[0]?.version ?? 0) + 1
@@ -238,7 +239,7 @@ export class PostgresBackend implements SessionBackend {
         const { rows } = await tx.query<VersionRow>(
           `SELECT version FROM session_events
            WHERE tenant_id = $1 AND session_id = $2
-           ORDER BY version DESC LIMIT 1${ROW_LOCK_CLAUSE()}`,
+           ORDER BY version DESC LIMIT 1${ROW_LOCK_CLAUSE(this.#db.dialect)}`,
           [this.#tenantId, sessionId]
         )
         const actual = rows[0]?.version ?? 0
@@ -274,9 +275,7 @@ export class PostgresBackend implements SessionBackend {
       // A brand-new session has no row to lock, so two first writers can both
       // compute version 1 and collide on the UNIQUE constraint — surface the
       // typed rejection the contract promises instead of a raw unique violation.
-      // Postgres: 23505. SQLite: SQLITE_CONSTRAINT_UNIQUE.
-      const code = (err as { code?: string }).code
-      if (code === '23505' || code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      if (isUniqueViolation(err)) {
         const { rows } = await this.db.query<VersionRow>(
           `SELECT COALESCE(MAX(version), 0) AS version FROM session_events
            WHERE tenant_id = $1 AND session_id = $2`,
@@ -336,11 +335,11 @@ export class PostgresBackend implements SessionBackend {
 
     const [countRes, pageRes] = await Promise.all([
       this.db.query<{ total: number }>(
-        `${rankedSessionCte()} SELECT count(*) AS total FROM ranked${rankedMatchClause()}`,
+        `${rankedSessionCte(this.#db.dialect)} SELECT count(*) AS total FROM ranked${rankedMatchClause()}`,
         [this.#tenantId, status, since]
       ),
       this.db.query<{ sessionId: string }>(
-        `${rankedSessionCte()} SELECT session_id AS "sessionId" FROM ranked${rankedMatchClause()} ORDER BY created_at DESC LIMIT $4 OFFSET $5`,
+        `${rankedSessionCte(this.#db.dialect)} SELECT session_id AS "sessionId" FROM ranked${rankedMatchClause()} ORDER BY created_at DESC LIMIT $4 OFFSET $5`,
         [this.#tenantId, status, since, filter.limit, filter.offset]
       ),
     ])
@@ -475,21 +474,21 @@ export class PostgresBackend implements SessionBackend {
  * first-event `at`. Chat/steer never move the lifecycle, so they are excluded
  * from the ranking — otherwise a trailing message would hide the session from
  * every status filter. */
-function jsonExtract(field: string, path: string): string {
-  return process.env.ATLASLINK_DATABASE_URL
+function jsonExtract(dialect: Db['dialect'], field: string, path: string): string {
+  return dialect === 'postgres'
     ? `${field}->>'${path}'`
     : `json_extract(${field}, '${path}')`
 }
 
 /** Serialize concurrent first-writers on the version SELECT. Postgres uses a
  * row lock; SQLite is single-writer so the clause is noise there. */
-function ROW_LOCK_CLAUSE(): string {
-  return process.env.ATLASLINK_DATABASE_URL ? ' FOR UPDATE' : ''
+function ROW_LOCK_CLAUSE(dialect: Db['dialect']): string {
+  return dialect === 'postgres' ? ' FOR UPDATE' : ''
 }
 
-function rankedSessionCte(): string {
-  const typeExpr = jsonExtract('event', '$.type')
-  const atExpr = jsonExtract('e2.event', '$.at')
+function rankedSessionCte(dialect: Db['dialect']): string {
+  const typeExpr = jsonExtract(dialect, 'event', '$.type')
+  const atExpr = jsonExtract(dialect, 'e2.event', '$.at')
   return `
     WITH ranked AS (
       SELECT tenant_id, session_id, ${typeExpr} AS last_type,

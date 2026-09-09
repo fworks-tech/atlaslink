@@ -38,8 +38,12 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   }
   // auth is injected here, so the daemon gate stays armed without ever leaking
   // the token into the client (rewrites cannot set request headers — this BFF
-  // route handler is the single place /api/* auth is attached)
-  if (API_TOKEN) headers.set("authorization", `Bearer ${API_TOKEN}`);
+  // route handler is the single place /api/* auth is attached). A browser
+  // bearer (per-user JWT) is forwarded as-is so per-user auth and tenant
+  // scoping work end-to-end; the shared legacy token is the fallback.
+  const browserAuth = req.headers.get("authorization");
+  if (browserAuth) headers.set("authorization", browserAuth);
+  else if (API_TOKEN) headers.set("authorization", `Bearer ${API_TOKEN}`);
 
   const body = method === "get" ? undefined : await req.text();
   if (body !== undefined) headers.set("content-type", req.headers.get("content-type") ?? "application/json");

@@ -1,5 +1,5 @@
 import type { Database } from 'better-sqlite3'
-import type { Db } from './db'
+import type { Dialect, Db } from './db'
 
 /**
  * Queries arrive in the shared `$N` numbered style (matching the Postgres
@@ -18,6 +18,8 @@ function toSqliteParams(params: readonly unknown[]): Record<number, unknown> {
 }
 
 export class SQLiteDb implements Db {
+  readonly dialect: Dialect = 'sqlite'
+
   #txChain: Promise<unknown> = Promise.resolve()
 
   constructor(private readonly db: Database) {}
@@ -56,6 +58,7 @@ export class SQLiteDb implements Db {
 
   async #runExclusive<T>(fn: (tx: Db) => Promise<T>): Promise<T> {
     const handle: Db = {
+      dialect: this.dialect,
       query: async (q: string, p: readonly unknown[] = []) => {
         return { rows: this.#execute(q, p) }
       },

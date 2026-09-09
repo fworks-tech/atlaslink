@@ -50,9 +50,10 @@ export interface NewApiKey {
 }
 
 /**
- * Auth persistence layer — users and API keys live in Postgres behind the Db
- * seam (pglite in CI, pg in prod). All hashes are scrypt; API keys are stored
- * as SHA-256 of the plaintext key, never the plaintext itself.
+ * Auth persistence layer — users and API keys live behind the Db seam
+ * (embedded SQLite by default, Postgres when ATLASLINK_DATABASE_URL is set).
+ * All hashes are scrypt; API keys are stored as SHA-256 of the plaintext key,
+ * never the plaintext itself.
  */
 export class AuthStore {
   constructor(private readonly db: Db) {}

@@ -126,7 +126,10 @@ export async function createAppServer(params: {
   const { log, registry, queue, sse } = params
   const backend = params.backend ?? new SessionStore()
   const appVersion = params.version ?? version
-  const rateLimitOpts = params.rateLimit ?? { max: 100, timeWindow: '1 minute' }
+  // 300/min: every browser behind the BFF legacy token keys to the same
+  // 'system' bucket until the dashboard ships per-user JWTs — one poller
+  // must not 429 everyone. Per-user JWT callers still get their own bucket.
+  const rateLimitOpts = params.rateLimit ?? { max: 300, timeWindow: '1 minute' }
   // Explicit allowlist, never a wildcard: the browser must only ever read this
   // API from the dashboard origin (dev + production). Server-to-server callers
   // carry no Origin header and are unaffected.
