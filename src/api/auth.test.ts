@@ -1,25 +1,26 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { PGlite } from '@electric-sql/pglite'
-import { mkdtempSync, rmSync } from 'node:fs'
+import Database from 'better-sqlite3'
+import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AuthStore, generateApiKey, generateRandomId, hashApiKey, hashPassword, verifyPassword } from '../session/authStore'
 import { createToken, signJwt, verifyJwt } from '../session/jwt'
 import { runMigrations } from '../session/migrations'
-import { PgliteDb } from '../session/db'
+import { sqliteMigrations } from '../session/sqliteMigrations'
+import { SQLiteDb } from '../session/sqliteDb'
 import { resolveAuth, checkBearer } from './auth'
 
-async function createTestStore(): Promise<{ store: AuthStore; cleanup: () => Promise<void> }> {
-  const dir = mkdtempSync(join(tmpdir(), 'atlaslink-auth-'))
-  const pg = new PGlite(dir)
-  const db = new PgliteDb(pg)
-  await runMigrations(db)
+async function createTestStore(): Promise<{ store: AuthStore; cleanup: () => void }> {
+  const file = join(tmpdir(), `atlaslink-auth-${Date.now()}.sqlite`)
+  const sqlite = new Database(file)
+  const db = new SQLiteDb(sqlite)
+  await runMigrations(db, sqliteMigrations)
   return {
     store: new AuthStore(db),
-    cleanup: async () => {
-      await pg.close()
-      rmSync(dir, { recursive: true, force: true })
+    cleanup: () => {
+      sqlite.close()
+      rmSync(file, { force: true })
     },
   }
 }

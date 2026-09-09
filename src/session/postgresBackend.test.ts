@@ -1,11 +1,14 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import Database from 'better-sqlite3'
 import { PGlite } from '@electric-sql/pglite'
 import { PgliteDb, type Db } from './db'
+import { SQLiteDb } from './sqliteDb'
 import { migrations, rollbackMigrations, runMigrations } from './migrations'
+import { sqliteMigrations } from './sqliteMigrations'
 import { PostgresBackend } from './postgresBackend'
 import { createSessionBackend } from './backendFactory'
 import { SessionStore } from './sessionStore'
@@ -31,9 +34,9 @@ const running: SessionEvent = {
 }
 
 async function backendWithMigrations(): Promise<PostgresBackend> {
-  const db = new PGlite()
-  await runMigrations(new PgliteDb(db))
-  return new PostgresBackend(new PgliteDb(db))
+  const db = new Database(':memory:')
+  await runMigrations(new SQLiteDb(db), sqliteMigrations)
+  return new PostgresBackend(new SQLiteDb(db))
 }
 
 test('PostgresBackend: trailing message/steer do not move list status', async () => {
@@ -253,25 +256,26 @@ test('event payloads round-trip through JSONB unchanged', async () => {
 
 backendContract('PostgresBackend satisfies the backend contract', backendWithMigrations)
 
-test('createSessionBackend defaults to PostgresBackend with PGlite without a database URL', async () => {
+test('createSessionBackend defaults to PostgresBackend with SQLite without a database URL', async () => {
   const previousUrl = process.env.ATLASLINK_DATABASE_URL
   const previousDurability = process.env.ATLASLINK_DURABILITY
-  const previousPgliteDir = process.env.ATLASLINK_PGLITE_DIR
-  const tmpDir = mkdtempSync(join(tmpdir(), 'atlaslink-pglite-'))
+  const previousSqliteDir = process.env.ATLASLINK_SQLITE_DIR
+  const tmpFile = join(tmpdir(), `atlaslink-sqlite-${Date.now()}.sqlite`)
   delete process.env.ATLASLINK_DATABASE_URL
   delete process.env.ATLASLINK_DURABILITY
-  process.env.ATLASLINK_PGLITE_DIR = tmpDir
+  process.env.ATLASLINK_SQLITE_DIR = tmpFile
   try {
     const backend = await createSessionBackend()
     assert.ok(backend instanceof PostgresBackend)
+    if (backend instanceof PostgresBackend && backend.db instanceof SQLiteDb) backend.db.close()
   } finally {
-    rmSync(tmpDir, { recursive: true, force: true })
+    rmSync(tmpFile, { force: true })
     if (previousUrl === undefined) delete process.env.ATLASLINK_DATABASE_URL
     else process.env.ATLASLINK_DATABASE_URL = previousUrl
     if (previousDurability === undefined) delete process.env.ATLASLINK_DURABILITY
     else process.env.ATLASLINK_DURABILITY = previousDurability
-    if (previousPgliteDir === undefined) delete process.env.ATLASLINK_PGLITE_DIR
-    else process.env.ATLASLINK_PGLITE_DIR = previousPgliteDir
+    if (previousSqliteDir === undefined) delete process.env.ATLASLINK_SQLITE_DIR
+    else process.env.ATLASLINK_SQLITE_DIR = previousSqliteDir
   }
 })
 
@@ -349,20 +353,20 @@ test('PostgresBackend: appending to a different session does not invalidate the 
   assert.ok(b)
   assert.equal(a, b) // still cached — the append was for ses-other
 })
-// #146: deploys must not lose sessions. pglite over a real directory is the
-// hermetic stand-in for managed Postgres: close the process, reopen, read back.
+// #146: deploys must not lose sessions. SQLite over a real file is the
+// hermetic stand-in: close the process, reopen, read back.
 test('PostgresBackend: sessions survive a cold restart of the daemon', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'atlaslink-pg-'))
+  const file = join(tmpdir(), `atlaslink-sqlite-${Date.now()}.sqlite`)
   try {
-    const db1 = new PGlite(dir)
-    await runMigrations(new PgliteDb(db1))
-    const before = new PostgresBackend(new PgliteDb(db1))
+    const db1 = new Database(file)
+    await runMigrations(new SQLiteDb(db1), sqliteMigrations)
+    const before = new PostgresBackend(new SQLiteDb(db1))
     await before.append({ ...created })
     await before.append({ ...running })
-    await db1.close()
+    db1.close()
 
-    const db2 = new PGlite(dir)
-    const after = new PostgresBackend(new PgliteDb(db2))
+    const db2 = new Database(file)
+    const after = new PostgresBackend(new SQLiteDb(db2))
     const s = await after.get('ses-1')
     assert.ok(s)
     assert.equal(s.status, 'running')
@@ -373,8 +377,8 @@ test('PostgresBackend: sessions survive a cold restart of the daemon', async () 
       listed.sessions.map((x) => x.sessionId),
       ['ses-1']
     )
-    await db2.close()
+    db2.close()
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    rmSync(file, { force: true })
   }
 })

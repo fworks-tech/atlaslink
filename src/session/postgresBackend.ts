@@ -156,8 +156,7 @@ export class PostgresBackend implements SessionBackend {
       const { rows } = await tx.query<VersionRow>(
         `SELECT version FROM session_events
          WHERE tenant_id = $1 AND session_id = $2
-         ORDER BY version DESC LIMIT 1
-         FOR UPDATE`,
+         ORDER BY version DESC LIMIT 1${ROW_LOCK_CLAUSE()}`,
         [this.#tenantId, event.sessionId]
       )
       const next = (rows[0]?.version ?? 0) + 1
@@ -187,8 +186,7 @@ export class PostgresBackend implements SessionBackend {
         const { rows } = await tx.query<VersionRow>(
           `SELECT version FROM session_events
            WHERE tenant_id = $1 AND session_id = $2
-           ORDER BY version DESC LIMIT 1
-           FOR UPDATE`,
+           ORDER BY version DESC LIMIT 1${ROW_LOCK_CLAUSE()}`,
           [this.#tenantId, sessionId]
         )
         const next = (rows[0]?.version ?? 0) + 1
@@ -240,8 +238,7 @@ export class PostgresBackend implements SessionBackend {
         const { rows } = await tx.query<VersionRow>(
           `SELECT version FROM session_events
            WHERE tenant_id = $1 AND session_id = $2
-           ORDER BY version DESC LIMIT 1
-           FOR UPDATE`,
+           ORDER BY version DESC LIMIT 1${ROW_LOCK_CLAUSE()}`,
           [this.#tenantId, sessionId]
         )
         const actual = rows[0]?.version ?? 0
@@ -274,10 +271,12 @@ export class PostgresBackend implements SessionBackend {
       this.#snapshots.delete(sessionId)
       this.#versions.delete(sessionId)
     } catch (err) {
-      // a brand-new session has no row to `FOR UPDATE`, so two first writers can
-      // both compute version 1 and collide on the UNIQUE constraint — surface the
-      // typed rejection the contract promises instead of a raw unique violation
-      if ((err as { code?: string }).code === '23505') {
+      // A brand-new session has no row to lock, so two first writers can both
+      // compute version 1 and collide on the UNIQUE constraint — surface the
+      // typed rejection the contract promises instead of a raw unique violation.
+      // Postgres: 23505. SQLite: SQLITE_CONSTRAINT_UNIQUE.
+      const code = (err as { code?: string }).code
+      if (code === '23505' || code === 'SQLITE_CONSTRAINT_UNIQUE') {
         const { rows } = await this.db.query<VersionRow>(
           `SELECT COALESCE(MAX(version), 0) AS version FROM session_events
            WHERE tenant_id = $1 AND session_id = $2`,
@@ -310,15 +309,15 @@ export class PostgresBackend implements SessionBackend {
       this.db.query<{ total: number }>(
         `SELECT count(*) AS total FROM sessions
          WHERE tenant_id = $1 AND project_id = $2
-           AND ($3::text IS NULL OR status = $3)
-           AND ($4::text IS NULL OR created_at >= $4::timestamptz)`,
+           AND ($3 IS NULL OR status = $3)
+           AND ($4 IS NULL OR created_at >= $4)`,
         [this.#tenantId, projectId, status, since]
       ),
       this.db.query<SessionDirectoryRow>(
         `SELECT session_id, project_id, title, status, created_at FROM sessions
          WHERE tenant_id = $1 AND project_id = $2
-           AND ($3::text IS NULL OR status = $3)
-           AND ($4::text IS NULL OR created_at >= $4::timestamptz)
+           AND ($3 IS NULL OR status = $3)
+           AND ($4 IS NULL OR created_at >= $4)
          ORDER BY created_at DESC
          LIMIT $5 OFFSET $6`,
         [this.#tenantId, projectId, status, since, filter.limit, filter.offset]
@@ -354,11 +353,12 @@ export class PostgresBackend implements SessionBackend {
   }
 
   private async fetchAndRehydrate(ids: string[], totalOverride?: number): Promise<SessionList> {
+    const placeholders = ids.map((_, i) => `$${i + 2}`).join(', ')
     const { rows } = await this.db.query<EventRow>(
       `SELECT session_id AS "sessionId", event FROM session_events
-       WHERE tenant_id = $1 AND session_id = ANY($2::text[])
+       WHERE tenant_id = $1 AND session_id IN (${placeholders})
        ORDER BY session_id, version`,
-      [this.#tenantId, ids]
+      [this.#tenantId, ...ids]
     )
     const bySession = new Map<string, SessionEvent[]>()
     for (const row of rows) {
@@ -444,12 +444,12 @@ export class PostgresBackend implements SessionBackend {
   async saveCheckpoint(id: string, sessionId: string, data: string): Promise<void> {
     await this.db.query(
       `INSERT INTO run_checkpoints (tenant_id, id, session_id, data, updated_at)
-       VALUES ($1, $2, $3, $4, now())
+       VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (tenant_id, id) DO UPDATE SET
          session_id = EXCLUDED.session_id,
          data = EXCLUDED.data,
          updated_at = EXCLUDED.updated_at`,
-      [this.#tenantId, id, sessionId, data]
+      [this.#tenantId, id, sessionId, data, new Date().toISOString()]
     )
   }
 
@@ -475,17 +475,31 @@ export class PostgresBackend implements SessionBackend {
  * first-event `at`. Chat/steer never move the lifecycle, so they are excluded
  * from the ranking — otherwise a trailing message would hide the session from
  * every status filter. */
+function jsonExtract(field: string, path: string): string {
+  return process.env.ATLASLINK_DATABASE_URL
+    ? `${field}->>'${path}'`
+    : `json_extract(${field}, '${path}')`
+}
+
+/** Serialize concurrent first-writers on the version SELECT. Postgres uses a
+ * row lock; SQLite is single-writer so the clause is noise there. */
+function ROW_LOCK_CLAUSE(): string {
+  return process.env.ATLASLINK_DATABASE_URL ? ' FOR UPDATE' : ''
+}
+
 function rankedSessionCte(): string {
+  const typeExpr = jsonExtract('event', '$.type')
+  const atExpr = jsonExtract('e2.event', '$.at')
   return `
     WITH ranked AS (
-      SELECT tenant_id, session_id, (event->>'type')::text AS last_type,
-        (SELECT (e2.event->>'at') FROM session_events e2
+      SELECT tenant_id, session_id, ${typeExpr} AS last_type,
+        (SELECT ${atExpr} FROM session_events e2
           WHERE e2.tenant_id = se.tenant_id AND e2.session_id = se.session_id
           ORDER BY e2.version ASC LIMIT 1) AS created_at,
         ROW_NUMBER() OVER (PARTITION BY tenant_id, session_id ORDER BY version DESC) AS rn
       FROM session_events se
       WHERE tenant_id = $1
-        AND (event->>'type') NOT IN (${STATUS_PRESERVING_SQL})
+        AND ${typeExpr} NOT IN (${STATUS_PRESERVING_SQL})
     )`
 }
 
@@ -493,10 +507,10 @@ function rankedSessionCte(): string {
 function rankedMatchClause(): string {
   return `
     WHERE rn = 1
-      AND ($2::text IS NULL
+      AND ($2 IS NULL
            OR last_type = 'session.' || $2
            OR ($2 = 'queued' AND last_type = 'session.created'))
-      AND ($3::text IS NULL OR created_at >= $3)`
+      AND ($3 IS NULL OR created_at >= $3)`
 }
 
 function normalizeFilter(filter: SessionFilter): { status: string | null; since: string | null } {

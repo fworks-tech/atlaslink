@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { AddressInfo } from 'node:net'
-import { PGlite } from '@electric-sql/pglite'
+import Database from 'better-sqlite3'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,8 +13,9 @@ import { createAppServer } from '../server'
 import { TaskRegistry } from '../tasks/taskRegistry'
 import { SessionStore } from '../session/sessionStore'
 import { AuthStore } from '../session/authStore'
-import { PgliteDb } from '../session/db'
+import { SQLiteDb } from '../session/sqliteDb'
 import { runMigrations } from '../session/migrations'
+import { sqliteMigrations } from '../session/sqliteMigrations'
 import { jsonRequest } from '../test/serverHarness'
 
 async function createTestServer(): Promise<{
@@ -22,11 +23,11 @@ async function createTestServer(): Promise<{
   authStore: AuthStore
   close: () => Promise<void>
 }> {
-  const dir = mkdtempSync(join(tmpdir(), 'atlaslink-authroutes-'))
-  const pg = new PGlite(dir)
-  const pgDb = new PgliteDb(pg)
-  await runMigrations(pgDb)
-  const authStore = new AuthStore(pgDb)
+  const file = join(tmpdir(), `atlaslink-authroutes-${Date.now()}.sqlite`)
+  const sqlite = new Database(file)
+  const db = new SQLiteDb(sqlite)
+  await runMigrations(db, sqliteMigrations)
+  const authStore = new AuthStore(db)
 
   const previousJwtSecret = process.env.ATLASLINK_JWT_SECRET
   const previousToken = process.env.ATLASLINK_API_TOKEN
@@ -54,7 +55,8 @@ async function createTestServer(): Promise<{
       else process.env.ATLASLINK_JWT_SECRET = previousJwtSecret
       if (previousToken === undefined) delete process.env.ATLASLINK_API_TOKEN
       else process.env.ATLASLINK_API_TOKEN = previousToken
-      rmSync(dir, { recursive: true, force: true })
+      sqlite.close()
+      rmSync(file, { force: true })
     },
   }
 }

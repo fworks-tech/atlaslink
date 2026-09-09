@@ -122,13 +122,16 @@ export const migrations: Migration[] = [
 const MIGRATION_LOCK_KEY = 715228429
 
 /**
- * Applies pending migrations in version order inside one transaction guarded by
- * an advisory xact lock. The runner table makes the set idempotent across
- * restarts and lets both drivers share one migration list.
+ * Applies pending migrations in version order inside one transaction. For
+ * Postgres, the transaction is guarded by an advisory xact lock; SQLite uses
+ * file-level locking so the guard is skipped. The runner table makes the set
+ * idempotent across restarts.
  */
-export async function runMigrations(db: Db): Promise<void> {
+export async function runMigrations(db: Db, migrationList: Migration[] = migrations): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx.query(`SELECT pg_advisory_xact_lock($1)`, [MIGRATION_LOCK_KEY])
+    if (process.env.ATLASLINK_DATABASE_URL) {
+      await tx.query(`SELECT pg_advisory_xact_lock($1)`, [MIGRATION_LOCK_KEY])
+    }
 
     await tx.execRawDdl(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -140,7 +143,7 @@ export async function runMigrations(db: Db): Promise<void> {
     const { rows } = await tx.query<{ version: number }>(`SELECT version FROM schema_migrations`)
     const applied = new Set(rows.map((r) => r.version))
 
-    for (const migration of migrations) {
+    for (const migration of migrationList) {
       if (applied.has(migration.version)) continue
       await tx.execRawDdl(migration.up)
       await tx.query(`INSERT INTO schema_migrations (version, name) VALUES ($1, $2)`, [
@@ -153,16 +156,18 @@ export async function runMigrations(db: Db): Promise<void> {
 
 /**
  * Rolls applied migrations back to `targetVersion` in reverse version order,
- * inside the same transaction + advisory-lock guard as the up path. Rolling
- * back drops tables — callers must gate this out of production. A target at
- * or above the applied head is a no-op; a negative target throws.
+ * inside the same transaction as the up path. Rolling back drops tables —
+ * callers must gate this out of production. A target at or above the applied
+ * head is a no-op; a negative target throws.
  */
-export async function rollbackMigrations(db: Db, targetVersion: number): Promise<void> {
+export async function rollbackMigrations(db: Db, targetVersion: number, migrationList: Migration[] = migrations): Promise<void> {
   if (!Number.isInteger(targetVersion) || targetVersion < 0) {
     throw new Error(`rollback target must be a non-negative integer, got ${targetVersion}`)
   }
   await db.transaction(async (tx) => {
-    await tx.query(`SELECT pg_advisory_xact_lock($1)`, [MIGRATION_LOCK_KEY])
+    if (process.env.ATLASLINK_DATABASE_URL) {
+      await tx.query(`SELECT pg_advisory_xact_lock($1)`, [MIGRATION_LOCK_KEY])
+    }
 
     await tx.execRawDdl(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -174,7 +179,7 @@ export async function rollbackMigrations(db: Db, targetVersion: number): Promise
     const { rows } = await tx.query<{ version: number }>(`SELECT version FROM schema_migrations`)
     const applied = new Set(rows.map((r) => r.version))
 
-    for (const migration of [...migrations].reverse()) {
+    for (const migration of [...migrationList].reverse()) {
       if (migration.version <= targetVersion || !applied.has(migration.version)) continue
       await tx.execRawDdl(migration.down)
       await tx.query(`DELETE FROM schema_migrations WHERE version = $1`, [migration.version])

@@ -1,8 +1,10 @@
 import { Pool } from 'pg'
-import { PGlite } from '@electric-sql/pglite'
-import { PgDb, PgliteDb } from './db'
+import Database from 'better-sqlite3'
+import { PgDb } from './db'
+import { SQLiteDb } from './sqliteDb'
 import { PostgresBackend } from './postgresBackend'
 import { rollbackMigrations, runMigrations } from './migrations'
+import { sqliteMigrations } from './sqliteMigrations'
 import { SessionStore } from './sessionStore'
 import type { SessionBackend } from './sessionBackend'
 import type { DurabilityMode } from './types'
@@ -35,8 +37,8 @@ export function resolveRollbackTarget(env: NodeJS.ProcessEnv = process.env): num
   return target
 }
 
-function resolvePgliteDir(): string {
-  return process.env.ATLASLINK_PGLITE_DIR ?? 'data/pglite'
+function resolveSqliteDir(): string {
+  return process.env.ATLASLINK_SQLITE_DIR ?? 'data/atlaslink.sqlite'
 }
 
 /**
@@ -44,9 +46,9 @@ function resolvePgliteDir(): string {
  *
  * 1. `ATLASLINK_DATABASE_URL` set → managed Postgres (PgDb). For operators
  *    who want a separate database server.
- * 2. PGlite (WASM Postgres in-process) → file-backed, zero setup, no external
- *    service. Default when no URL is set. Persists to ATLASLINK_PGLITE_DIR
- *    (data/pglite by default) so sessions survive restarts.
+ * 2. SQLite (better-sqlite3, file-backed) → zero setup, no external service,
+ *    low memory. Default when no URL is set. Persists to ATLASLINK_SQLITE_DIR
+ *    (data/atlaslink.sqlite by default) so sessions survive restarts.
  * 3. In-memory SessionStore → only when `ATLASLINK_DURABILITY=inmemory` is
  *    explicitly set (hermetic tests, ephemeral runs).
  *
@@ -66,10 +68,10 @@ export async function createSessionBackend(): Promise<SessionBackend> {
     return new SessionStore()
   }
 
-  const db = new PgliteDb(new PGlite(resolvePgliteDir()))
-  await runMigrations(db)
+  const db = new SQLiteDb(new Database(resolveSqliteDir()))
+  await runMigrations(db, sqliteMigrations)
   const rollbackTo = resolveRollbackTarget()
-  if (rollbackTo !== undefined) await rollbackMigrations(db, rollbackTo)
+  if (rollbackTo !== undefined) await rollbackMigrations(db, rollbackTo, sqliteMigrations)
   return new PostgresBackend(db, DEFAULT_TENANT_ID, resolveDurability())
 }
 
