@@ -134,6 +134,41 @@ test('rehydrate projects the single parked question and carries resumeOf onto th
   assert.equal(f.status, 'queued')
 })
 
+test('rehydrate collects member.event payloads in order and leaves status untouched', () => {
+  const running: SessionEvent = { type: 'session.running', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:01Z' }
+  const reasoning = { type: 'reasoning', step: 1, content: 'think' }
+  const tool = { type: 'tool.called', step: 1, name: 'grep', args: {} }
+  const decision = { type: 'decision.recorded', decisionId: 'd-1', outcome: 'go' }
+  const s = rehydrate([
+    created,
+    running,
+    { type: 'member.event', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:02Z', payload: reasoning },
+    { type: 'member.event', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:03Z', payload: tool },
+    { type: 'member.event', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:04Z', payload: decision },
+  ])
+  assert.ok(s)
+  assert.equal(s.status, 'running')
+  assert.equal(s.version, 5)
+  assert.deepEqual(s.memberEvents, [reasoning, tool, decision])
+  assert.equal(s.interaction.length, 1)
+})
+
+test('rehydrate caps memberEvents at the last 300', () => {
+  const payloads = Array.from({ length: 302 }, (_, i) => ({ type: 'reasoning', step: i, content: `c${i}` }))
+  const events = payloads.map((payload, i) => ({
+    type: 'member.event',
+    sessionId: 'ses-1',
+    correlationId: 'cor-1',
+    at: new Date(Date.parse('2026-01-01T00:00:00Z') + i).toISOString(),
+    payload,
+  })) as SessionEvent[]
+  const s = rehydrate([created, ...events])
+  assert.ok(s)
+  assert.equal(s.memberEvents?.length, 300)
+  assert.deepEqual(s.memberEvents?.[0], { type: 'reasoning', step: 2, content: 'c2' })
+  assert.deepEqual(s.memberEvents?.at(-1), { type: 'reasoning', step: 301, content: 'c301' })
+})
+
 backendContract('SessionStore satisfies the backend contract', async () => new SessionStore())
 
 test('SessionStore: the snapshot cache serves the same aggregate until an append', async () => {

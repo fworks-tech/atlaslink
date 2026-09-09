@@ -81,15 +81,23 @@ vi.mock("@/components/SessionInspector", () => ({
     session,
     contextLoading,
     onClose,
+    events,
   }: {
     open: boolean;
     selectedNode?: { id: string } | null;
     session?: { sessionId: string } | null;
     contextLoading?: boolean;
     onClose: () => void;
+    events?: unknown[];
   }) =>
     open ? (
-      <div data-testid="inspector" data-selected={selectedNode?.id ?? ""} data-session={session?.sessionId ?? ""} data-loading={contextLoading ? "true" : "false"}>
+      <div
+        data-testid="inspector"
+        data-selected={selectedNode?.id ?? ""}
+        data-session={session?.sessionId ?? ""}
+        data-loading={contextLoading ? "true" : "false"}
+        data-events={String(events?.length ?? 0)}
+      >
         <button data-testid="close-inspector" onClick={onClose}>
           close
         </button>
@@ -223,6 +231,36 @@ describe("HomeClient inspector wiring", () => {
     fireEvent.click(screen.getByTestId("select-ses2"));
     expect(routerPush).toHaveBeenCalledWith("?session=ses-2&project=p-1");
     expect(screen.queryByTestId("inspector")).toBeNull();
+  });
+
+  it("terminal sessions feed the inspector their memberEvents instead of the live stream", () => {
+    seed("session=ses-7&node=n-1");
+    sessionsMock.mockReturnValue({
+      loading: false,
+      error: null,
+      hydrateSession: hydrateMock,
+      sessions: [
+        {
+          sessionId: "ses-7",
+          correlationId: "cor-7",
+          status: "succeeded",
+          version: 3,
+          task: { member: "the-builder", prompt: "done work" },
+          memberEvents: [
+            { type: "reasoning", step: 1, content: "think" },
+            { type: "tool.called", step: 1, name: "grep", args: {} },
+          ],
+        },
+      ],
+      refresh: refreshMock,
+    });
+    eventsMock.mockReturnValue({
+      events: [{ eventId: 9, type: "reasoning", correlationId: "cor-7", step: 2, content: "live" }],
+    });
+    render(<HomeClient />);
+    fireEvent.click(screen.getByTestId("click-node"));
+    // 2 hydrated member events win over the 1 live-stream event
+    expect(screen.getByTestId("inspector").getAttribute("data-events")).toBe("2");
   });
 });
 

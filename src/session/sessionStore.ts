@@ -135,6 +135,15 @@ export function rehydrate(events: SessionEvent[]): Session | null {
         if (e.message) session.task.prompt = e.message
         session.interaction.push({ role: 'user', at: e.at, content: e.message ?? '' })
         break
+      case 'member.event':
+        if (e.payload !== undefined) {
+          const memberEvents = (session.memberEvents ??= [])
+          memberEvents.push(e.payload)
+          // ponytail: 300-event ceiling per session, trim oldest on overflow —
+          // raise the cap when full-run replays matter more than memory
+          if (memberEvents.length > 300) memberEvents.splice(0, memberEvents.length - 300)
+        }
+        break
     }
   }
 

@@ -23,6 +23,7 @@ const STORE_EVENT_TYPES = new Set([
   'session.user_reply',
   'session.message',
   'session.steer',
+  'member.event',
 ])
 
 function isStoreSessionEvent(type: unknown): type is string {

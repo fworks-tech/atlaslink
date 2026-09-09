@@ -26,9 +26,12 @@ export interface SessionEvent {
     | 'session.message'
     | 'session.steer'
     | 'session.deleted'
+    | 'member.event'
   sessionId: string
   correlationId: string
   at: string
+  // member.event: the raw RunEvent mirrored from the live run
+  payload?: Record<string, unknown>
   projectId?: string
   tenantId?: string
   member?: string
@@ -74,6 +77,9 @@ export interface Session {
   resumeOf?: string
   // user_reply events recorded on this session; nonzero means already answered
   replyCount: number
+  // raw RunEvents mirrored from the run (member.event), kept for the
+  // inspector tabs of past/failed sessions the live stream no longer covers
+  memberEvents?: Record<string, unknown>[]
   diagram: { nodes: { id: string; type: string; position: { x: number; y: number } }[]; edges: { id: string; source: string; target: string }[]; mode: string } | null
 }
 

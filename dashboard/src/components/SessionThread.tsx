@@ -99,6 +99,16 @@ export function SessionThread({ session, events, members, onJump }: { session: S
             </div>
           ) : null;
         })()}
+        {(() => {
+          const runFailure = events.find((e) => e.type === "run.failed" && e.correlationId === session.correlationId);
+          const errorText = typeof runFailure?.error === "string" ? runFailure.error : session.status === "failed" ? session.error : undefined;
+          return errorText ? (
+            <div role="alert" className="mt-2 rounded bg-danger/10 px-3 py-2 text-sm text-danger">
+              <div className="text-[10px] uppercase tracking-widest">failed</div>
+              <div className="mt-1 break-words">{errorText}</div>
+            </div>
+          ) : null;
+        })()}
       </div>
       {!atBottom && (
         <button

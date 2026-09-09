@@ -20,6 +20,7 @@ import { decodeShareLink, encodeShareLink, canonicalUrl } from "@/lib/shareLink"
 import { replyToSession, sendChatMessage, steerSession, cancelSession } from "@/lib/api";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
 import type { GraphMode } from "@/lib/graph";
+import type { BridgeEvent } from "@/lib/types";
 
 const hideSidebarTemporarily = true; // TODO: remove this once the sidebar is ready for production
 
@@ -60,6 +61,24 @@ function HomeInner() {
   const [steerError, setSteerError] = useState<string | null>(null);
 
   const selectedSession = useMemo(() => sessions.find((s) => s.sessionId === selectedSessionId) ?? null, [sessions, selectedSessionId]);
+  // Terminal sessions replay the durable memberEvents instead of the live
+  // stream — past/failed runs must fill the inspector without an SSE replay;
+  // non-terminal sessions keep the live feed exactly as before.
+  const mergedEvents = useMemo<BridgeEvent[]>(() => {
+    const s = selectedSession;
+    const terminal = s !== null && (s.status === "succeeded" || s.status === "failed" || s.status === "cancelled");
+    if (!terminal || !s.memberEvents || s.memberEvents.length === 0) return events;
+    return s.memberEvents.map(
+      (payload) =>
+        ({
+          ...payload,
+          eventId: -1,
+          type: typeof payload.type === "string" ? payload.type : "unknown",
+          correlationId: s.correlationId,
+          sessionId: s.sessionId,
+        }) as BridgeEvent,
+    );
+  }, [selectedSession, events]);
   // The inspector fallback must be transient-only: still resolving means the
   // list is loading or an unresolved deep link has no error yet — a reported
   // error means resolution failed and the fallback applies.
@@ -340,7 +359,7 @@ function HomeInner() {
               <ApprovalInbox onSelect={handleSelectSession} />
               <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
                 <SessionList onSelect={handleSelectSession} />
-                <SessionThread session={selectedSession} events={events} members={members} onJump={(id) => handleNodeClick(id, "thread", {})} />
+                <SessionThread session={selectedSession} events={mergedEvents} members={members} onJump={(id) => handleNodeClick(id, "thread", {})} />
               </div>
               {composerMode === "reply" && awaitingQuestion ? (
                 <div className="rounded-xl border border-accent/30 bg-accent/10 p-4">
@@ -382,7 +401,7 @@ function HomeInner() {
                 </div>
               ) : null}
             </div>
-            <SessionInspector open={Boolean(inspectorNode)} onClose={handleCloseInspector} session={selectedSession} events={events} selectedNode={inspectorNode} contextLoading={inspectorContextLoading} onConfigChange={handleNodeConfigChange} />
+            <SessionInspector open={Boolean(inspectorNode)} onClose={handleCloseInspector} session={selectedSession} events={mergedEvents} selectedNode={inspectorNode} contextLoading={inspectorContextLoading} onConfigChange={handleNodeConfigChange} />
           </div>
         ) : (
           <ErrorBoundary>

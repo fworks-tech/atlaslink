@@ -36,6 +36,19 @@ import { ASK_HUMAN_MAX_CONTEXT_LENGTH, ASK_HUMAN_MAX_QUESTION_LENGTH } from 'age
 
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
+/** Member-level RunEvents mirrored into the durable store as `member.event`,
+ * so past/failed sessions keep their inspector artifacts after the live
+ * stream is gone. `run.*` lifecycle types stay out — the session.* mirrors
+ * already carry those. */
+const MEMBER_EVENT_TYPES: ReadonlySet<RunEvent['type']> = new Set([
+  'reasoning',
+  'tool.called',
+  'tool.result',
+  'tool.approval',
+  'decision.recorded',
+  'provenance.recorded',
+])
+
 /**
  * The runner hands us `unknown` (custom AppLike fakes, future runners) — a
  * malformed question mirrors without it rather than crashing the seam or
@@ -322,6 +335,12 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
         // can never replay twice; the follow-up persists its own row on park
         const dropCheckpoint = (correlationId: string): Promise<void> =>
           checkpoints.drop(checkpointIdFor(correlationId)).catch(() => undefined)
+        // member.event mirrors serialize on this chain (each does a CAS
+        // read-modify-write, so concurrent mirrors would conflict-drop each
+        // other) and are drained before the terminal mirrors below — a
+        // pending member mirror must never race a session.succeeded/failed
+        // commit, whose conflict the mirror helper silently drops
+        let memberMirror = Promise.resolve()
         try {
           await mirror({ type: 'session.running', correlationId: session.correlationId, at: at() })
           let resume = session.resume
@@ -342,17 +361,35 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
             registry,
             session,
             config: config.agenthood,
-            onEvent: (event: RunEvent) => broadcaster.emit({ eventId: 0, ...event }),
+            onEvent: (event: RunEvent) => {
+              broadcaster.emit({ eventId: 0, ...event })
+              // fire-and-forget on a serialized chain: the live run is never
+              // gated on disk, and this chain is drained before the terminal
+              // mirrors so no member mirror can outlive the run
+              if (MEMBER_EVENT_TYPES.has(event.type)) {
+                memberMirror = memberMirror
+                  .then(() =>
+                    mirror({
+                      type: 'member.event',
+                      correlationId: session.correlationId,
+                      at: new Date().toISOString(),
+                      payload: event as unknown as Record<string, unknown>,
+                    })
+                  )
+                  .catch(() => {})
+              }
+            },
             checkpointStore: checkpoints,
             ...(resume ? { resume } : {}),
           })
         } catch (err) {
-         logger.error('session run threw unexpectedly', {
-           sessionId,
-           correlationId: session.correlationId,
-           error: msg(err),
-         })
-       }
+          logger.error('session run threw unexpectedly', {
+            sessionId,
+            correlationId: session.correlationId,
+            error: msg(err),
+          })
+        }
+        await memberMirror
          const final = registry.get(sessionId)!
         if (final.status === 'succeeded') {
           await mirror({ type: 'session.succeeded', correlationId: final.correlationId, at: at(), output: final.output, durationMs: final.durationMs })

@@ -34,10 +34,11 @@ function parseEvent(raw: string | SessionEvent): SessionEvent {
   return typeof raw === 'string' ? (JSON.parse(raw) as SessionEvent) : raw
 }
 
-/** Chat/steer/reply append to history without moving the lifecycle — the sessions
- * directory keeps its status and only `updated_at` advances. Single source
- * for both the directory projection and the ranked-CTE exclusion below. */
-const STATUS_PRESERVING_EVENTS: ReadonlySet<SessionEvent['type']> = new Set(['session.message', 'session.steer', 'session.user_reply'])
+/** Chat/steer/reply and member.event mirrors append to history without moving
+ * the lifecycle — the sessions directory keeps its status and only `updated_at`
+ * advances. Single source for both the directory projection and the ranked-CTE
+ * exclusion below. */
+const STATUS_PRESERVING_EVENTS: ReadonlySet<SessionEvent['type']> = new Set(['session.message', 'session.steer', 'session.user_reply', 'member.event'])
 
 /** SQL literal list derived from STATUS_PRESERVING_EVENTS — never hand-edit. */
 const STATUS_PRESERVING_SQL = [...STATUS_PRESERVING_EVENTS].map((t) => `'${t}'`).join(', ')
