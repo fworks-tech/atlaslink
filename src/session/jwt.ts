@@ -45,7 +45,10 @@ export function signJwt(claims: JwtClaims): string {
 
 export function verifyJwt(token: string): JwtClaims | null {
   const secret = process.env.ATLASLINK_JWT_SECRET
-  if (!secret) throw new Error('ATLASLINK_JWT_SECRET is not set')
+  // Verification is impossible without a secret — null (not a throw) so
+  // callers fall through to the next auth mechanism instead of 500-ing
+  // every gated request on deployments that only set the legacy token.
+  if (!secret) return null
 
   const parts = token.split('.')
   if (parts.length !== 3) return null

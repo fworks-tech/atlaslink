@@ -367,6 +367,30 @@ test('resolveAuth — returns legacy context for shared token', async () => {
   }
 })
 
+test('resolveAuth — falls through to legacy when JWT secret is unset', async () => {
+  const previousSecret = process.env.ATLASLINK_JWT_SECRET
+  const previousToken = process.env.ATLASLINK_API_TOKEN
+  delete process.env.ATLASLINK_JWT_SECRET
+  process.env.ATLASLINK_API_TOKEN = 'legacy-shared-token-123'
+  try {
+    const { store, cleanup } = await createTestStore()
+    try {
+      const mockStore = { findApiKeyByKeyHash: store.findApiKeyByKeyHash.bind(store), touchApiKey: store.touchApiKey.bind(store) }
+      const ctx = await resolveAuth('legacy-shared-token-123', mockStore)
+      assert.ok(ctx)
+      assert.equal(ctx!.userId, 'system')
+      assert.equal(ctx!.kind, 'legacy')
+    } finally {
+      await cleanup()
+    }
+  } finally {
+    if (previousSecret === undefined) delete process.env.ATLASLINK_JWT_SECRET
+    else process.env.ATLASLINK_JWT_SECRET = previousSecret
+    if (previousToken === undefined) delete process.env.ATLASLINK_API_TOKEN
+    else process.env.ATLASLINK_API_TOKEN = previousToken
+  }
+})
+
 test('resolveAuth — returns null for invalid token', async () => {
   const previousSecret = process.env.ATLASLINK_JWT_SECRET
   process.env.ATLASLINK_JWT_SECRET = 'test-secret-key-that-is-32-bytes!!'

@@ -149,17 +149,19 @@ export async function resolveAuth(
     return { userId: claims.sub, tenantId: claims.tenant, kind: 'jwt' }
   }
 
+  // I/O-free legacy compare before the DB lookup — the shared-token path
+  // (the dashboard BFF) is the dominant caller and needs no query.
+  const legacyToken = process.env.ATLASLINK_API_TOKEN
+  if (legacyToken && safeEqual(token, legacyToken)) {
+    return { userId: 'system', tenantId: DEFAULT_TENANT_ID, kind: 'legacy' }
+  }
+
   const keyHash = hashApiKey(token)
   const apiKey = await authStore.findApiKeyByKeyHash(keyHash)
   if (apiKey) {
     // Fire-and-forget — do not block the request on the update.
     authStore.touchApiKey(apiKey.id).catch(() => {})
     return { userId: apiKey.user_id, tenantId: apiKey.tenant_id, kind: 'api_key' }
-  }
-
-  const legacyToken = process.env.ATLASLINK_API_TOKEN
-  if (legacyToken && safeEqual(token, legacyToken)) {
-    return { userId: 'system', tenantId: DEFAULT_TENANT_ID, kind: 'legacy' }
   }
 
   return null
