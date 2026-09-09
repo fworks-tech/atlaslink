@@ -82,6 +82,19 @@ describe("dashboard BFF proxy", () => {
     expect(headers.get("host")).toBeNull();
   });
 
+  it("forwards a browser-supplied bearer instead of the legacy token", async () => {
+    const fetchMock = stubDaemonFetch(() => Response.json({ ok: true }));
+
+    const req = request("http://localhost:3000/api/tasks", {
+      method: "GET",
+      headers: { authorization: "Bearer user-jwt" },
+    });
+    await GET(req, ctx("tasks"));
+
+    const headers: Headers = fetchMock.mock.calls[0][1].headers;
+    expect(headers.get("authorization")).toBe("Bearer user-jwt");
+  });
+
   it("forwards POST bodies with their content type", async () => {
     const fetchMock = stubDaemonFetch(() => Response.json({ ok: true }, { status: 201 }));
 
