@@ -1,5 +1,6 @@
 import { Pool } from 'pg'
-import { PgDb } from './db'
+import { PGlite } from '@electric-sql/pglite'
+import { PgDb, PgliteDb } from './db'
 import { PostgresBackend } from './postgresBackend'
 import { rollbackMigrations, runMigrations } from './migrations'
 import { SessionStore } from './sessionStore'
@@ -34,18 +35,38 @@ export function resolveRollbackTarget(env: NodeJS.ProcessEnv = process.env): num
   return target
 }
 
+function resolvePgliteDir(): string {
+  return process.env.ATLASLINK_PGLITE_DIR ?? 'data/pglite'
+}
+
 /**
- * Session backend for the daemon: the in-memory store by default (hermetic,
- * zero setup); Postgres when `ATLASLINK_DATABASE_URL` is set (ADR-006 Decisions
- * 4–5). Migrations run against the target database before the backend is used.
- * The pool is process-lifetime (like the NDJSON log handle); pg reaps idle
- * connections on process exit.
+ * Session backend for the daemon. Three tiers, in priority order:
+ *
+ * 1. `ATLASLINK_DATABASE_URL` set → managed Postgres (PgDb). For operators
+ *    who want a separate database server.
+ * 2. PGlite (WASM Postgres in-process) → file-backed, zero setup, no external
+ *    service. Default when no URL is set. Persists to ATLASLINK_PGLITE_DIR
+ *    (data/pglite by default) so sessions survive restarts.
+ * 3. In-memory SessionStore → only when `ATLASLINK_DURABILITY=inmemory` is
+ *    explicitly set (hermetic tests, ephemeral runs).
+ *
+ * Migrations run against the target database before the backend is used.
  */
 export async function createSessionBackend(): Promise<SessionBackend> {
   const url = process.env.ATLASLINK_DATABASE_URL
-  if (!url) return new SessionStore()
+  if (url) {
+    const db = new PgDb(new Pool({ connectionString: url }))
+    await runMigrations(db)
+    const rollbackTo = resolveRollbackTarget()
+    if (rollbackTo !== undefined) await rollbackMigrations(db, rollbackTo)
+    return new PostgresBackend(db, DEFAULT_TENANT_ID, resolveDurability())
+  }
 
-  const db = new PgDb(new Pool({ connectionString: url }))
+  if (process.env.ATLASLINK_DURABILITY === 'inmemory') {
+    return new SessionStore()
+  }
+
+  const db = new PgliteDb(new PGlite(resolvePgliteDir()))
   await runMigrations(db)
   const rollbackTo = resolveRollbackTarget()
   if (rollbackTo !== undefined) await rollbackMigrations(db, rollbackTo)

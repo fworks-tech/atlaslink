@@ -253,15 +253,41 @@ test('event payloads round-trip through JSONB unchanged', async () => {
 
 backendContract('PostgresBackend satisfies the backend contract', backendWithMigrations)
 
-test('createSessionBackend defaults to the in-memory store without a database URL', async () => {
-  const previous = process.env.ATLASLINK_DATABASE_URL
+test('createSessionBackend defaults to PostgresBackend with PGlite without a database URL', async () => {
+  const previousUrl = process.env.ATLASLINK_DATABASE_URL
+  const previousDurability = process.env.ATLASLINK_DURABILITY
+  const previousPgliteDir = process.env.ATLASLINK_PGLITE_DIR
+  const tmpDir = mkdtempSync(join(tmpdir(), 'atlaslink-pglite-'))
   delete process.env.ATLASLINK_DATABASE_URL
+  delete process.env.ATLASLINK_DURABILITY
+  process.env.ATLASLINK_PGLITE_DIR = tmpDir
+  try {
+    const backend = await createSessionBackend()
+    assert.ok(backend instanceof PostgresBackend)
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true })
+    if (previousUrl === undefined) delete process.env.ATLASLINK_DATABASE_URL
+    else process.env.ATLASLINK_DATABASE_URL = previousUrl
+    if (previousDurability === undefined) delete process.env.ATLASLINK_DURABILITY
+    else process.env.ATLASLINK_DURABILITY = previousDurability
+    if (previousPgliteDir === undefined) delete process.env.ATLASLINK_PGLITE_DIR
+    else process.env.ATLASLINK_PGLITE_DIR = previousPgliteDir
+  }
+})
+
+test('createSessionBackend uses in-memory store when ATLASLINK_DURABILITY=inmemory', async () => {
+  const previousUrl = process.env.ATLASLINK_DATABASE_URL
+  const previousDurability = process.env.ATLASLINK_DURABILITY
+  delete process.env.ATLASLINK_DATABASE_URL
+  process.env.ATLASLINK_DURABILITY = 'inmemory'
   try {
     const backend = await createSessionBackend()
     assert.ok(backend instanceof SessionStore)
   } finally {
-    if (previous === undefined) delete process.env.ATLASLINK_DATABASE_URL
-    else process.env.ATLASLINK_DATABASE_URL = previous
+    if (previousUrl === undefined) delete process.env.ATLASLINK_DATABASE_URL
+    else process.env.ATLASLINK_DATABASE_URL = previousUrl
+    if (previousDurability === undefined) delete process.env.ATLASLINK_DURABILITY
+    else process.env.ATLASLINK_DURABILITY = previousDurability
   }
 })
 

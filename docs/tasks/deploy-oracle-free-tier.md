@@ -14,8 +14,13 @@ Browser ─▶ https://atlas.flabs.tech (Vercel Next.js)
 Caddy (VM, :443) ─▶ backend:3000 (Fastify daemon in Docker)
                          │
                          ▼
-                   postgres:5432 (local Postgres container)
+                   PGlite (WASM Postgres in-process, /app/data/pglite)
 ```
+
+PGLite is a full Postgres engine compiled to WASM that runs inside the daemon
+process. It persists to `/app/data/pglite` (bind-mounted to the host), so sessions
+survive restarts with zero external infrastructure — no separate database
+container, no connection limits, no sleeping.
 
 ## 1. Create the VM (OCI console)
 
@@ -57,14 +62,12 @@ bash deploy/oracle/setup.sh      # installs Docker (you may need to re-login for
 # re-login, then:
 ATLASLINK_API_TOKEN=<daemon token> \
   OPENCODE_API_KEY=<opencode-go key> \
-  POSTGRES_PASSWORD=<secure password> \
   bash deploy/oracle/deploy.sh
 ```
 
 `deploy.sh` clones (or updates) `/opt/atlaslink`, writes `.env` from the
 variables, builds the image, and starts the docker-compose stack (`backend` +
-`postgres` + `caddy`). `ATLASLINK_API_TOKEN` **must equal** the value stored
-on Vercel.
+`caddy`). `ATLASLINK_API_TOKEN` **must equal** the value stored on Vercel.
 
 Verify: `curl https://api.atlas.flabs.tech/health` → `{"ok":true,"name":"atlaslink",…}`.
 
@@ -108,8 +111,8 @@ Render URL and redeploy.
 - Logs: `cd /opt/atlaslink && docker compose logs -f backend`
 - Restart daemon: `cd /opt/atlaslink && docker compose restart backend`
 - Update daemon: `cd /opt/atlaslink && git pull && docker compose up -d --build`
-- Postgres logs: `docker compose logs -f postgres`
-- Postgres shell: `docker compose exec postgres psql -U atlas -d atlaslink`
+- PGLite data lives in `/app/data/pglite` on the container (bind-mounted to
+  `atlaslink-data` on the host). Sessions persist across restarts.
 - The Ampere free allowance (3000 OCPU-hours/mo) covers an always-on VM; the
   E2.Micro shape also fits the same budget.
 
@@ -117,8 +120,8 @@ Render URL and redeploy.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `health` returns 500 | Postgres not ready | `docker compose logs postgres` — wait for "database system is ready" |
+| `health` returns 500 | Daemon boot error | `cd /opt/atlaslink && docker compose logs backend` |
 | `health` returns 404 | Caddy not routing | Check `docker compose logs caddy` and DNS A record |
 | TLS certificate error | DNS not propagated or port 443 closed | Verify A record + VCN security list |
-| Sessions lost on restart | `ATLASLINK_DATABASE_URL` not set | Check `.env` contains the database URL |
-| Backend 500 on all routes | Database connection failed | `docker compose exec backend node -e "..."` or check logs |
+| Sessions lost on restart | `atlaslink-data` volume missing | Check `docker volume ls` and that `/app/data` is bind-mounted |
+| Backend 500 on all routes | PGlite migration failed | `docker compose logs backend` for migration errors |

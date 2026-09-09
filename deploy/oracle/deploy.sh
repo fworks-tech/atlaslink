@@ -21,15 +21,11 @@ fi
 cd "$REPO_DIR"
 git pull --ff-only
 
-PG_PASSWORD="${POSTGRES_PASSWORD:-atlaslink}"
-
 if [ ! -f .env ]; then
   {
     echo "ATLASLINK_API_TOKEN=${ATLASLINK_API_TOKEN:-}"
     echo "OPENCODE_API_KEY=${OPENCODE_API_KEY:-}"
     echo "ATLASLINK_CORS_ORIGINS=${ATLASLINK_CORS_ORIGINS:-https://atlas.flabs.tech}"
-    echo "POSTGRES_PASSWORD=$PG_PASSWORD"
-    echo "ATLASLINK_DATABASE_URL=postgres://atlas:${PG_PASSWORD}@postgres:5432/atlaslink"
   } > .env
 fi
 
@@ -39,25 +35,7 @@ if ! grep -qE '^ATLASLINK_API_TOKEN=.+$' .env || ! grep -qE '^OPENCODE_API_KEY=.
   exit 1
 fi
 
-# Always sync the database URL and password in case they changed.
-sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$PG_PASSWORD|" .env
-sed -i "s|^ATLASLINK_DATABASE_URL=.*|ATLASLINK_DATABASE_URL=postgres://atlas:${PG_PASSWORD}@postgres:5432/atlaslink|" .env 2>/dev/null \
-  || echo "ATLASLINK_DATABASE_URL=postgres://atlas:${PG_PASSWORD}@postgres:5432/atlaslink" >> .env
-
 docker compose up -d --build
-
-echo "waiting for postgres to be healthy..."
-for i in $(seq 1 30); do
-  if docker compose exec -T postgres pg_isready -U atlas -d atlaslink >/dev/null 2>&1; then
-    echo "postgres is ready"
-    break
-  fi
-  if [ "$i" -eq 30 ]; then
-    echo "postgres did not become ready — check: docker compose logs postgres" >&2
-    exit 1
-  fi
-  sleep 2
-done
 
 echo "containers:"
 docker compose ps

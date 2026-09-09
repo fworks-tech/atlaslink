@@ -1,6 +1,7 @@
 services:
-  # The Fastify daemon (docker/Dockerfile). /app/data persists the NDJSON event
-  # log; the daemon's own ATLASLINK_HOST=0.0.0.0 already comes from the image.
+  # The Fastify daemon (docker/Dockerfile). /app/data persists both the NDJSON
+  # event log and the PGlite database (WASM Postgres in-process). No external
+  # database service needed — sessions survive restarts via the bind mount.
   backend:
     build: .
     restart: unless-stopped
@@ -9,31 +10,6 @@ services:
       - "3000"
     volumes:
       - atlaslink-data:/app/data
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  # Local Postgres for durable session aggregates. Runs on the same VM — no
-  # connection limits, no sleeping, no dormancy deletion (unlike managed free
-  # tiers). Exposed only on localhost; the backend reaches it via the
-  # docker-compose service name "postgres".
-  postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: atlas
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-atlaslink}
-      POSTGRES_DB: atlaslink
-    volumes:
-      - atlas-pg-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U atlas -d atlaslink"]
-      interval: 5s
-      timeout: 5s
-      retries:5
-    # Loopback only — never expose Postgres to the public internet.
-    ports:
-      - "127.0.0.1:5432:5432"
 
   # Gateway so the backend never listens directly on the internet (only Caddy
   # fronts it). Port 80 first; the Caddyfile documents the TLS upgrade path.
@@ -52,6 +28,5 @@ services:
 
 volumes:
   atlaslink-data:
-  atlas-pg-data:
   caddy-data:
   caddy-config:
