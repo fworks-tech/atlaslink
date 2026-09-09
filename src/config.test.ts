@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadDaemonConfig, loadEnvFile, DEFAULT_HOST, DEFAULT_PORT } from './config'
+import { loadDaemonConfig, loadEnvFile, resolveSessionConfig, DEFAULT_HOST, DEFAULT_PORT } from './config'
 import { validateConfig } from './daemon/contextFactory'
 
 test('loadDaemonConfig uses documented defaults', async () => {
@@ -90,6 +90,16 @@ test('validateConfig throws a clear error when the provider key is missing', () 
   } finally {
     if (previous !== undefined) process.env.OPENCODE_API_KEY = previous
   }
+})
+
+test('resolveSessionConfig applies the per-task provider tweak', () => {
+  const global = { provider: 'opencode-go', apiKey: 'k' }
+  assert.equal(resolveSessionConfig(global, {}), global)
+  assert.equal(resolveSessionConfig(global, { provider: 'opencode-go' }), global)
+  const overridden = resolveSessionConfig(global, { provider: 'groq' })
+  assert.equal(overridden.provider, 'groq')
+  assert.equal(overridden.apiKey, 'k')
+  assert.equal(global.provider, 'opencode-go')
 })
 
 test('loadAgenthoodConfig fails fast on a corrupt config file', async () => {
