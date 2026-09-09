@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { randomBytes, scryptSync } from 'node:crypto'
 import { log } from '../log'
 import {
   AuthStore,
@@ -8,11 +9,19 @@ import {
   hashPassword,
   verifyPassword,
 } from '../session/authStore'
+import { isUniqueViolation } from '../session/db'
 import { createToken } from '../session/jwt'
 import { DEFAULT_TENANT_ID } from '../session/migrations'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const MIN_PASSWORD_LENGTH = 8
+
+// Same scrypt cost as a real verification, run on the unknown-email path so
+// response latency cannot distinguish "unknown email" from "wrong password".
+const TIMING_HASH = (() => {
+  const salt = randomBytes(16)
+  return `${salt.toString('hex')}:${scryptSync('timing-equalizer', salt, 64, { N: 16384, r: 8, p: 1 }).toString('hex')}`
+})()
 
 interface RegisterBody {
   email?: string
@@ -67,12 +76,22 @@ export function registerAuthRoutes(
       }
 
       const passwordHash = await hashPassword(password!)
-      const user = await authStore.createUser({
-        id: generateRandomId(),
-        email: email.toLowerCase(),
-        passwordHash,
-        tenantId: tenantId ?? DEFAULT_TENANT_ID,
-      })
+      let user
+      try {
+        user = await authStore.createUser({
+          id: generateRandomId(),
+          email: email.toLowerCase(),
+          passwordHash,
+          tenantId: tenantId ?? DEFAULT_TENANT_ID,
+        })
+      } catch (err) {
+        // a concurrent register for the same email lost the check-then-insert
+        // race to the users.email UNIQUE — report it as the conflict it is
+        if (isUniqueViolation(err)) {
+          return reply.code(409).send({ ok: false, error: 'email already registered' })
+        }
+        throw err
+      }
 
       const token = createToken(user.id, user.tenant_id)
       log.info('user registered', { userId: user.id, email: user.email })
@@ -105,6 +124,8 @@ export function registerAuthRoutes(
 
       const user = await authStore.findUserByEmail(email!.toLowerCase())
       if (!user) {
+        // burn the same scrypt cost first so timing cannot enumerate emails
+        await verifyPassword(password!, TIMING_HASH)
         log.warn('login failed: unknown email', { email: email!.toLowerCase() })
         return reply.code(401).send({ ok: false, error: 'invalid credentials' })
       }
