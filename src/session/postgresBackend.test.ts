@@ -298,6 +298,7 @@ test('createSessionBackend uses in-memory store when ATLASLINK_DURABILITY=inmemo
 test('a unique-violation on first write is surfaced as VersionConflictError', async () => {
   const versionRows = [{ version: 2 }]
   const stubDb: Db = {
+    dialect: 'postgres',
     query: async <TRow extends object>() => ({ rows: versionRows as unknown as TRow[] }),
     execRawDdl: async () => {},
     transaction: async () => {

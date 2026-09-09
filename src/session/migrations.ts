@@ -129,7 +129,7 @@ const MIGRATION_LOCK_KEY = 715228429
  */
 export async function runMigrations(db: Db, migrationList: Migration[] = migrations): Promise<void> {
   await db.transaction(async (tx) => {
-    if (process.env.ATLASLINK_DATABASE_URL) {
+    if (db.dialect === 'postgres') {
       await tx.query(`SELECT pg_advisory_xact_lock($1)`, [MIGRATION_LOCK_KEY])
     }
 
@@ -165,7 +165,7 @@ export async function rollbackMigrations(db: Db, targetVersion: number, migratio
     throw new Error(`rollback target must be a non-negative integer, got ${targetVersion}`)
   }
   await db.transaction(async (tx) => {
-    if (process.env.ATLASLINK_DATABASE_URL) {
+    if (db.dialect === 'postgres') {
       await tx.query(`SELECT pg_advisory_xact_lock($1)`, [MIGRATION_LOCK_KEY])
     }
 
