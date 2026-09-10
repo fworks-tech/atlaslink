@@ -17,7 +17,7 @@ import { useDraftFlow } from "@/hooks/useDraftFlow";
 import type { AgentConfig } from "@/lib/config";
 import { useEvents } from "@/hooks/useEvents";
 import { decodeShareLink, encodeShareLink, canonicalUrl } from "@/lib/shareLink";
-import { replyToSession, sendChatMessage, steerSession, cancelSession } from "@/lib/api";
+import { replyToSession, steerSession, cancelSession, ApiError } from "@/lib/api";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
 import type { GraphMode } from "@/lib/graph";
 import type { BridgeEvent } from "@/lib/types";
@@ -50,12 +50,6 @@ function HomeInner() {
   const [replyContent, setReplyContent] = useState("");
   const [replyBusy, setReplyBusy] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
-  const [chatContent, setChatContent] = useState("");
-  const [chatBusy, setChatBusy] = useState(false);
-  const [chatError, setChatError] = useState<string | null>(null);
-  // state updates flush after the event, so a second submit in the same tick
-  // would slip past chatBusy — the ref closes the double-send window
-  const chatInflight = useRef(false);
   const [steerContent, setSteerContent] = useState("");
   const [steerBusy, setSteerBusy] = useState(false);
   const [steerError, setSteerError] = useState<string | null>(null);
@@ -95,12 +89,17 @@ function HomeInner() {
   // list page, so fetch the single row instead of leaving context empty.
   // hydrateSession records failures in the sessions error state, which the
   // banner below renders while no session is selected.
+  // A 404 means the shared id no longer exists (Render's ephemeral disk
+  // wipes SQLite on every restart) — the page must say so once instead of
+  // letting hydrate failures bounce generic reload hints forever.
+  const [sharedSessionGoneId, setSharedSessionGoneId] = useState<string | null>(null);
   useEffect(() => {
     if (!selectedSessionId || selectedSession || sessionsLoading) return;
-    hydrateSession(selectedSessionId).catch(() => {
-      // error state carries the failure — nothing to do here
+    hydrateSession(selectedSessionId).catch((err) => {
+      if (err instanceof ApiError && err.status === 404) setSharedSessionGoneId(selectedSessionId);
     });
   }, [selectedSessionId, selectedSession, sessionsLoading, hydrateSession]);
+  const sharedSessionGone = sharedSessionGoneId !== null && sharedSessionGoneId === selectedSessionId;
 
   const handleSelectSession = useCallback(
     (id: string) => {
@@ -192,30 +191,6 @@ function HomeInner() {
   const handleReply = useCallback(() => {
     void sendReply(replyContent);
   }, [sendReply, replyContent]);
-
-  const handleChat = useCallback(async () => {
-    if (!selectedSessionId || !chatContent.trim() || chatInflight.current) return;
-    chatInflight.current = true;
-    setChatBusy(true);
-    setChatError(null);
-    try {
-      await sendChatMessage(selectedSessionId, chatContent.trim());
-      setChatContent("");
-    } catch (e) {
-      setChatError(e instanceof Error ? e.message : "Chat failed — retry or check the session state.");
-    } finally {
-      chatInflight.current = false;
-      setChatBusy(false);
-    }
-    // the turn lands in the thread via the session.message SSE event; the
-    // refresh only keeps the list copy (version) from going stale — its
-    // failure must not mark a delivered chat as failed
-    try {
-      await refreshSessions();
-    } catch {
-      // refresh records its own error state; the send already succeeded
-    }
-  }, [selectedSessionId, chatContent, refreshSessions]);
 
   const handleSteer = useCallback(async () => {
     if (!selectedSessionId || !steerContent.trim()) return;
@@ -335,7 +310,11 @@ function HomeInner() {
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Live Society Diagram</h1>
               <p className="mt-2 text-sm leading-6 text-muted">Atlas holds the sky of sessions. Click any card to inspect reasoning, tools, decisions. {selectedSession?.status === "awaiting_input" ? "Atlas is awaiting your input — reply below." : ""}</p>
             </header>
-            {sessionsError && !selectedSession ? (
+            {sharedSessionGone ? (
+              <div role="alert" className="mb-4 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">
+                The shared session is no longer available — backend storage was reset on the last restart. Start a new session instead.
+              </div>
+            ) : sessionsError && !selectedSession ? (
               <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">
                 <span className="flex flex-wrap items-center gap-2">
                   {sessionsError.includes("Server is starting") ? "Backend is waking — retrying automatically…" : `Couldn't load sessions (${sessionsError}).`}
@@ -390,16 +369,13 @@ function HomeInner() {
               {composerMode === "chat" ? (
                 <div className="rounded-xl border border-white/10 bg-surface p-4">
                   <div className="text-sm font-medium text-foreground">Room chat · visible to everyone here{members.length > 0 ? ` · ${members.length} here` : ""}</div>
-                  <form onSubmit={(e) => { e.preventDefault(); void handleChat(); }} className="mt-3 flex gap-2">
-                    <input value={chatContent} onChange={(e) => { setChatContent(e.target.value); if (chatError) setChatError(null); }} placeholder="Message the room…" aria-label="Message the room" className="flex-1 rounded border border-white/10 bg-raised px-3 py-2 text-sm text-foreground placeholder:text-muted" />
-                    <button type="submit" disabled={chatBusy || !chatContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
-                  </form>
-                  {chatError ? (
-                    <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-xs text-red-400">
-                      <span>{chatError}</span>
-                      <button type="button" onClick={() => void handleChat()} disabled={chatBusy} className="underline hover:text-red-300 disabled:opacity-50">Retry</button>
-                    </div>
-                  ) : null}
+                  {/* chat mode = terminal session; the daemon rejects every
+                      append with 409, so the composer offers a next step
+                      instead of a type-then-fail loop */}
+                  <div className="mt-3 text-sm text-muted">
+                    This session has ended
+                    {selectedSession ? ` (${selectedSession.status})` : ""}. Start a new session to continue the conversation.
+                  </div>
                 </div>
               ) : null}
             </div>
