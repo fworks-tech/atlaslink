@@ -304,9 +304,16 @@ export function SessionInspector({
             )}
             {activeTab === "decisions" && (
               <div className="space-y-2">
-                {!artifacts || artifacts.decisions.length === 0 ? <div className="text-xs text-muted">No decisions recorded.</div> : artifacts.decisions.map((e, i) => (
-                  <Clamped key={i} text={JSON.stringify(e)} max={300} className="rounded border border-violet-500/20 bg-violet-500/10 p-2 text-xs break-words" />
-                ))}
+                {!artifacts || artifacts.decisions.length === 0 ? <div className="text-xs text-muted">No decisions recorded.</div> : artifacts.decisions.map((e, i) => {
+                  const r = asRecord(e);
+                  return (
+                    <div key={i} className="rounded border border-violet-500/20 bg-violet-500/10 p-2 text-xs">
+                      <div className="font-medium text-foreground">{str(r.outcome, "recorded")} · {str(r.member, "member")}</div>
+                      <div className="mt-1 break-words text-[11px] text-muted">decision {str(r.decisionId, "")}</div>
+                      <div className="mt-0.5 text-[11px] text-muted">{str(r.timestamp, "")}</div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
