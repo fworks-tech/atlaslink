@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getRoomMembers } from "@/lib/api";
+import { getRoomMembers, ApiError } from "@/lib/api";
 import type { RoomMember } from "@/lib/api";
 
 const POLL_MS = 5000;
@@ -33,14 +33,21 @@ export function useRoomPresence(sessionId?: string) {
       try {
         const res = await getRoomMembers(sessionId);
         if (!cancelled) setMembers(res.members);
-      } catch {
+      } catch (err) {
+        // A 404 means the session no longer exists (Render's ephemeral disk
+        // wipes SQLite on every restart) — the dead id would otherwise be
+        // hammered every 5s forever. Only real transport blips keep polling.
+        if (err instanceof ApiError && err.status === 404 && !cancelled) {
+          clearInterval(timer);
+          timer = undefined;
+        }
         if (!cancelled) setMembers((prev) => (prev.length === 0 ? prev : []));
       } finally {
         inflight = false;
       }
     };
     void load();
-    const timer = setInterval(() => void load(), POLL_MS);
+    let timer: ReturnType<typeof setInterval> | undefined = setInterval(() => void load(), POLL_MS);
     return () => {
       cancelled = true;
       clearInterval(timer);

@@ -3,6 +3,9 @@ import { renderHook, act } from "@testing-library/react";
 import { useRoomPresence } from "./useRoomPresence";
 
 vi.mock("@/lib/api", () => ({
+  ApiError: class ApiError extends Error {
+    constructor(public readonly status: number) { super(`status ${status}`) }
+  },
   getRoomMembers: vi.fn(),
 }));
 
