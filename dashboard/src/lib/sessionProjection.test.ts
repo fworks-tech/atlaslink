@@ -93,6 +93,16 @@ describe("formatDuration", () => {
   it("shows awaiting input for awaiting_input", () => {
     expect(formatDuration(session({ status: "awaiting_input" }))).toBe("awaiting input…");
   });
+
+  it("falls back to wall-clock startedAt/finishedAt when durationMs is missing", () => {
+    const started = new Date(Date.now() - 2200).toISOString();
+    expect(formatDuration(session({ status: "failed", startedAt: started, finishedAt: new Date().toISOString() }))).toBe("2.2s");
+  });
+
+  it("falls back to live elapsed for running sessions once startedAt exists", () => {
+    const started = new Date(Date.now() - 1200).toISOString();
+    expect(formatDuration(session({ status: "running", startedAt: started }))).toBe("1s…");
+  });
 });
 
 describe("withLiveUpdates awaiting_input flow", () => {
