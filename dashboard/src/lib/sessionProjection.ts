@@ -72,8 +72,20 @@ export function formatDuration(session: Session): string {
   if (session.durationMs !== undefined && session.status !== "running") {
     return `${(session.durationMs / 1000).toFixed(1)}s`;
   }
-  if (session.status === "running") return "live…";
-  if (session.status === "awaiting_input") return "awaiting input…";
+  // startedAt/finishedAt carry the source-of-truth wall clock even when the
+  // terminal delta lost its durationMs — never show "—" while the answer exists
+  if (session.startedAt && session.finishedAt) {
+    const ms = Date.parse(session.finishedAt) - Date.parse(session.startedAt);
+    if (!Number.isNaN(ms) && ms >= 0) return `${(ms / 1000).toFixed(1)}s`;
+  }
+  if (session.status === "running" || session.status === "awaiting_input") {
+    // live elapsed — a static snapshot under-reports; hint with the known start
+    if (session.startedAt) {
+      const elapsed = Date.now() - Date.parse(session.startedAt);
+      if (!Number.isNaN(elapsed) && elapsed >= 0) return `${(elapsed / 1000).toFixed(0)}s…`;
+    }
+    return session.status === "running" ? "live…" : "awaiting input…";
+  }
   return "—";
 }
 

@@ -105,6 +105,9 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
                     <div className="truncate text-foreground">{session.task.prompt}</div>
                   )}
                   <div className="mt-0.5 font-mono text-xs text-muted">{session.sessionId}</div>
+                  <div className="mt-0.5 line-clamp-1 text-xs">
+                    {session.error ? <span className="text-danger">{session.error}</span> : session.output ? <span className="text-muted">{session.output.slice(0, 120)}</span> : session.nextStep?.member ? <span className="text-muted">next: {session.nextStep.member}</span> : null}
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-foreground">{session.task.member}</td>
                 <td className="px-4 py-3">
@@ -174,6 +177,9 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
                     <div className="truncate text-foreground">{session.task.prompt}</div>
                   )}
                   <div className="mt-0.5 font-mono text-xs text-muted">{session.sessionId}</div>
+                  <div className="mt-0.5 line-clamp-1 text-xs">
+                    {session.error ? <span className="text-danger">{session.error}</span> : session.output ? <span className="text-muted">{session.output.slice(0, 120)}</span> : session.nextStep?.member ? <span className="text-muted">next: {session.nextStep.member}</span> : null}
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-foreground">{session.task.member}</td>
                 <td className="px-4 py-3">
