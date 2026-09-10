@@ -16,6 +16,25 @@ function session(): Session {
 }
 
 describe("SessionInspector selectedNode", () => {
+  it("shows usage rollup in overview and token chips per reasoning step", () => {
+    const events = [
+      { type: "reasoning", correlationId: "cor-1", step: 0, member: "the-builder", content: "thinking", model: "muse", promptTokens: 12, completionTokens: 8, stepCost: 0.0025 },
+      { type: "tool.called", correlationId: "cor-1", name: "grep", args: {} },
+      { type: "tool.result", correlationId: "cor-1", durationMs: 700 },
+    ] as unknown as BridgeEvent[];
+    render(<SessionInspector open onClose={() => {}} session={session()} events={events} />);
+    const rollup = screen.getByLabelText("session usage");
+    expect(rollup).toBeDefined();
+    expect(rollup).toHaveTextContent("12 in tok");
+    expect(rollup).toHaveTextContent("8 out tok");
+    expect(rollup).toHaveTextContent("$0.0025");
+    expect(rollup).toHaveTextContent("1 tool calls · 0.7s");
+    expect(rollup).toHaveTextContent("muse");
+    fireEvent.click(screen.getByRole("button", { name: /^reasoning/ }));
+    expect(screen.getByText("12↗ 8↘")).toBeDefined();
+    expect(screen.getByText("$0.0025")).toBeDefined();
+  });
+
   it("renders reasoning node payload without session switch", () => {
     render(
       <SessionInspector

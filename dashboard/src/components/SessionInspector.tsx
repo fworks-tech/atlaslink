@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BridgeEvent, Session } from "@/lib/types";
-import { artifactsFor } from "@/lib/runProjection";
+import { artifactsFor, usageFor } from "@/lib/runProjection";
 import { pairTools } from "@/lib/eventPairing";
 import { Markdown } from "@/components/Markdown";
 import { NodeConfigPanel } from "@/components/NodeConfigPanel";
@@ -189,10 +189,15 @@ export function SessionInspector({
     setLastAutoId(selectedNode.id);
     setTab(tabForNodeType(selectedNode.type));
   }
+  const sessionEvents = session ? events.filter((e) => e.correlationId === session.correlationId) : [];
+  const toolPairs = session ? pairTools(sessionEvents) : [];
+  const usage = session ? usageFor(artifacts?.reasoning ?? [], sessionEvents) : null;
+  const fmtTokens = (n: number): string | null => (n > 0 ? n.toLocaleString() : null);
+  const fmtMs = (ms: number): string | null => (ms > 0 ? `${(ms / 1000).toFixed(1)}s` : null);
   const counts: Record<InspectorTab, number | null> = {
     overview: null,
     reasoning: artifacts ? artifacts.reasoning.length : null,
-    tools: session ? pairTools(events.filter((e) => e.correlationId === session.correlationId)).length : null,
+    tools: toolPairs.length,
     decisions: artifacts ? artifacts.decisions.length : null,
   };
   const activeTab = tab;
@@ -263,6 +268,15 @@ export function SessionInspector({
                 <div className="font-medium text-foreground break-words">{session.task.prompt}</div>
                 <div className="font-mono text-xs text-muted break-all">{session.sessionId}</div>
                 <div className="text-xs text-muted">status: {session.status} · {session.projectId ?? "no project"}</div>
+                {usage && (usage.promptTokens > 0 || usage.toolCalls > 0 || usage.models.length > 0) ? (
+                  <div className="flex flex-wrap gap-1.5 text-[11px]" aria-label="session usage">
+                    {fmtTokens(usage.promptTokens) && <span className="rounded bg-raised px-1.5 py-0.5 text-muted">{fmtTokens(usage.promptTokens)} in tok</span>}
+                    {fmtTokens(usage.completionTokens) && <span className="rounded bg-raised px-1.5 py-0.5 text-muted">{fmtTokens(usage.completionTokens)} out tok</span>}
+                    {usage.stepCost > 0 && <span className="rounded bg-accent/20 px-1.5 py-0.5 text-accent">${usage.stepCost.toFixed(4)}</span>}
+                    {usage.toolCalls > 0 && <span className="rounded bg-raised px-1.5 py-0.5 text-muted">{usage.toolCalls} tool calls{fmtMs(usage.toolMs) ? ` · ${fmtMs(usage.toolMs)}` : ""}</span>}
+                    {usage.models.length > 0 && <span className="rounded bg-raised px-1.5 py-0.5 font-mono text-muted">{usage.models.join(", ")}</span>}
+                  </div>
+                ) : null}
                 {session.output && <Markdown text={session.output} className="rounded bg-raised p-2 text-xs" />}
                 {session.error && <div className="rounded bg-danger/10 p-2 text-xs text-danger">{session.error}</div>}
               </div>
@@ -274,7 +288,14 @@ export function SessionInspector({
                 ) : (
                   artifacts.reasoning.map((e, i) => (
                     <div key={i} className="rounded border border-white/5 bg-raised/40 p-2">
-                      <div className="text-[11px] text-muted">step {String((e as Record<string, unknown>).step ?? i)} · {String(e.member ?? "")}</div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+                        <span>step {String((e as Record<string, unknown>).step ?? i)} · {String(e.member ?? "")}</span>
+                        {typeof (e as Record<string, unknown>).model === "string" && <span className="rounded bg-raised px-1.5 font-mono">{String((e as Record<string, unknown>).model)}</span>}
+                        {typeof (e as Record<string, unknown>).promptTokens === "number" || typeof (e as Record<string, unknown>).completionTokens === "number" ? (
+                          <span className="rounded bg-raised px-1.5">{String((e as Record<string, unknown>).promptTokens ?? 0)}↗ {String((e as Record<string, unknown>).completionTokens ?? 0)}↘</span>
+                        ) : null}
+                        {typeof (e as Record<string, unknown>).stepCost === "number" && ((e as Record<string, unknown>).stepCost as number) > 0 ? <span className="rounded bg-accent/20 px-1.5 text-accent">${((e as Record<string, unknown>).stepCost as number).toFixed(4)}</span> : null}
+                      </div>
                       <Markdown text={String((e as Record<string, unknown>).content ?? (e as Record<string, unknown>).text ?? JSON.stringify(e))} className="mt-1 text-xs leading-snug" />
                       {typeof (e as Record<string, unknown>).summary === "string" && (
                         <details className="mt-1">
@@ -289,12 +310,15 @@ export function SessionInspector({
             )}
             {activeTab === "tools" && (
               <div className="space-y-2">
-                {pairTools(events.filter((e) => e.correlationId === session.correlationId)).length === 0 ? (
+                {toolPairs.length === 0 ? (
                   <div className="text-xs text-muted">No tool calls yet.</div>
                 ) : (
-                  pairTools(events.filter((e) => e.correlationId === session.correlationId)).map((p, i) => (
+                  toolPairs.map((p, i) => (
                     <div key={i} className="rounded border border-white/5 bg-raised/40 p-2">
-                      <div className="text-xs font-medium text-foreground">{String(p.called.name ?? "tool")}</div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+                        <span className="text-xs font-medium text-foreground">{String(p.called.name ?? "tool")}</span>
+                        {p.latencyMs ? <span className="rounded bg-raised px-1.5">{(p.latencyMs / 1000).toFixed(1)}s</span> : null}
+                      </div>
                       <Clamped text={`args: ${JSON.stringify(p.called.args ?? p.called.arguments ?? "")}`} max={200} className="text-[11px] break-words text-muted" />
                       {p.result ? <Markdown text={String((p.result as Record<string, unknown>).output ?? (p.result as Record<string, unknown>).result ?? JSON.stringify(p.result))} className="mt-1 rounded bg-ok/5 p-1.5 text-xs" /> : <div className="text-xs text-amber-300">running…</div>}
                     </div>
