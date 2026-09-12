@@ -3,10 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { getCostHistory, type CostBucket } from "@/lib/api";
 
+const POLL_INTERVAL_MS = 5000;
+
 /**
  * Daily spend buckets from GET /cost/history. Same cold-start contract as
  * useSessions: the Render free tier answers wake-class failures while
- * spinning, so retry those instead of dead-ending on the first blip.
+ * spinning, so retry those instead of dead-ending on the first blip. Polls
+ * every 5s while the tab is visible so a session finishing in another window
+ * surfaces without a reload; a failed poll keeps the last good data instead
+ * of blanking the chart.
  */
 export function useCostHistory() {
   const [buckets, setBuckets] = useState<CostBucket[]>([]);
@@ -39,6 +44,37 @@ export function useCostHistory() {
     })();
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let inflight = false;
+    const tick = async () => {
+      if (cancelled || inflight || document.hidden) return;
+      inflight = true;
+      try {
+        const res = await getCostHistory();
+        if (cancelled) return;
+        setBuckets(res.buckets);
+        setSince(res.since);
+        setUntil(res.until);
+        setError(null);
+      } catch {
+        // a failed poll keeps the last good buckets — never blank on a blip
+      } finally {
+        inflight = false;
+      }
+    };
+    const id = window.setInterval(tick, POLL_INTERVAL_MS);
+    const onVisible = () => {
+      if (!document.hidden) void tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
