@@ -98,6 +98,47 @@ export function createTask(input: CreateTaskInput): Promise<CreateTaskResponse> 
   return fetchJSON<CreateTaskResponse>("/tasks", { method: "POST", body: JSON.stringify(input) });
 }
 
+export interface CostAgentRow {
+  agent: string;
+  promptTokens: number;
+  completionTokens: number;
+  stepCost: number;
+  models: string[];
+}
+
+export interface CostBucket {
+  day: string;
+  promptTokens: number;
+  completionTokens: number;
+  stepCost: number;
+  agents: CostAgentRow[];
+}
+
+export interface CostRollupResponse {
+  ok: boolean;
+  breakdown: CostAgentRow[];
+  total: { promptTokens: number; completionTokens: number; stepCost: number };
+}
+
+export interface CostHistoryResponse {
+  ok: boolean;
+  since: string;
+  until: string;
+  buckets: CostBucket[];
+}
+
+export function getCost(): Promise<CostRollupResponse> {
+  return fetchJSON<CostRollupResponse>("/cost");
+}
+
+export function getCostHistory(since?: string, until?: string): Promise<CostHistoryResponse> {
+  const params = new URLSearchParams();
+  if (since) params.set("since", since);
+  if (until) params.set("until", until);
+  const qs = params.toString();
+  return fetchJSON<CostHistoryResponse>(qs ? `/cost/history?${qs}` : "/cost/history");
+}
+
 export function listProjects(): Promise<ProjectListResponse> {
   return fetchJSON<ProjectListResponse>("/projects");
 }

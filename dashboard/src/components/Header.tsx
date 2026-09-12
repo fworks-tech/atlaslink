@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { track } from "@vercel/analytics";
 import { Burger, Drawer, Group, Stack } from "@mantine/core";
+import { getCost } from "@/lib/api";
 
 interface NavLink {
   href: string;
@@ -30,11 +31,8 @@ export default function Header() {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await fetch("/api/cost", { cache: "no-store" });
-        if (res.ok) {
-          const { total } = await res.json();
-          setCostTotal(total.stepCost > 0 ? `$${total.stepCost.toFixed(2)}` : "—");
-        }
+        const { total } = await getCost();
+        setCostTotal(total.stepCost > 0 ? `$${total.stepCost.toFixed(2)}` : "—");
       } catch {
         setCostTotal("—");
       }
