@@ -35,7 +35,7 @@ function HistoryChart({ buckets }: { buckets: CostBucket[] }) {
               <div
                 key={a.agent}
                 style={{ height: `${max > 0 && a.stepCost > 0 ? Math.max(2, (a.stepCost / max) * 100) : 0}%`, backgroundColor: colorFor(a.agent) }}
-                className="w-full first:rounded-t"
+                className="w-full last:rounded-t"
               />
             ))}
           </div>

@@ -110,7 +110,7 @@ export const sqliteMigrations: Migration[] = [
         model TEXT NOT NULL DEFAULT '',
         prompt_tokens BIGINT NOT NULL DEFAULT 0,
         completion_tokens BIGINT NOT NULL DEFAULT 0,
-        step_cost REAL NOT NULL DEFAULT 0,
+        step_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
         PRIMARY KEY (tenant_id, day, agent, model)
       );
     `,
