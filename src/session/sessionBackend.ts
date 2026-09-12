@@ -20,6 +20,22 @@ export interface SessionList {
   total: number
 }
 
+/** One increment row for the durable daily cost counter (migration 6). */
+export interface CostUsageRow {
+  /** UTC calendar day, YYYY-MM-DD. */
+  day: string
+  agent: string
+  model: string
+  promptTokens: number
+  completionTokens: number
+  stepCost: number
+}
+
+export interface DailyCostFilter {
+  since?: string
+  until?: string
+}
+
 /**
  * Implementations must keep the version check and the event commit atomic —
  * no `await` between reading the current version and appending — or two
@@ -50,4 +66,12 @@ export interface SessionBackend {
   saveCheckpoint(id: string, sessionId: string, data: string): Promise<void>
   loadCheckpoint(id: string): Promise<{ sessionId: string; data: string } | null>
   deleteCheckpoint(id: string): Promise<void>
+  /**
+   * Durable daily cost counter (migration 6): increment-upsert one reasoning
+   * mirror row's spend, scoped to the backend's tenant. Backends that cannot
+   * persist (in-memory/file) keep it alongside their other volatile state.
+   */
+  recordCostUsage(row: CostUsageRow): Promise<void>
+  /** Exact per-day/agent/model rows for the caller's tenant, day ascending. */
+  listDailyCost(filter: DailyCostFilter): Promise<CostUsageRow[]>
 }

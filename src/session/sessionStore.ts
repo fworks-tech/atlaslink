@@ -1,6 +1,6 @@
 import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project } from './types'
 import { StreamIntegrityError, VersionConflictError, firstQuestionLabel } from './types'
-import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
+import type { SessionBackend, SessionFilter, SessionList, CostUsageRow, DailyCostFilter } from './sessionBackend'
 import { deepFreeze } from './deepFreeze'
 import { DEFAULT_TENANT_ID } from './migrations'
 
@@ -20,6 +20,7 @@ interface SharedStore {
   snapshots: Map<string, SessionSnapshot>
   projects: Map<string, Project>
   checkpoints: Map<string, { sessionId: string; data: string }>
+  costUsage: Map<string, CostUsageRow & { tenant: string }>
 }
 
 export { StreamIntegrityError, VersionConflictError }
@@ -169,6 +170,7 @@ export class SessionStore implements SessionBackend {
   private readonly _snapshots: Map<string, SessionSnapshot>
   private readonly _projects: Map<string, Project>
   private readonly _checkpoints: Map<string, { sessionId: string; data: string }>
+  private readonly _costUsage: Map<string, CostUsageRow & { tenant: string }>
   private readonly _tenantId: string
 
   constructor(tenantId: string = DEFAULT_TENANT_ID, shared?: SharedStore) {
@@ -179,12 +181,14 @@ export class SessionStore implements SessionBackend {
       this._snapshots = shared.snapshots
       this._projects = shared.projects
       this._checkpoints = shared.checkpoints
+      this._costUsage = shared.costUsage
     } else {
       this._events = new Map<string, SessionEvent[]>()
       this._versions = new Map<string, number>()
       this._snapshots = new Map<string, SessionSnapshot>()
       this._projects = new Map<string, Project>()
       this._checkpoints = new Map<string, { sessionId: string; data: string }>()
+      this._costUsage = new Map<string, CostUsageRow & { tenant: string }>()
     }
   }
 
@@ -196,6 +200,7 @@ export class SessionStore implements SessionBackend {
       snapshots: this._snapshots,
       projects: this._projects,
       checkpoints: this._checkpoints,
+      costUsage: this._costUsage,
     })
   }
 
@@ -324,5 +329,26 @@ export class SessionStore implements SessionBackend {
 
   async deleteCheckpoint(id: string): Promise<void> {
     this._checkpoints.delete(`${this._tenantId}:${id}`)
+  }
+
+  async recordCostUsage(row: CostUsageRow): Promise<void> {
+    const key = `${this._tenantId}:${row.day}:${row.agent}:${row.model}`
+    const prev = this._costUsage.get(key)
+    if (prev) {
+      prev.promptTokens += row.promptTokens
+      prev.completionTokens += row.completionTokens
+      prev.stepCost += row.stepCost
+    } else {
+      this._costUsage.set(key, { tenant: this._tenantId, ...row })
+    }
+  }
+
+  async listDailyCost(filter: DailyCostFilter): Promise<CostUsageRow[]> {
+    return [...this._costUsage.values()]
+      .filter((r) => r.tenant === this._tenantId
+        && (filter.since === undefined || r.day >= filter.since)
+        && (filter.until === undefined || r.day <= filter.until))
+      .sort((a, b) => (a.day < b.day ? -1 : 1))
+      .map((r) => ({ day: r.day, agent: r.agent, model: r.model, promptTokens: r.promptTokens, completionTokens: r.completionTokens, stepCost: r.stepCost }))
   }
 }

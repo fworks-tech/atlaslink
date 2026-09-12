@@ -1,7 +1,7 @@
 import { EventLogStore } from '../bridge/EventLogStore'
 import { rehydrate, filterSessions } from './sessionStore'
 import { deepFreeze } from './deepFreeze'
-import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
+import type { SessionBackend, SessionFilter, SessionList, CostUsageRow, DailyCostFilter } from './sessionBackend'
 import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project } from './types'
 import { VersionConflictError } from './types'
 import { DEFAULT_TENANT_ID } from './migrations'
@@ -47,8 +47,10 @@ export class EventLogBackend implements SessionBackend {
   private readonly _tenantId: string
   /** Checkpoints ride in memory only — same durability as this backend's projects. */
   private readonly _checkpoints: Map<string, { sessionId: string; data: string }>
+  /** Cost counters ride in memory only — same durability as this backend's projects. */
+  private readonly _costUsage: Map<string, CostUsageRow & { tenant: string }>
 
-  constructor(log: EventLogStore, tenantId: string = DEFAULT_TENANT_ID, shared?: { snapshots: Map<string, SessionSnapshot>; versions: Map<string, number>; projects: Map<string, Project>; deletedProjects: Set<string>; checkpoints: Map<string, { sessionId: string; data: string }> }) {
+  constructor(log: EventLogStore, tenantId: string = DEFAULT_TENANT_ID, shared?: { snapshots: Map<string, SessionSnapshot>; versions: Map<string, number>; projects: Map<string, Project>; deletedProjects: Set<string>; checkpoints: Map<string, { sessionId: string; data: string }>; costUsage: Map<string, CostUsageRow & { tenant: string }> }) {
     this.log = log
     this._tenantId = tenantId
     if (shared) {
@@ -57,12 +59,14 @@ export class EventLogBackend implements SessionBackend {
       this._projects = shared.projects
       this._deletedProjects = shared.deletedProjects
       this._checkpoints = shared.checkpoints
+      this._costUsage = shared.costUsage
     } else {
       this._snapshots = new Map<string, SessionSnapshot>()
       this._versions = new Map<string, number>()
       this._projects = new Map<string, Project>()
       this._deletedProjects = new Set<string>()
       this._checkpoints = new Map<string, { sessionId: string; data: string }>()
+      this._costUsage = new Map<string, CostUsageRow & { tenant: string }>()
     }
   }
 
@@ -74,6 +78,7 @@ export class EventLogBackend implements SessionBackend {
       projects: this._projects,
       deletedProjects: this._deletedProjects,
       checkpoints: this._checkpoints,
+      costUsage: this._costUsage,
     })
   }
 
@@ -251,6 +256,27 @@ export class EventLogBackend implements SessionBackend {
 
   async deleteCheckpoint(id: string): Promise<void> {
     this._checkpoints.delete(`${this._tenantId}:${id}`)
+  }
+
+  async recordCostUsage(row: CostUsageRow): Promise<void> {
+    const key = `${this._tenantId}:${row.day}:${row.agent}:${row.model}`
+    const prev = this._costUsage.get(key)
+    if (prev) {
+      prev.promptTokens += row.promptTokens
+      prev.completionTokens += row.completionTokens
+      prev.stepCost += row.stepCost
+    } else {
+      this._costUsage.set(key, { tenant: this._tenantId, ...row })
+    }
+  }
+
+  async listDailyCost(filter: DailyCostFilter): Promise<CostUsageRow[]> {
+    return [...this._costUsage.values()]
+      .filter((r) => r.tenant === this._tenantId
+        && (filter.since === undefined || r.day >= filter.since)
+        && (filter.until === undefined || r.day <= filter.until))
+      .sort((a, b) => (a.day < b.day ? -1 : 1))
+      .map((r) => ({ day: r.day, agent: r.agent, model: r.model, promptTokens: r.promptTokens, completionTokens: r.completionTokens, stepCost: r.stepCost }))
   }
 
   private _deletedMarker(sessionId: string): number {

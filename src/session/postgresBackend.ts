@@ -2,7 +2,7 @@ import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, Dur
 import { VersionConflictError } from './types'
 import { rehydrate } from './sessionStore'
 import { deepFreeze } from './deepFreeze'
-import type { SessionBackend, SessionFilter, SessionList } from './sessionBackend'
+import type { SessionBackend, SessionFilter, SessionList, CostUsageRow, DailyCostFilter } from './sessionBackend'
 import type { Db } from './db'
 import { isUniqueViolation } from './db'
 import { DEFAULT_TENANT_ID } from './migrations'
@@ -468,6 +468,44 @@ export class PostgresBackend implements SessionBackend {
       this.#tenantId,
       id,
     ])
+  }
+
+  async recordCostUsage(row: CostUsageRow): Promise<void> {
+    await this.#db.query(
+      `INSERT INTO daily_cost_buckets (tenant_id, day, agent, model, prompt_tokens, completion_tokens, step_cost)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (tenant_id, day, agent, model) DO UPDATE SET
+         prompt_tokens = daily_cost_buckets.prompt_tokens + EXCLUDED.prompt_tokens,
+         completion_tokens = daily_cost_buckets.completion_tokens + EXCLUDED.completion_tokens,
+         step_cost = daily_cost_buckets.step_cost + EXCLUDED.step_cost`,
+      [this.#tenantId, row.day, row.agent, row.model, row.promptTokens, row.completionTokens, row.stepCost]
+    )
+  }
+
+  async listDailyCost(filter: DailyCostFilter): Promise<CostUsageRow[]> {
+    const { rows } = await this.#db.query<{
+      day: string
+      agent: string
+      model: string
+      prompt_tokens: number
+      completion_tokens: number
+      step_cost: number
+    }>(
+      `SELECT day, agent, model, prompt_tokens, completion_tokens, step_cost FROM daily_cost_buckets
+       WHERE tenant_id = $1
+         AND ($2 IS NULL OR day >= $2)
+         AND ($3 IS NULL OR day <= $3)
+       ORDER BY day ASC`,
+      [this.#tenantId, filter.since ?? null, filter.until ?? null]
+    )
+    return rows.map((r) => ({
+      day: r.day,
+      agent: r.agent,
+      model: r.model,
+      promptTokens: r.prompt_tokens,
+      completionTokens: r.completion_tokens,
+      stepCost: r.step_cost,
+    }))
   }
 }
 
