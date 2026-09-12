@@ -16,6 +16,7 @@ const steerMock = vi.fn();
 const cancelMock = vi.fn();
 const presenceMock = vi.fn();
 const hydrateMock = vi.fn();
+const createMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush, replace: routerReplace }),
@@ -40,12 +41,18 @@ vi.mock("@/hooks/useRoomPresence", () => ({
 
 vi.mock("@/lib/api", () => ({
   ApiError: class ApiError extends Error {
-    constructor(public readonly status: number) { super(`status ${status}`) }
+    constructor(
+      public readonly status: number,
+      message: string,
+    ) {
+      super(message)
+    }
   },
   replyToSession: (...args: unknown[]) => replyMock(...args),
   sendChatMessage: (...args: unknown[]) => chatMock(...args),
   steerSession: (...args: unknown[]) => steerMock(...args),
   cancelSession: (...args: unknown[]) => cancelMock(...args),
+  createTask: (...args: unknown[]) => createMock(...args),
 }));
 
 vi.mock("@/components/ApprovalInbox", () => ({
@@ -490,6 +497,40 @@ describe("HomeClient room wiring", () => {
     const inspector = screen.getByTestId("inspector");
     expect(inspector.getAttribute("data-session")).toBe("");
     expect(inspector.getAttribute("data-loading")).toBe("false");
+  });
+
+  it("shows the gone banner and a start-over CTA when a shared 404 hydrates", async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-dead"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    sessionsMock.mockReturnValue({ sessions: [], loading: false, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
+    eventsMock.mockReturnValue({ events: [] });
+    hydrateMock.mockRejectedValue(new (await import("@/lib/api")).ApiError(404, "gone"));
+    render(<HomeClient />);
+    await vi.waitFor(() => expect(screen.getByText(/no longer available/)).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "Start a new session" }));
+    expect(routerPush).toHaveBeenCalledWith("/");
+  });
+
+  it("dismiss hides the sessions error banner until reload", async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    sessionsMock.mockReturnValue({ sessions: [], loading: false, error: "boom", refresh: refreshMock, hydrateSession: hydrateMock });
+    eventsMock.mockReturnValue({ events: [] });
+    render(<HomeClient />);
+    expect(screen.getByText(/Couldn't load sessions/)).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/Couldn't load sessions/)).toBeNull();
+  });
+
+  it("resume spawns a follow-up with the same member and prompt", async () => {
+    seedRoom("session=ses-7");
+    createMock.mockResolvedValue({ ok: true, session: { sessionId: "ses-8", projectId: "p-1" } });
+    render(<HomeClient />);
+    fireEvent.click(screen.getByRole("button", { name: "Resume this session" }));
+    await vi.waitFor(() => expect(createMock).toHaveBeenCalledWith({ member: "the-builder", prompt: "done work" }));
+    await vi.waitFor(() => expect(routerPush).toHaveBeenCalledWith("/project/p-1/session/ses-8"));
   });
 
   it("marks inspector context loading while the list loads", () => {

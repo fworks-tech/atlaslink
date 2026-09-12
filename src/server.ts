@@ -21,6 +21,7 @@ import type { SessionDelta, AskHumanQuestion } from './session/types'
 import type { BridgeEnvelope } from './bridge/EventLogStore'
 import { VersionConflictError } from './session/types'
 import { registerTaskRoutes } from './api/tasks'
+import { registerCostRoutes } from './api/cost'
 import { registerProjectRoutes } from './api/projects'
 import { registerRoomRoutes } from './api/room'
 import { registerTokenGate, registerAuthGate } from './api/auth'
@@ -272,6 +273,9 @@ export async function createAppServer(params: {
 
     // --- M3 Task API (spec §3/§7): token-gated, store-backed, queue-driven ---
     registerTaskRoutes(api, { backend, registry, queue, sse })
+
+    // --- Cost rollup (#168): derived from full-text reasoning mirrors ---
+    registerCostRoutes(api, { backend })
 
     // --- M5 room channel (spec §5): WS per-session room, same gate ---
     registerRoomRoutes(api, { backend, registry, queue, broadcaster: sse.broadcaster, log })
