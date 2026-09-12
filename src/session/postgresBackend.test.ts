@@ -146,7 +146,7 @@ test('migrations apply once and are idempotent on a fresh database', async () =>
   const { rows: tables } = await adapter.query<{ name: string }>(
     `SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name`
   )
-  assert.deepEqual(tables.map((t) => t.name), ['api_keys', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
+  assert.deepEqual(tables.map((t) => t.name), ['api_keys', 'daily_cost_buckets', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
 })
 
 async function tableNames(adapter: Db): Promise<string[]> {
@@ -179,6 +179,9 @@ async function seedEveryTable(adapter: Db): Promise<void> {
   await adapter.query(
     `INSERT INTO run_checkpoints (tenant_id, id, session_id, data, updated_at) VALUES ('default', 'cor-1', 'ses-1', '{}', now())`
   )
+  await adapter.query(
+    `INSERT INTO daily_cost_buckets (tenant_id, day, agent, model, prompt_tokens, completion_tokens, step_cost) VALUES ('default', '2026-09-10', 'the-builder', 'm1', 10, 4, 0.002)`
+  )
 }
 
 test('rollback to zero drops every table and the ledger, then ups re-apply cleanly', async () => {
@@ -194,10 +197,10 @@ test('rollback to zero drops every table and the ledger, then ups re-apply clean
 
   await runMigrations(adapter)
   assert.deepEqual(await appliedVersions(adapter), migrations.map((m) => m.version))
-  assert.deepEqual(await tableNames(adapter), ['api_keys', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
+  assert.deepEqual(await tableNames(adapter), ['api_keys', 'daily_cost_buckets', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
 })
 
-test('rollback to 3 keeps v1-3 and drops v4-5', async () => {
+test('rollback to 3 keeps v1-3 and drops v4-6', async () => {
   const db = new PGlite()
   const adapter = new PgliteDb(db)
   await runMigrations(adapter)
@@ -216,7 +219,7 @@ test('rollback refuses a negative target and no-ops at or below the applied vers
   await assert.rejects(rollbackMigrations(adapter, -1))
   await rollbackMigrations(adapter, 99)
   assert.deepEqual(await appliedVersions(adapter), migrations.map((m) => m.version))
-  assert.deepEqual(await tableNames(adapter), ['api_keys', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
+  assert.deepEqual(await tableNames(adapter), ['api_keys', 'daily_cost_buckets', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
 })
 
 test('session events persist across backend instances (durability over the same database)', async () => {

@@ -384,5 +384,29 @@ export async function backendContract(name: string, create: () => Promise<Sessio
       assert.equal(await other.loadCheckpoint('cor-t'), null)
       assert.ok(await store.loadCheckpoint('cor-t'))
     })
+
+    await test('cost usage accumulates per day/agent/model and lists day-ascending', async () => {
+      const store = await create()
+      assert.deepEqual(await store.listDailyCost({}), [])
+      await store.recordCostUsage({ day: '2026-09-11', agent: 'the-builder', model: 'm1', promptTokens: 20, completionTokens: 8, stepCost: 0.004 })
+      await store.recordCostUsage({ day: '2026-09-10', agent: 'the-builder', model: 'm1', promptTokens: 10, completionTokens: 4, stepCost: 0.002 })
+      await store.recordCostUsage({ day: '2026-09-10', agent: 'the-builder', model: 'm1', promptTokens: 1, completionTokens: 1, stepCost: 0.001 })
+      assert.deepEqual(await store.listDailyCost({}), [
+        { day: '2026-09-10', agent: 'the-builder', model: 'm1', promptTokens: 11, completionTokens: 5, stepCost: 0.003 },
+        { day: '2026-09-11', agent: 'the-builder', model: 'm1', promptTokens: 20, completionTokens: 8, stepCost: 0.004 },
+      ])
+    })
+
+    await test('cost usage filters by day window and stays tenant-scoped', async () => {
+      const store = await create()
+      await store.recordCostUsage({ day: '2026-09-10', agent: 'm', model: '', promptTokens: 1, completionTokens: 1, stepCost: 0.001 })
+      await store.recordCostUsage({ day: '2026-09-12', agent: 'm', model: '', promptTokens: 3, completionTokens: 1, stepCost: 0.001 })
+      assert.equal((await store.listDailyCost({ since: '2026-09-11' })).length, 1)
+      assert.equal((await store.listDailyCost({ until: '2026-09-10' }))[0].day, '2026-09-10')
+      const other = store.withTenant('other-tenant')
+      assert.deepEqual(await other.listDailyCost({}), [])
+      await other.recordCostUsage({ day: '2026-09-10', agent: 'm', model: '', promptTokens: 9, completionTokens: 9, stepCost: 0.009 })
+      assert.equal((await store.listDailyCost({}))[0].promptTokens, 1)
+    })
   })
 }

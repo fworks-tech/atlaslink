@@ -12,7 +12,8 @@ import { EventLogStore } from './bridge/EventLogStore'
 import { EventBroadcaster } from './bridge/EventBroadcaster'
 import { SessionQueue } from './bridge/SessionQueue'
 import { SseHandler } from './bridge/sseEndpoint'
-import { createSessionBackend } from './session/backendFactory'
+import { createSessionBackend, backendForTenant, DEFAULT_TENANT_ID } from './session/backendFactory'
+import { costUsageOf } from './session/costUsage'
 import { PostgresBackend } from './session/postgresBackend'
 import { SessionStore } from './session/sessionStore'
 import { AtlasCheckpointStore, checkpointIdFor } from './session/checkpointStore'
@@ -345,6 +346,11 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
         // pending member mirror must never race a session.succeeded/failed
         // commit, whose conflict the mirror helper silently drops
         let memberMirror = Promise.resolve()
+        // one aggregate read per run resolves the tenant for the cost
+        // counter; the per-event chain below stays write-only
+        const costSeed = await backend.get(sessionId).catch(() => null)
+        const costBackend = backendForTenant(backend, costSeed?.tenantId ?? DEFAULT_TENANT_ID)
+        const costFallbackDay = costSeed?.createdAt
         try {
           await mirror({ type: 'session.running', correlationId: session.correlationId, at: at() })
           let resume = session.resume
@@ -380,6 +386,12 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
                       payload: event as unknown as Record<string, unknown>,
                     })
                   )
+                  // spend happened even when the event mirror conflict-drops,
+                  // so the counter records independently of the mirror result
+                  .then(() => {
+                    const usage = costUsageOf(event as unknown as Record<string, unknown>, costFallbackDay)
+                    return usage ? costBackend.recordCostUsage(usage).catch(() => undefined) : undefined
+                  })
                   .catch(() => {})
               }
             },

@@ -114,6 +114,23 @@ export const migrations: Migration[] = [
     `,
     down: `DROP TABLE run_checkpoints;`,
   },
+  {
+    version: 6,
+    name: 'daily_cost_buckets',
+    up: `
+      CREATE TABLE daily_cost_buckets (
+        tenant_id TEXT NOT NULL,
+        day TEXT NOT NULL,
+        agent TEXT NOT NULL,
+        model TEXT NOT NULL DEFAULT '',
+        prompt_tokens BIGINT NOT NULL DEFAULT 0,
+        completion_tokens BIGINT NOT NULL DEFAULT 0,
+        step_cost REAL NOT NULL DEFAULT 0,
+        PRIMARY KEY (tenant_id, day, agent, model)
+      );
+    `,
+    down: `DROP TABLE daily_cost_buckets;`,
+  },
 ]
 
 // Advisory lock key serializing the migrate loop across processes; two daemons
