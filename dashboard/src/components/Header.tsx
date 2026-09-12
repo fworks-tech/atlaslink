@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { track } from "@vercel/analytics";
 import { Burger, Drawer, Group, Stack } from "@mantine/core";
 
@@ -26,6 +26,21 @@ export default function Header() {
     }
   }, []);
 
+  const [costTotal, setCostTotal] = useState<string>("—");
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/cost", { cache: "no-store" });
+        if (res.ok) {
+          const { total } = await res.json();
+          setCostTotal(total.stepCost > 0 ? `$${total.stepCost.toFixed(2)}` : "—");
+        }
+      } catch {
+        setCostTotal("—");
+      }
+    })();
+  }, []);
+
   return (
     <nav className="border-b border-zinc-800">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
@@ -38,6 +53,9 @@ export default function Header() {
         </Link>
 
         <Group visibleFrom="md" gap="lg" c="dimmed" fz="sm">
+          <Link href="/cost" className="text-sm font-medium text-accent" onClick={() => trackNav("cost")}>
+            {costTotal}
+          </Link>
           {navLinks.map((link) =>
             link.external ? (
               <a
