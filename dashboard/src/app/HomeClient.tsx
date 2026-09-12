@@ -246,7 +246,7 @@ function HomeInner() {
     } finally {
       setResumeBusy(false);
     }
-  }, [selectedSession, mode, router, refreshSessions]);
+  }, [selectedSession, router, refreshSessions]);
 
   return (
     <div className="flex min-h-[60vh] flex-1 overflow-hidden">

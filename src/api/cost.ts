@@ -7,6 +7,8 @@ import { tenantBackendForRequest } from './tenant'
  * LLM spend rollup from durable member.event mirrors (issue #168). Reasoning
  * payloads carry model/promptTokens/completionTokens/stepCost, so the cost
  * surface is derived, never stored — recompute from the store on read.
+ * The store caps memberEvents at the last 300 per session, so this totals a
+ * floor, not the full history — true lifetime sums need a bucketed counter.
  */
 
 const LIST_LIMIT = 500
