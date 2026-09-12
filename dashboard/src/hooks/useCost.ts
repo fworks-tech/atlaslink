@@ -9,9 +9,13 @@ interface CostTotal {
   stepCost: number;
 }
 
+const POLL_INTERVAL_MS = 5000;
+
 /**
  * Lifetime rollup from GET /cost. Same cold-start retry contract as
- * useSessions — shares the shape, not the fetcher.
+ * useSessions — shares the shape, not the fetcher. Polls every 5s while the
+ * tab is visible so a session finishing in another window surfaces without a
+ * reload; a failed poll keeps the last good data instead of blanking the UI.
  */
 export function useCost() {
   const [breakdown, setBreakdown] = useState<CostAgentRow[]>([]);
@@ -42,6 +46,36 @@ export function useCost() {
     })();
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let inflight = false;
+    const tick = async () => {
+      if (cancelled || inflight || document.hidden) return;
+      inflight = true;
+      try {
+        const res = await getCost();
+        if (cancelled) return;
+        setBreakdown(res.breakdown);
+        setTotal(res.total);
+        setError(null);
+      } catch {
+        // a failed poll keeps the last good rollup — never blank on a blip
+      } finally {
+        inflight = false;
+      }
+    };
+    const id = window.setInterval(tick, POLL_INTERVAL_MS);
+    const onVisible = () => {
+      if (!document.hidden) void tick();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, []);
 
