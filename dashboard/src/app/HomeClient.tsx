@@ -17,7 +17,7 @@ import { useDraftFlow } from "@/hooks/useDraftFlow";
 import type { AgentConfig } from "@/lib/config";
 import { useEvents } from "@/hooks/useEvents";
 import { decodeShareLink, encodeShareLink, canonicalUrl } from "@/lib/shareLink";
-import { replyToSession, steerSession, cancelSession, ApiError } from "@/lib/api";
+import { replyToSession, steerSession, cancelSession, createTask, ApiError } from "@/lib/api";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
 import type { GraphMode } from "@/lib/graph";
 import type { BridgeEvent } from "@/lib/types";
@@ -92,10 +92,13 @@ function HomeInner() {
   // A 404 means the shared id no longer exists (Render's ephemeral disk
   // wipes SQLite on every restart) — the page must say so once instead of
   // letting hydrate failures bounce generic reload hints forever.
+  const [dismissedSessionsError, setDismissedSessionsError] = useState(false);
   const [sharedSessionGoneId, setSharedSessionGoneId] = useState<string | null>(null);
   useEffect(() => {
     if (!selectedSessionId || selectedSession || sessionsLoading) return;
     hydrateSession(selectedSessionId).catch((err) => {
+      // hydrateSession records non-404 failures in the sessions error state;
+      // a 404 here means the shared id no longer exists
       if (err instanceof ApiError && err.status === 404) setSharedSessionGoneId(selectedSessionId);
     });
   }, [selectedSessionId, selectedSession, sessionsLoading, hydrateSession]);
@@ -221,6 +224,30 @@ function HomeInner() {
     }
   }, [selectedSessionId, refreshSessions]);
 
+  const [resumeBusy, setResumeBusy] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
+  // Spin up a follow-up carrying the same member/prompt/project/provider
+  // instead of making pasted-prompt surgery on a terminal corpse.
+  const handleResume = useCallback(async () => {
+    if (!selectedSession) return;
+    setResumeBusy(true);
+    setResumeError(null);
+    try {
+      const res = await createTask({
+        member: selectedSession.task.member,
+        prompt: selectedSession.task.prompt,
+        ...(selectedSession.projectId !== undefined ? { projectId: selectedSession.projectId } : {}),
+        ...(selectedSession.tweaks !== undefined ? { tweaks: selectedSession.tweaks } : {}),
+      });
+      router.push(res.session.projectId ? canonicalUrl(res.session.projectId, res.session.sessionId) : `/`);
+      await refreshSessions();
+    } catch (e) {
+      setResumeError(e instanceof Error ? e.message : "Could not resume — start a new session instead.");
+    } finally {
+      setResumeBusy(false);
+    }
+  }, [selectedSession, mode, router, refreshSessions]);
+
   return (
     <div className="flex min-h-[60vh] flex-1 overflow-hidden">
       {mobileSidebarOpen && (
@@ -312,14 +339,16 @@ function HomeInner() {
             </header>
             {sharedSessionGone ? (
               <div role="alert" className="mb-4 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">
-                The shared session is no longer available — backend storage was reset on the last restart. Start a new session instead.
+                The shared session is no longer available — backend storage was reset on the last restart.{" "}
+                <button type="button" onClick={() => router.push("/")} className="underline hover:text-white">Start a new session</button>
               </div>
-            ) : sessionsError && !selectedSession ? (
+            ) : sessionsError && !selectedSession && !dismissedSessionsError ? (
               <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">
                 <span className="flex flex-wrap items-center gap-2">
                   {sessionsError.includes("Server is starting") ? "Backend is waking — retrying automatically…" : `Couldn't load sessions (${sessionsError}).`}
                 </span>
                 <button type="button" onClick={() => void refreshSessions()} className="underline hover:text-red-200">Retry</button>
+                <button type="button" onClick={() => setDismissedSessionsError(true)} className="ml-2 underline hover:text-green-400">Dismiss</button>
               </div>
             ) : null}
             <div className="space-y-6">
@@ -374,8 +403,13 @@ function HomeInner() {
                       instead of a type-then-fail loop */}
                   <div className="mt-3 text-sm text-muted">
                     This session has ended
-                    {selectedSession ? ` (${selectedSession.status})` : ""}. Start a new session to continue the conversation.
+                    {selectedSession ? ` (${selectedSession.status})` : ""}. Resume it with the same member and
+                    prompt, or start a new session to continue the conversation.
                   </div>
+                  <button type="button" onClick={() => void handleResume()} disabled={resumeBusy || !selectedSession} className="mt-3 rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">
+                    {resumeBusy ? "Resuming…" : "Resume this session"}
+                  </button>
+                  {resumeError ? <div role="alert" className="mt-2 text-xs text-red-400">{resumeError}</div> : null}
                 </div>
               ) : null}
             </div>
