@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { renderHook, waitFor, cleanup, act } from "@testing-library/react";
+import { renderHook, cleanup, act } from "@testing-library/react";
 import { useCost } from "./useCost";
 
 describe("useCost", () => {
@@ -71,5 +71,16 @@ describe("useCost", () => {
     await act(async () => { vi.advanceTimersByTime(5000); await Promise.resolve(); });
     expect(result.current.total.stepCost).toBe(0.002);
     expect(result.current.error).toBeNull();
+  });
+
+  it("loads once but never polls when poll is false", async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(rollup), { status: 200, headers: { "Content-Type": "application/json" } })) as unknown as typeof fetch;
+    const { result } = renderHook(() => useCost({ poll: false }));
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.loading).toBe(false);
+    expect(result.current.total.stepCost).toBe(0.002);
+    const callsBefore = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length;
+    await act(async () => { vi.advanceTimersByTime(15000); await Promise.resolve(); });
+    expect((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(callsBefore);
   });
 });
