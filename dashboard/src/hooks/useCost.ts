@@ -16,8 +16,10 @@ const POLL_INTERVAL_MS = 5000;
  * useSessions — shares the shape, not the fetcher. Polls every 5s while the
  * tab is visible so a session finishing in another window surfaces without a
  * reload; a failed poll keeps the last good data instead of blanking the UI.
+ * Pass { poll: false } when another mounted component already polls the same
+ * endpoint (the header does this on /cost) so two intervals never overlap.
  */
-export function useCost() {
+export function useCost({ poll = true }: { poll?: boolean } = {}) {
   const [breakdown, setBreakdown] = useState<CostAgentRow[]>([]);
   const [total, setTotal] = useState<CostTotal>({ promptTokens: 0, completionTokens: 0, stepCost: 0 });
   const [loading, setLoading] = useState(true);
@@ -50,6 +52,7 @@ export function useCost() {
   }, []);
 
   useEffect(() => {
+    if (!poll) return;
     let cancelled = false;
     let inflight = false;
     const tick = async () => {
@@ -77,7 +80,7 @@ export function useCost() {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, []);
+  }, [poll]);
 
   const refresh = useCallback(async () => {
     try {

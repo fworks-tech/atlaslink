@@ -568,3 +568,27 @@ describe("HomeClient room wiring", () => {
     }
   });
 });
+
+describe("HomeClient mobile header", () => {
+  it("does not render the page-level sticky mobile bar when the sidebar is hidden", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(screen.queryByLabelText("Toggle navigation")).toBeNull();
+    expect(screen.queryByLabelText("Close navigation")).toBeNull();
+    expect(screen.queryByText("Atlaslink")).toBeNull();
+  });
+
+  it("exposes page hooks distinct from the global header", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(screen.getByTestId("home-content")).toBeDefined();
+    expect(screen.getByTestId("home-main")).toBeDefined();
+    expect(screen.queryByTestId("mobile-header")).toBeNull();
+  });
+
+  it("does not render the hidden sidebar aside", () => {
+    seedRoom("session=ses-1");
+    const { container } = render(<HomeClient />);
+    expect(container.querySelector("#sidebar")).toBeNull();
+  });
+});

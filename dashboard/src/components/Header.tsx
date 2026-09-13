@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { usePathname } from "next/navigation";
 import { track } from "@vercel/analytics";
 import { Burger, Drawer, Group, Stack } from "@mantine/core";
-import { getCost } from "@/lib/api";
+import { useCost } from "@/hooks/useCost";
 
 interface NavLink {
   href: string;
@@ -27,17 +28,13 @@ export default function Header() {
     }
   }, []);
 
-  const [costTotal, setCostTotal] = useState<string>("—");
-  useEffect(() => {
-    void (async () => {
-      try {
-        const { total } = await getCost();
-        setCostTotal(total.stepCost > 0 ? `$${total.stepCost.toFixed(2)}` : "—");
-      } catch {
-        setCostTotal("—");
-      }
-    })();
-  }, []);
+  const pathname = usePathname();
+  // the /cost page already polls useCost + useCostHistory — skip a second
+  // interval there so the header never duplicates pollers on that route
+  const { total } = useCost({ poll: pathname !== "/cost" });
+  // compact on purpose: the badge keeps 2 decimals while /cost shows 4 —
+  // intentional precision split, the header stays narrow on small screens
+  const costTotal = total.stepCost > 0 ? `$${total.stepCost.toFixed(2)}` : "—";
 
   return (
     <nav className="border-b border-zinc-800">
@@ -101,6 +98,16 @@ export default function Header() {
         }
       >
         <Stack gap="sm">
+          <Link
+            href="/cost"
+            onClick={() => {
+              trackNav("cost");
+              setMenuOpen(false);
+            }}
+            className="block text-sm font-medium text-accent"
+          >
+            {costTotal}
+          </Link>
           {navLinks.map((link) =>
             link.external ? (
               <a
