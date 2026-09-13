@@ -109,7 +109,7 @@ export function SessionComposer({
               rows={3}
               maxLength={10000}
               autoFocus
-              className="w-full rounded-lg border border-white/10 bg-raised px-4 py-3 text-sm text-foreground outline-none placeholder:text-muted/50 focus:border-accent/50 resize-none"
+              className="w-full rounded-lg border border-white/10 bg-raised px-4 py-3 text-base text-foreground outline-none placeholder:text-muted/50 focus:border-accent/50 resize-none sm:text-sm"
             />
             <div className="flex flex-wrap gap-1.5">
               {SAMPLE_PROMPTS.slice(0, 4).map((p) => (
@@ -144,7 +144,7 @@ export function SessionComposer({
               <button
                 type="submit"
                 disabled={submitting || !prompt.trim()}
-                className="ml-auto rounded-lg bg-accent/15 px-4 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-40"
+                className="ml-auto min-h-[44px] rounded-lg bg-accent/15 px-4 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-40"
               >
                 {submitting ? "sending…" : "Ask Atlas"}
               </button>
