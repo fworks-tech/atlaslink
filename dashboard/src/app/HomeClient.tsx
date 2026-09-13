@@ -43,7 +43,6 @@ function HomeInner() {
   // Composer drafts are per-session overlay state — empty until the user
   // drops the first palette agent, so the live diagram renders untouched.
   const drafts = useDraftFlow(selectedSessionId ?? "");
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const copyTimer = useRef<number | null>(null);
   const [inspectorNode, setInspectorNode] = useState<{ id: string; type: string; data: unknown } | null>(null);
@@ -115,7 +114,6 @@ function HomeInner() {
       params.delete("node");
       router.push(`?${params.toString()}`);
       setInspectorNode(null);
-      setMobileSidebarOpen(false);
     },
     [router, searchParams, sessions]
   );
@@ -249,53 +247,26 @@ function HomeInner() {
   }, [selectedSession, router, refreshSessions]);
 
   return (
-    <div className="flex min-h-[60vh] flex-1 overflow-hidden">
-      {mobileSidebarOpen && (
-        <button
-          type="button"
-          aria-label="Close navigation"
-          onClick={() => setMobileSidebarOpen(false)}
-          className="fixed inset-0 z-30 bg-black/50 md:hidden"
-        />
-      )}
-          {!hideSidebarTemporarily && 
-      <aside
-        id="sidebar"
-        className={`${
-          mobileSidebarOpen ? "flex" : "hidden"
-        } md:flex fixed md:static inset-y-0 left-0 z-40 w-64 max-w-[85vw] shrink-0 flex-col border-r border-white/5 bg-surface overflow-hidden`}
-        aria-label="Sidebar"
-      >
-        <ErrorBoundary>
-          <Sidebar
-            projects={projects}
-            projectsLoading={projectsLoading}
-            projectsError={projectsError}
-            onCreateProject={addProject}
-            selectedSessionId={selectedSessionId}
-            onSelectSession={handleSelectSession}
+    <div className="flex min-h-[60vh] flex-1 overflow-hidden" data-testid="home-content">
+      {!hideSidebarTemporarily && (
+        <aside
+          id="sidebar"
+          className="hidden md:flex fixed md:static inset-y-0 left-0 z-40 w-64 max-w-[85vw] shrink-0 flex-col border-r border-white/5 bg-surface overflow-hidden"
+          aria-label="Sidebar"
+        >
+          <ErrorBoundary>
+            <Sidebar
+              projects={projects}
+              projectsLoading={projectsLoading}
+              projectsError={projectsError}
+              onCreateProject={addProject}
+              selectedSessionId={selectedSessionId}
+              onSelectSession={handleSelectSession}
             />
-        </ErrorBoundary>
-      </aside>
-}
-      <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-        <div className="sticky top-0 z-20 flex items-center gap-3 border-b border-white/5 bg-background px-4 py-2 md:hidden">
-          <button
-            type="button"
-            aria-label="Toggle navigation"
-            aria-expanded={mobileSidebarOpen}
-            aria-controls="sidebar"
-            onClick={() => setMobileSidebarOpen((v) => !v)}
-            className="rounded-md p-2 text-muted hover:bg-raised hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          >
-            <span aria-hidden="true" className="block h-5 w-5">
-              <span className="block h-0.5 w-5 bg-current mt-1" />
-              <span className="block h-0.5 w-5 bg-current mt-1.5" />
-              <span className="block h-0.5 w-5 bg-current mt-1.5" />
-            </span>
-          </button>
-          <span className="text-sm font-medium tracking-tight text-foreground">Atlaslink</span>
-        </div>
+          </ErrorBoundary>
+        </aside>
+      )}
+      <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden" data-testid="home-main">
         {selectedSessionId ? (
           <div className="mx-auto max-w-6xl px-4 sm:px-8 py-8 sm:py-12">
             <div className="mb-4 flex flex-wrap items-center gap-2">
