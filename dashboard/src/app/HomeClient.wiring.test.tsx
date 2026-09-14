@@ -592,3 +592,44 @@ describe("HomeClient mobile header", () => {
     expect(container.querySelector("#sidebar")).toBeNull();
   });
 });
+
+describe("HomeClient mobile room", () => {
+  it("stacks the reply form vertically so the input fits a phone viewport", () => {
+    seedRoom("session=ses-9");
+    render(<HomeClient />);
+    const form = screen.getByLabelText("Reply to Atlas").closest("form");
+    expect(form?.className).toMatch(/flex-col/);
+  });
+
+  it("stacks the steer form vertically so the input fits a phone viewport", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    const form = screen.getByLabelText("Redirect this session").closest("form");
+    expect(form?.className).toMatch(/flex-col/);
+  });
+
+  it("keeps room inputs at 16px on phones so iOS does not auto-zoom on focus", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(screen.getByLabelText("Redirect this session").className).toMatch(/text-base/);
+  });
+
+  it("gives the room-exit button a 44px touch target", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(screen.getByRole("button", { name: /back to composer/i }).className).toMatch(/min-h-\[44px\]/);
+  });
+
+  it("gives the send button a 44px touch target", () => {
+    seedRoom("session=ses-9");
+    render(<HomeClient />);
+    fireEvent.change(screen.getByLabelText("Reply to Atlas"), { target: { value: "go" } });
+    expect(screen.getByRole("button", { name: "Send" }).className).toMatch(/min-h-\[44px\]/);
+  });
+
+  it("exposes palette agents as tap targets in the room", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(screen.getByRole("button", { name: /add tool node/i })).toBeDefined();
+  });
+});

@@ -222,7 +222,7 @@ export function SessionInspector({
       tabIndex={-1}
       role="dialog"
       aria-label="Session inspector"
-      className="fixed inset-y-0 right-0 z-40 flex w-[380px] max-w-[90vw] flex-col border-l border-white/10 bg-surface shadow-2xl outline-none"
+      className="fixed inset-y-0 right-0 z-40 flex w-[380px] max-w-[90vw] flex-col border-l border-white/10 bg-surface shadow-2xl outline-none max-sm:w-full max-sm:max-w-full"
     >
       <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
         <div className="text-xs uppercase tracking-widest text-muted">inspector</div>

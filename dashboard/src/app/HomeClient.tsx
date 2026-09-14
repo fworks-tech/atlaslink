@@ -133,6 +133,14 @@ function HomeInner() {
     drafts.updateNodeConfig(nodeId, config);
   }, [drafts]);
 
+  // Touch fallback for the palette: phones have no drag-and-drop, so a tap
+  // drops the agent at a cascade offset through the same draft path as a
+  // drop — the user drags it into place on the canvas afterwards.
+  const handleAddAgent = useCallback((agentType: string) => {
+    const slot = drafts.draftNodes.length % 8;
+    drafts.addDraftNode(agentType, { x: 48 * slot, y: 48 * slot });
+  }, [drafts]);
+
   const handleNodeClick = useCallback(
     (id: string, type: string, data: unknown) => {
       setInspectorNode({ id, type, data });
@@ -268,12 +276,12 @@ function HomeInner() {
       )}
       <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden" data-testid="home-main">
         {selectedSessionId ? (
-          <div className="mx-auto max-w-6xl px-4 sm:px-8 py-8 sm:py-12">
+          <div className="mx-auto max-w-6xl px-4 sm:px-8 py-4 sm:py-12">
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={handleCloseSession}
-                className="inline-flex items-center rounded-md border border-white/10 bg-raised px-3 py-1.5 text-sm text-foreground hover:bg-raised/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent transition-colors"
+                className="inline-flex min-h-[44px] items-center rounded-md border border-white/10 bg-raised px-3 py-1.5 text-sm text-foreground hover:bg-raised/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent transition-colors"
               >
                 ← Back to composer
               </button>
@@ -324,7 +332,7 @@ function HomeInner() {
             ) : null}
             <div className="space-y-6">
               <ErrorBoundary>
-                <NodePalette />
+                <NodePalette onSelect={handleAddAgent} />
                 <SocietyDiagram
                   selectedSessionId={selectedSessionId}
                   mode={mode}
@@ -348,9 +356,9 @@ function HomeInner() {
                   {awaitingQuestion.context ? (
                     <div className="mt-1 text-xs text-muted">{awaitingQuestion.context}</div>
                   ) : null}
-                  <form onSubmit={(e) => { e.preventDefault(); handleReply(); }} className="mt-3 flex gap-2">
-                    <input value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Type your reply…" aria-label="Reply to Atlas" className="flex-1 rounded border border-white/10 bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted" />
-                    <button type="submit" disabled={replyBusy || !replyContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
+                  <form onSubmit={(e) => { e.preventDefault(); handleReply(); }} className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <input value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Type your reply…" aria-label="Reply to Atlas" className="flex-1 rounded border border-white/10 bg-surface px-3 py-2 text-base text-foreground placeholder:text-muted sm:text-sm" />
+                    <button type="submit" disabled={replyBusy || !replyContent.trim()} className="min-h-[44px] rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
                   </form>
                   {replyError ? <div role="alert" className="mt-2 text-xs text-red-400">{replyError}</div> : null}
                 </div>
@@ -358,10 +366,10 @@ function HomeInner() {
               {composerMode === "steer" ? (
                 <div className="rounded-xl border border-white/10 bg-surface p-4">
                   <div className="text-sm font-medium text-foreground">Steer {selectedSession?.status === "running" ? "· interrupts the live run first" : "· rewrites the queued prompt"}</div>
-                  <form onSubmit={(e) => { e.preventDefault(); void handleSteer(); }} className="mt-3 flex gap-2">
-                    <input value={steerContent} onChange={(e) => setSteerContent(e.target.value)} placeholder="Redirect this session…" aria-label="Redirect this session" className="flex-1 rounded border border-white/10 bg-raised px-3 py-2 text-sm text-foreground placeholder:text-muted" />
-                    <button type="submit" disabled={steerBusy || !steerContent.trim()} className="rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Steer</button>
-                    <button type="button" onClick={handleInterrupt} disabled={steerBusy} className="rounded border border-red-400/40 px-4 py-2 text-sm text-red-300 disabled:opacity-50">Interrupt</button>
+                  <form onSubmit={(e) => { e.preventDefault(); void handleSteer(); }} className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <input value={steerContent} onChange={(e) => setSteerContent(e.target.value)} placeholder="Redirect this session…" aria-label="Redirect this session" className="flex-1 rounded border border-white/10 bg-raised px-3 py-2 text-base text-foreground placeholder:text-muted sm:text-sm" />
+                    <button type="submit" disabled={steerBusy || !steerContent.trim()} className="min-h-[44px] rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Steer</button>
+                    <button type="button" onClick={handleInterrupt} disabled={steerBusy} className="min-h-[44px] rounded border border-red-400/40 px-4 py-2 text-sm text-red-300 disabled:opacity-50">Interrupt</button>
                   </form>
                   {steerError ? <div role="alert" className="mt-2 text-xs text-red-400">{steerError}</div> : null}
                 </div>
@@ -377,7 +385,7 @@ function HomeInner() {
                     {selectedSession ? ` (${selectedSession.status})` : ""}. Resume it with the same member and
                     prompt, or start a new session to continue the conversation.
                   </div>
-                  <button type="button" onClick={() => void handleResume()} disabled={resumeBusy || !selectedSession} className="mt-3 rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">
+                  <button type="button" onClick={() => void handleResume()} disabled={resumeBusy || !selectedSession} className="mt-3 min-h-[44px] rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">
                     {resumeBusy ? "Resuming…" : "Resume this session"}
                   </button>
                   {resumeError ? <div role="alert" className="mt-2 text-xs text-red-400">{resumeError}</div> : null}
