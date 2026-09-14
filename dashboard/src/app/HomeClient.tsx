@@ -17,12 +17,25 @@ import { useDraftFlow } from "@/hooks/useDraftFlow";
 import type { AgentConfig } from "@/lib/config";
 import { useEvents } from "@/hooks/useEvents";
 import { decodeShareLink, encodeShareLink, canonicalUrl } from "@/lib/shareLink";
+import { hasStoredSidebarOpen, loadSidebarOpen, saveSidebarOpen } from "@/lib/sidebarState";
 import { replyToSession, steerSession, cancelSession, createTask, ApiError } from "@/lib/api";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
 import type { GraphMode } from "@/lib/graph";
 import type { BridgeEvent } from "@/lib/types";
 
-const hideSidebarTemporarily = true; // TODO: remove this once the sidebar is ready for production
+// Phones (<md) get the sidebar as an overlay drawer; matchMedia keeps the
+// check mockable in jsdom, which has no viewport of its own.
+function isPhoneViewport(): boolean {
+  try {
+    return (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(max-width: 767px)").matches
+    );
+  } catch {
+    return false;
+  }
+}
 
 function HomeInner() {
   const router = useRouter();
@@ -45,6 +58,54 @@ function HomeInner() {
   const drafts = useDraftFlow(selectedSessionId ?? "");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const copyTimer = useRef<number | null>(null);
+  // Sidebar drawer: open on desktop, closed on phones unless the user chose
+  // otherwise. The phone default adjusts during render (React's "adjust
+  // state during render" pattern, same as the thread's session reset) so the
+  // committed output never flashes the desktop default on small screens.
+  const [sidebarOpen, setSidebarOpen] = useState(() => loadSidebarOpen(true));
+  const [phoneDefaultApplied, setPhoneDefaultApplied] = useState(false);
+  if (!phoneDefaultApplied && !hasStoredSidebarOpen() && isPhoneViewport()) {
+    setPhoneDefaultApplied(true);
+    setSidebarOpen(false);
+  }
+  const toggleRef = useRef<HTMLButtonElement | null>(null);
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    saveSidebarOpen(sidebarOpen);
+  }, [sidebarOpen]);
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSidebarOpen(false);
+        toggleRef.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [sidebarOpen]);
+  const closeSidebar = useCallback(() => {
+    setSidebarOpen(false);
+    toggleRef.current?.focus();
+  }, []);
+  const renderSidebarToggle = () => (
+    <button
+      ref={toggleRef}
+      type="button"
+      aria-label="Toggle sidebar"
+      aria-expanded={sidebarOpen}
+      aria-controls="sidebar"
+      onClick={() => {
+        const next = !sidebarOpen;
+        setSidebarOpen(next);
+        if (next) closeRef.current?.focus();
+      }}
+      className="inline-flex min-h-[44px] items-center rounded-md border border-white/10 bg-raised px-3 py-1.5 text-sm text-foreground hover:bg-raised/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent transition-colors"
+    >
+      ☰
+    </button>
+  );
+
   const [inspectorNode, setInspectorNode] = useState<{ id: string; type: string; data: unknown } | null>(null);
   const [replyContent, setReplyContent] = useState("");
   const [replyBusy, setReplyBusy] = useState(false);
@@ -114,6 +175,8 @@ function HomeInner() {
       params.delete("node");
       router.push(`?${params.toString()}`);
       setInspectorNode(null);
+      // On phones the drawer hands over the room on selection.
+      if (isPhoneViewport()) setSidebarOpen(false);
     },
     [router, searchParams, sessions]
   );
@@ -256,28 +319,48 @@ function HomeInner() {
 
   return (
     <div className="flex min-h-[60vh] flex-1 overflow-hidden" data-testid="home-content">
-      {!hideSidebarTemporarily && (
-        <aside
-          id="sidebar"
-          className="hidden md:flex fixed md:static inset-y-0 left-0 z-40 w-64 max-w-[85vw] shrink-0 flex-col border-r border-white/5 bg-surface overflow-hidden"
-          aria-label="Sidebar"
+      <aside
+        id="sidebar"
+        data-state={sidebarOpen ? "open" : "closed"}
+        className={`fixed md:static inset-y-0 left-0 z-40 flex w-64 max-w-[85vw] shrink-0 flex-col border-r border-white/5 bg-surface overflow-hidden transition-[transform,width] ${
+          sidebarOpen ? "translate-x-0 md:w-64" : "-translate-x-full md:translate-x-0 md:w-0 md:border-0"
+        }`}
+        aria-label="Sidebar"
+      >
+        <button
+          ref={closeRef}
+          type="button"
+          onClick={closeSidebar}
+          aria-label="Close sidebar"
+          className="inline-flex min-h-[44px] items-center justify-end px-4 py-1.5 text-sm text-muted hover:text-foreground md:hidden"
         >
-          <ErrorBoundary>
-            <Sidebar
-              projects={projects}
-              projectsLoading={projectsLoading}
-              projectsError={projectsError}
-              onCreateProject={addProject}
-              selectedSessionId={selectedSessionId}
-              onSelectSession={handleSelectSession}
-            />
-          </ErrorBoundary>
-        </aside>
+          ✕
+        </button>
+        <ErrorBoundary>
+          <Sidebar
+            projects={projects}
+            projectsLoading={projectsLoading}
+            projectsError={projectsError}
+            onCreateProject={addProject}
+            selectedSessionId={selectedSessionId}
+            onSelectSession={handleSelectSession}
+          />
+        </ErrorBoundary>
+      </aside>
+      {sidebarOpen && (
+        <button
+          type="button"
+          onClick={closeSidebar}
+          aria-label="Dismiss sidebar"
+          data-testid="sidebar-backdrop"
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+        />
       )}
       <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden" data-testid="home-main">
         {selectedSessionId ? (
           <div className="mx-auto max-w-6xl px-4 sm:px-8 py-4 sm:py-12">
             <div className="mb-4 flex flex-wrap items-center gap-2">
+              {renderSidebarToggle()}
               <button
                 type="button"
                 onClick={handleCloseSession}
@@ -395,9 +478,14 @@ function HomeInner() {
             <SessionInspector open={Boolean(inspectorNode)} onClose={handleCloseInspector} session={selectedSession} events={mergedEvents} selectedNode={inspectorNode} contextLoading={inspectorContextLoading} onConfigChange={handleNodeConfigChange} />
           </div>
         ) : (
-          <ErrorBoundary>
-            <SessionComposer projects={projects} onCreateSession={handleSelectSession} />
-          </ErrorBoundary>
+          <div className="px-4 pt-4 sm:px-8 sm:pt-8">
+            <div className="mx-auto max-w-2xl">
+              {renderSidebarToggle()}
+            </div>
+            <ErrorBoundary>
+              <SessionComposer projects={projects} onCreateSession={handleSelectSession} />
+            </ErrorBoundary>
+          </div>
         )}
       </main>
       </div>

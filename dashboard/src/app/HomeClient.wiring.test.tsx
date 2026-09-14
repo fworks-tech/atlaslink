@@ -122,7 +122,7 @@ vi.mock("@/components/SessionComposer", () => ({
   SessionComposer: () => null,
 }));
 vi.mock("@/components/Sidebar", () => ({
-  Sidebar: () => null,
+  Sidebar: () => <div data-testid="sidebar-content">sidebar-stub</div>,
 }));
 vi.mock("@/components/ErrorBoundary", () => ({
   ErrorBoundary: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -569,13 +569,29 @@ describe("HomeClient room wiring", () => {
   });
 });
 
+// jsdom has no viewport — tests dialect phone vs desktop through matchMedia
+let mobileViewport = false;
+Object.defineProperty(window, "matchMedia", {
+  writable: true,
+  configurable: true,
+  value: vi.fn().mockImplementation((query: string) => ({
+    matches: mobileViewport && query.includes("max-width"),
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+});
+
 describe("HomeClient mobile header", () => {
-  it("does not render the page-level sticky mobile bar when the sidebar is hidden", () => {
+  it("renders a single global-header-independent toggle for the sidebar", () => {
     seedRoom("session=ses-1");
     render(<HomeClient />);
-    expect(screen.queryByLabelText("Toggle navigation")).toBeNull();
-    expect(screen.queryByLabelText("Close navigation")).toBeNull();
-    expect(screen.queryByText("Atlaslink")).toBeNull();
+    expect(screen.getByRole("button", { name: "Toggle sidebar" })).toBeDefined();
+    expect(screen.queryByTestId("mobile-header")).toBeNull();
   });
 
   it("exposes page hooks distinct from the global header", () => {
@@ -586,10 +602,122 @@ describe("HomeClient mobile header", () => {
     expect(screen.queryByTestId("mobile-header")).toBeNull();
   });
 
-  it("does not render the hidden sidebar aside", () => {
+  it("always mounts the sidebar aside", () => {
     seedRoom("session=ses-1");
     const { container } = render(<HomeClient />);
-    expect(container.querySelector("#sidebar")).toBeNull();
+    expect(container.querySelector("#sidebar")).not.toBeNull();
+  });
+});
+
+describe("HomeClient sidebar drawer", () => {
+  beforeEach(() => {
+    mobileViewport = false;
+    window.localStorage.clear();
+  });
+
+  it("starts open on desktop", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(screen.getByTestId("sidebar-content")).toBeDefined();
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("open");
+    expect(screen.getByRole("button", { name: "Toggle sidebar" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("starts closed on phone viewports", () => {
+    mobileViewport = true;
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("closed");
+    expect(screen.getByRole("button", { name: "Toggle sidebar" }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("toggles the drawer open and closed", () => {
+    mobileViewport = true;
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    const toggle = screen.getByRole("button", { name: "Toggle sidebar" });
+    fireEvent.click(toggle);
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("open");
+    fireEvent.click(toggle);
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("closed");
+  });
+
+  it("gives the toggle a 44px touch target", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(screen.getByRole("button", { name: "Toggle sidebar" }).className).toMatch(/min-h-\[44px\]/);
+  });
+
+  it("persists the toggle across remounts", () => {
+    seedRoom("session=ses-1");
+    const first = render(<HomeClient />);
+    fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("closed");
+    first.unmount();
+    render(<HomeClient />);
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("closed");
+  });
+
+  it("prefers the stored value over the viewport default", () => {
+    mobileViewport = true;
+    window.localStorage.setItem("atlaslink:sidebar:open", JSON.stringify(true));
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("open");
+  });
+
+  it("closes on Escape", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("open");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("closed");
+  });
+
+  it("closes on backdrop tap on phones", () => {
+    mobileViewport = true;
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("open");
+    fireEvent.click(screen.getByTestId("sidebar-backdrop"));
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("closed");
+  });
+
+  it("closing a session selection hands over the room on phones", () => {
+    mobileViewport = true;
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    fireEvent.click(screen.getByRole("button", { name: "Toggle sidebar" }));
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("open");
+    fireEvent.click(screen.getByTestId("select-ses2"));
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("closed");
+    expect(routerPush).toHaveBeenCalledWith("?session=ses-2");
+  });
+
+  it("keeps the drawer open on session selection on desktop", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    fireEvent.click(screen.getByTestId("select-ses2"));
+    expect(document.querySelector("#sidebar")?.getAttribute("data-state")).toBe("open");
+  });
+
+  it("moves focus into the drawer on open and back on close", () => {
+    mobileViewport = true;
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    const toggle = screen.getByRole("button", { name: "Toggle sidebar" });
+    fireEvent.click(toggle);
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Close sidebar");
+    fireEvent.click(screen.getByRole("button", { name: "Close sidebar" }));
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  it("exposes the toggle in the composer view too", () => {
+    seed("");
+    render(<HomeClient />);
+    expect(screen.getByRole("button", { name: "Toggle sidebar" })).toBeDefined();
+    expect(document.querySelector("#sidebar")).not.toBeNull();
   });
 });
 
