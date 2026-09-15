@@ -18,6 +18,7 @@ import type { AgentConfig } from "@/lib/config";
 import { useEvents } from "@/hooks/useEvents";
 import { decodeShareLink, encodeShareLink, canonicalUrl } from "@/lib/shareLink";
 import { hasStoredSidebarOpen, loadSidebarOpen, saveSidebarOpen } from "@/lib/sidebarState";
+import { clearLastSession, isDiagramMode, loadDiagramMode, loadLastSession, saveDiagramMode, saveLastSession } from "@/lib/uiPrefs";
 import { replyToSession, steerSession, cancelSession, createTask, ApiError } from "@/lib/api";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
 import type { GraphMode } from "@/lib/graph";
@@ -47,7 +48,7 @@ function HomeInner() {
   const selectedSessionId = rawSession ?? decoded?.s ?? undefined;
   const selectedProjectId = rawProject ?? decoded?.p ?? undefined;
   const selectedNodeId = searchParams.get("node") ?? decoded?.n ?? undefined;
-  const rawMode = (searchParams.get("mode") ?? (decoded?.m as string) ?? "full") as GraphMode;
+  const rawMode = (searchParams.get("mode") ?? (decoded?.m as string) ?? loadDiagramMode("full")) as GraphMode;
   const mode: GraphMode = (["chain", "fanout", "full"].includes(rawMode) ? rawMode : "full") as GraphMode;
   const { projects, loading: projectsLoading, error: projectsError, addProject } = useProjects();
   const { sessions, loading: sessionsLoading, error: sessionsError, refresh: refreshSessions, hydrateSession } = useSessions();
@@ -164,6 +165,17 @@ function HomeInner() {
   }, [selectedSessionId, selectedSession, sessionsLoading, hydrateSession]);
   const sharedSessionGone = sharedSessionGoneId !== null && sharedSessionGoneId === selectedSessionId;
 
+  // Fresh visits to bare `/` reopen the last session instead of stranding a
+  // returning user at the composer — explicit back-to-composer clears the
+  // stored id first (so no restore loop), and share links win over the
+  // stored default. replace keeps the restore out of back-button history.
+  useEffect(() => {
+    if (selectedSessionId || rawQ || searchParams.get("node")) return;
+    const last = loadLastSession();
+    if (!last) return;
+    router.replace(last.project ? `?session=${last.session}&project=${last.project}` : `?session=${last.session}`);
+  }, [selectedSessionId, rawQ, searchParams, router]);
+
   const handleSelectSession = useCallback(
     (id: string) => {
       const projectOfSession = sessions.find((s) => s.sessionId === id)?.projectId;
@@ -175,6 +187,7 @@ function HomeInner() {
       params.delete("node");
       router.push(`?${params.toString()}`);
       setInspectorNode(null);
+      saveLastSession(id, projectOfSession);
       // On phones the drawer hands over the room on selection.
       if (isPhoneViewport()) setSidebarOpen(false);
     },
@@ -182,6 +195,7 @@ function HomeInner() {
   );
 
   const handleCloseSession = useCallback(() => {
+    clearLastSession();
     const params = new URLSearchParams(searchParams.toString());
     params.delete("session");
     params.delete("project");
@@ -376,6 +390,7 @@ function HomeInner() {
                 onChange={(e) => {
                   const p = new URLSearchParams(searchParams.toString());
                   p.set("mode", e.target.value);
+                  if (isDiagramMode(e.target.value)) saveDiagramMode(e.target.value);
                   router.push(`?${p.toString()}`);
                 }}
                 className="rounded border border-white/10 bg-raised px-2 py-1 text-xs text-foreground"
@@ -402,7 +417,7 @@ function HomeInner() {
             {sharedSessionGone ? (
               <div role="alert" className="mb-4 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">
                 The shared session is no longer available — backend storage was reset on the last restart.{" "}
-                <button type="button" onClick={() => router.push("/")} className="underline hover:text-white">Start a new session</button>
+                <button type="button" onClick={handleCloseSession} className="underline hover:text-white">Start a new session</button>
               </div>
             ) : sessionsError && !selectedSession && !dismissedSessionsError ? (
               <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">

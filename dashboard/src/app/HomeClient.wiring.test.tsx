@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import type { ReactNode } from "react";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { encodeShareLink } from "@/lib/shareLink";
 import HomeClient from "./HomeClient";
 
 const routerPush = vi.fn();
@@ -759,5 +760,100 @@ describe("HomeClient mobile room", () => {
     seedRoom("session=ses-1");
     render(<HomeClient />);
     expect(screen.getByRole("button", { name: /add tool node/i })).toBeDefined();
+  });
+});
+
+describe("HomeClient ui prefs", () => {
+  beforeEach(() => {
+    mobileViewport = false;
+    window.localStorage.clear();
+  });
+
+  it("reopens the last session on a fresh visit to bare /", () => {
+    window.localStorage.setItem("atlaslink:ui:last-session", JSON.stringify({ session: "ses-1", project: "p-1" }));
+    seed("");
+    render(<HomeClient />);
+    expect(routerReplace).toHaveBeenCalledWith("?session=ses-1&project=p-1");
+  });
+
+  it("restores a stored session without a project", () => {
+    window.localStorage.setItem("atlaslink:ui:last-session", JSON.stringify({ session: "ses-9" }));
+    seed("");
+    render(<HomeClient />);
+    expect(routerReplace).toHaveBeenCalledWith("?session=ses-9");
+  });
+
+  it("stays on the composer when nothing was stored", () => {
+    seed("");
+    render(<HomeClient />);
+    expect(routerReplace).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Toggle sidebar" })).toBeDefined();
+  });
+
+  it("prefers a share link over the stored session", () => {
+    window.localStorage.setItem("atlaslink:ui:last-session", JSON.stringify({ session: "ses-2", project: "p-1" }));
+    const q = encodeURIComponent(encodeShareLink({ s: "ses-1", p: "p-1" }));
+    seedRoom(`q=${q}`);
+    render(<HomeClient />);
+    expect(routerReplace).not.toHaveBeenCalled();
+    expect(screen.getByText(/Live Society Diagram/)).toBeDefined();
+  });
+
+  it("saving flows through session selection into the next fresh visit", () => {
+    seedRoom("session=ses-1");
+    const first = render(<HomeClient />);
+    fireEvent.click(screen.getByTestId("select-ses2"));
+    expect(window.localStorage.getItem("atlaslink:ui:last-session")).toBe(JSON.stringify({ session: "ses-2" }));
+    first.unmount();
+    vi.clearAllMocks();
+    seed("");
+    render(<HomeClient />);
+    expect(routerReplace).toHaveBeenCalledWith("?session=ses-2");
+  });
+
+  it("back-to-composer clears the stored session", () => {
+    window.localStorage.setItem("atlaslink:ui:last-session", JSON.stringify({ session: "ses-1", project: "p-1" }));
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    fireEvent.click(screen.getByRole("button", { name: /back to composer/i }));
+    expect(window.localStorage.getItem("atlaslink:ui:last-session")).toBeNull();
+    expect(routerPush).toHaveBeenCalledWith("/");
+  });
+
+  it("defaults the diagram mode from the stored preference", () => {
+    window.localStorage.setItem("atlaslink:ui:diagram-mode", JSON.stringify("chain"));
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect((screen.getByLabelText("Diagram") as HTMLSelectElement).value).toBe("chain");
+  });
+
+  it("stores the diagram mode when the select changes", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    fireEvent.change(screen.getByLabelText("Diagram"), { target: { value: "fanout" } });
+    expect(window.localStorage.getItem("atlaslink:ui:diagram-mode")).toBe(JSON.stringify("fanout"));
+    expect(routerPush).toHaveBeenCalledWith(expect.stringContaining("mode=fanout"));
+  });
+
+  it("falls back to full on a corrupt stored mode", () => {
+    window.localStorage.setItem("atlaslink:ui:diagram-mode", JSON.stringify("grid"));
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect((screen.getByLabelText("Diagram") as HTMLSelectElement).value).toBe("full");
+  });
+
+  it("start-over on a gone shared session clears the stored id so restore cannot loop", async () => {
+    window.localStorage.setItem("atlaslink:ui:last-session", JSON.stringify({ session: "ses-dead" }));
+    searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-dead"));
+    presenceMock.mockReturnValue({ members: [] });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    sessionsMock.mockReturnValue({ sessions: [], loading: false, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
+    eventsMock.mockReturnValue({ events: [] });
+    hydrateMock.mockRejectedValue(new (await import("@/lib/api")).ApiError(404, "gone"));
+    render(<HomeClient />);
+    await vi.waitFor(() => expect(screen.getByText(/no longer available/)).toBeDefined());
+    fireEvent.click(screen.getByRole("button", { name: "Start a new session" }));
+    expect(window.localStorage.getItem("atlaslink:ui:last-session")).toBeNull();
+    expect(routerPush).toHaveBeenCalledWith("/");
   });
 });
