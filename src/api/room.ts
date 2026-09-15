@@ -22,7 +22,7 @@ import { appendChatMessage, replyToParked, steerSession } from './sessionActions
  *
  * Wire (JSON frames):
  *   server → client: joined | snapshot | backlog | gap | event | presence | ack | error
- *   client → server: chat | reply | steer  ({id?, content})
+ *   client → server: chat | reply | steer | typing ({id?, content} | {id?, typing})
  */
 export interface RoomDeps {
   backend: SessionBackend
@@ -103,6 +103,36 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): void {
         return reply.code(404).send({ ok: false, error: 'unknown session' })
       }
       return { ok: true, members: rosterOf(request.params.id) }
+    }
+  )
+
+  // Typing heartbeats: ephemeral fan-out for publishers without a socket —
+  // validated and broadcast, never written to the store, so a heartbeat
+  // flood cannot grow storage or disturb the eventId cursor.
+  app.post<{ Params: { id: string } }>(
+    '/sessions/:id/room/typing',
+    async (request, reply) => {
+      const query = (request.query ?? {}) as Record<string, unknown>
+      const tenantValue = firstQuery(query.tenant) ?? request.headers['x-tenant-id']
+      const tenantCtx = tenantBackendForRequest({ headers: { 'x-tenant-id': tenantValue } }, deps.backend)
+      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const aggregate = await tenantCtx.backend.get(request.params.id)
+      if (!aggregate || aggregate.tenantId !== tenantCtx.tenantId) {
+        return reply.code(404).send({ ok: false, error: 'unknown session' })
+      }
+      const body = (request.body ?? {}) as Record<string, unknown>
+      if (typeof body.typing !== 'boolean') {
+        return reply.code(400).send({ ok: false, error: 'typing must be a boolean' })
+      }
+      deps.broadcaster.publishEphemeral({
+        type: 'session.typing',
+        sessionId: request.params.id,
+        correlationId: aggregate.correlationId,
+        at: new Date().toISOString(),
+        name: sanitizeName(body.name),
+        typing: body.typing,
+      })
+      return { ok: true }
     }
   )
 
@@ -202,6 +232,8 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): void {
         // sliding-window ingress throttle: the service caps bound store
         // growth, this bounds per-connection CPU on the hot path
         const ingressAt: number[] = []
+        // last broadcast typing state: repeat heartbeats drop silently
+        let lastTyping: boolean | undefined
         const throttled = (): boolean => {
           const now = Date.now()
           while (ingressAt.length > 0 && ingressAt[0]! < now - 60_000) ingressAt.shift()
@@ -225,6 +257,27 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): void {
               return
             }
             const id = typeof frame.id === 'string' ? frame.id : undefined
+            if (frame.type === 'typing') {
+              // socket members publish under their join name; repeat
+              // heartbeats of the same state are dropped so a tight loop
+              // cannot amplify fan-out — state changes always pass through
+              const typing = (frame as { typing?: unknown }).typing
+              if (typeof typing !== 'boolean') {
+                send({ type: 'error', id, error: 'typing must be a boolean' })
+                return
+              }
+              if (typing === lastTyping) return
+              lastTyping = typing
+              deps.broadcaster.publishEphemeral({
+                type: 'session.typing',
+                sessionId,
+                correlationId: aggregate.correlationId,
+                at: new Date().toISOString(),
+                name: client.name,
+                typing,
+              })
+              return
+            }
             if (frame.type !== 'chat' && frame.type !== 'reply' && frame.type !== 'steer') {
               send({ type: 'error', id, error: 'unknown frame type' })
               return

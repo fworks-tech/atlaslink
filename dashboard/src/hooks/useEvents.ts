@@ -25,6 +25,7 @@ const EVENT_TYPES = [
   "tool.result",
   "decision.recorded",
   "provenance.recorded",
+  "session.typing",
   "bridge.gap",
   "bridge.shutdown",
 ] as const;
@@ -32,7 +33,16 @@ const EVENT_TYPES = [
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
 const MAX_BUFFERED_EVENTS = 200;
+const MAX_BUFFERED_TYPING = 20;
 const LAST_EVENT_ID_KEY = "atlaslink:lastEventId";
+
+/** Ephemeral typing heartbeat — live-only, never persisted or replayed. */
+export interface TypingSignal {
+  sessionId: string;
+  name: string;
+  typing: boolean;
+  at: number;
+}
 
 /**
  * Subscribes to the daemon's global SSE stream through the Next.js rewrite
@@ -45,6 +55,9 @@ const LAST_EVENT_ID_KEY = "atlaslink:lastEventId";
 export function useEvents({ enabled = true }: { enabled?: boolean } = {}) {
   const [connection, setConnection] = useState<ConnectionState>("connecting");
   const [events, setEvents] = useState<BridgeEvent[]>([]);
+  // typing rides the same stream but stays out of the event buffer — a
+  // heartbeat every few seconds must not evict real session events
+  const [sessionTyping, setSessionTyping] = useState<TypingSignal[]>([]);
   const attempt = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const esRef = useRef<EventSource | null>(null);
@@ -57,6 +70,20 @@ export function useEvents({ enabled = true }: { enabled?: boolean } = {}) {
     const onFrame = (raw: string): void => {
       try {
         const event = JSON.parse(raw) as BridgeEvent;
+        if (event.type === "session.typing") {
+          const signal = event as unknown as { sessionId?: unknown; name?: unknown; typing?: unknown; at?: unknown };
+          if (typeof signal.sessionId === "string" && typeof signal.typing === "boolean") {
+            const at = typeof signal.at === "string" ? Date.parse(signal.at) : Date.now();
+            const entry: TypingSignal = {
+              sessionId: signal.sessionId,
+              name: typeof signal.name === "string" && signal.name.length > 0 ? signal.name : "anonymous",
+              typing: signal.typing,
+              at: Number.isNaN(at) ? Date.now() : at,
+            };
+            setSessionTyping((prev) => [...prev.slice(-(MAX_BUFFERED_TYPING - 1)), entry]);
+          }
+          return;
+        }
         if ("eventId" in event && typeof event.eventId === "number") {
           lastEventId.current = String(event.eventId);
           try {
@@ -103,5 +130,5 @@ export function useEvents({ enabled = true }: { enabled?: boolean } = {}) {
     };
   }, [enabled]);
 
-  return { connection, events };
+  return { connection, events, sessionTyping };
 }

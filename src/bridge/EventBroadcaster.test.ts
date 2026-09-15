@@ -177,3 +177,26 @@ test('replayFrom serves events with eventId >= startId for Last-Event-ID resume'
     rmSync(dir, { recursive: true, force: true })
   }
 })
+test('publishEphemeral delivers live without persisting, replaying, or counting', async () => {
+  const dir = tmpDataDir()
+  try {
+    const store = await EventLogStore.open(dir)
+    const broadcaster = new EventBroadcaster(store)
+    broadcaster.emit(env(0, { type: 'run.started' }))
+
+    const live: BridgeEnvelope[] = []
+    broadcaster.subscribe((event) => live.push(event), { replay: false })
+    broadcaster.publishEphemeral({ type: 'session.typing', sessionId: 'ses-1', name: 'Bob', typing: true })
+
+    assert.equal(live.length, 1)
+    assert.equal(live[0].type, 'session.typing')
+    assert.ok(!('eventId' in live[0]), 'ephemeral fan-out carries no cursor')
+    // the cursor is untouched: the next persisted emit takes id 1, not 2
+    broadcaster.emit(env(0, { type: 'reasoning' }))
+    assert.equal(live[1].eventId, 1)
+    // replay never resurfaces the ephemeral signal
+    assert.deepEqual(broadcaster.replayFrom(0).map((e) => e.type), ['run.started', 'reasoning'])
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
