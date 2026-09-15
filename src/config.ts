@@ -80,3 +80,36 @@ export function resolveSessionConfig(global: LLMConfig, task: { provider?: strin
   if (!task.provider || task.provider === global.provider) return global
   return { ...global, provider: task.provider }
 }
+
+export interface ProviderChoice {
+  name: string
+  /** Default model for the provider (its entry model or the global model). */
+  model: string
+  /** Additional models catalogued for this provider, if any. */
+  models: string[]
+  /** Whether a key is present in this process. Never leaks the key itself. */
+  configured: boolean
+}
+
+/** Env var that would configure the provider (e.g. groq → GROQ_API_KEY). */
+function apiKeyEnvFor(name: string): string {
+  return name.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_API_KEY'
+}
+
+/**
+ * Maps the agenthood config's provider roster into the UI pick list.
+ * Names/models/flags only — apiKeys stay in the process, never serialized.
+ */
+export function availableProviders(global: LLMConfig): ProviderChoice[] {
+  const entries = Array.isArray(global.providers) ? global.providers.filter((p) => typeof p?.name === 'string' && p.name.length > 0) : []
+  return entries.map((p) => ({
+    name: p.name,
+    model: p.model ?? global.model ?? '',
+    models: Array.isArray(p.models) ? p.models.filter((m): m is string => typeof m === 'string') : [],
+    configured: typeof p.apiKey === 'string' && p.apiKey.length > 0 || !!process.env[apiKeyEnvFor(p.name)],
+  }))
+}
+
+export function isKnownProvider(global: LLMConfig, provider: string): boolean {
+  return availableProviders(global).some((p) => p.name === provider)
+}

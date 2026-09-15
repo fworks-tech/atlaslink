@@ -6,6 +6,7 @@ import { VersionConflictError } from '../session/types'
 import type { SessionQueue } from '../bridge/SessionQueue'
 import type { SseHandler } from '../bridge/sseEndpoint'
 import type { TaskRegistry } from '../tasks/taskRegistry'
+import { availableProviders, isKnownProvider, type ProviderChoice } from '../config'
 import { tenantBackendForRequest } from './tenant'
 import { appendChatMessage, isTerminal, replyToParked, steerSession } from './sessionActions'
 import { checkpointIdFor } from '../session/checkpointStore'
@@ -16,6 +17,7 @@ export interface TaskDeps {
   registry: TaskRegistry
   queue: SessionQueue
   sse: SseHandler
+  providers: ProviderChoice[]
 }
 
 interface PostBody {
@@ -38,6 +40,12 @@ export function sessionToWire(s: AggregateSession): AggregateSession {
  * stays a declarative route list.
  */
 export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
+  app.get('/providers', async () => ({
+    ok: true,
+    default: deps.providers[0]?.name ?? null,
+    providers: deps.providers,
+  }))
+
   app.post<{ Body: PostBody }>(
     '/tasks',
     {
@@ -69,6 +77,22 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       const tenantId = tenantCtx.tenantId!
       const backend = tenantCtx.backend
       const { member, prompt, projectId, tweaks } = request.body
+      // fast-fail on a pick list mismatch: the UI reads a snapshot, so an
+      // unknown provider (stale list, typo, provider removed) must 400 at
+      // creation instead of stalling a queued session at run time. With no
+      // configured roster there is nothing to validate against — the tweak
+      // passes through and the run fails on the provider itself, as before.
+      if (
+        deps.providers.length > 0 &&
+        tweaks?.provider !== undefined &&
+        (tweaks.provider.length === 0 || !deps.providers.some((p) => p.name === tweaks.provider))
+      ) {
+        return reply.code(400).send({ ok: false, error: `unknown provider, choose from ${deps.providers.map((p) => p.name).join(', ')}` })
+      }
+      const tweakModel = tweaks?.member?.model
+      if (tweakModel !== undefined && (typeof tweakModel !== 'string' || tweakModel.trim().length === 0 || tweakModel.length > 200)) {
+        return reply.code(400).send({ ok: false, error: 'tweaks.member.model must be a non-empty string up to 200 chars' })
+      }
       const sessionId = `ses-${randomUUID()}`
       const correlationId = `cor-${randomUUID()}`
       const event: SessionEvent = {

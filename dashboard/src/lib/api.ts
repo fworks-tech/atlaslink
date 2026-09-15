@@ -175,6 +175,17 @@ export function replyToSession(sessionId: string, content: string): Promise<Repl
   });
 }
 
+export interface ProviderChoice {
+  name: string;
+  model: string;
+  models?: string[];
+  configured?: boolean;
+}
+
+export function getProviders(): Promise<{ ok: boolean; default: string | null; providers: ProviderChoice[] }> {
+  return fetchJSON<{ ok: boolean; default: string | null; providers: ProviderChoice[] }>("/providers");
+}
+
 export function getSession(sessionId: string): Promise<{ ok: boolean; session: Session }> {
   return fetchJSON<{ ok: boolean; session: Session }>(`/tasks/${encodeURIComponent(sessionId)}`);
 }

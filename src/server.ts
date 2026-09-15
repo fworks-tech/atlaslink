@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify'
-import { loadDaemonConfig, resolveSessionConfig } from './config'
+import { availableProviders, loadDaemonConfig, resolveSessionConfig, type ProviderChoice } from './config'
 import type { DaemonConfig } from './config'
 import { validateConfig, MissingApiKeyError } from './daemon/contextFactory'
 import { TaskRegistry, msg } from './tasks/taskRegistry'
@@ -132,6 +132,7 @@ export async function createAppServer(params: {
   queue: SessionQueue
   sse: SseHandler
   backend?: SessionBackend
+  providers?: ProviderChoice[]
   authStore?: AuthStore | null
   bindHost?: string
   version?: string
@@ -273,7 +274,9 @@ export async function createAppServer(params: {
     })
 
     // --- M3 Task API (spec §3/§7): token-gated, store-backed, queue-driven ---
-    registerTaskRoutes(api, { backend, registry, queue, sse })
+    // providers: the session-creation pick list, precomputed once from the
+    // agenthood config (tests inject their own roster)
+    registerTaskRoutes(api, { backend, registry, queue, sse, providers: params.providers ?? [] })
 
     // --- Cost rollup (#168): derived from full-text reasoning mirrors ---
     registerCostRoutes(api, { backend })
@@ -458,6 +461,7 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
     authStore,
     bindHost: config.host,
     corsOrigins: config.corsOrigins,
+    providers: availableProviders(config.agenthood),
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
