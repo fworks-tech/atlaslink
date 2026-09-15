@@ -54,6 +54,15 @@ export class EventBroadcaster {
     this.#deliver(persisted)
   }
 
+  /**
+   * Live-only fan-out for ephemeral signals (typing indicators): delivered
+   * verbatim to current subscribers, never persisted, replayed, or counted —
+   * the eventId cursor and gap detection stay untouched.
+   */
+  publishEphemeral(envelope: { type: string; [key: string]: unknown }): void {
+    this.#deliver({ ...envelope })
+  }
+
   /** All retained envelopes with `eventId >= startId`, ascending (Last-Event-ID resume). */
   replayFrom(startId: number): BridgeEnvelope[] {
     return this.log.replay(startId - 1).map((s) => s.envelope)

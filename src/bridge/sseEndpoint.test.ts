@@ -66,3 +66,8 @@ test('shutdown clears internal connection tracking and the ping timer', async ()
     rmSync(dir, { recursive: true, force: true })
   }
 })
+test('formatSse omits the id line for ephemeral envelopes without an eventId', () => {
+  const frame = formatSse({ type: 'session.typing', sessionId: 's', name: 'Bob', typing: true })
+  assert.ok(!frame.includes('id:'), 'no id line to poison Last-Event-ID resume')
+  assert.ok(frame.includes('event: session.typing'))
+})

@@ -77,7 +77,46 @@ describe("SessionThread presence", () => {
     render(<SessionThread session={s} events={[]} members={[]} />);
     expect(screen.getByRole("alert").textContent).toContain("kaput");
   });
+});
 
+describe("SessionThread receipts", () => {
+  function sessionWithTurns(): Session {
+    const s = session();
+    s.interaction = [
+      { role: "user", content: "go ahead", at: "2026-09-15T12:00:01.000Z" },
+      { role: "atlas", content: "on it", at: "2026-09-15T12:00:02.000Z" },
+    ] as unknown as NonNullable<Session["interaction"]>;
+    return s;
+  }
+
+  it("shows no tick without an assigner", () => {
+    render(<SessionThread session={sessionWithTurns()} events={[]} members={[]} />);
+    expect(screen.queryByLabelText(/message /)).toBeNull();
+  });
+
+  it("ticks the user turn the assigner resolves and skips atlas turns", () => {
+    const assignReceipts = (turns: Array<{ content: string; at?: string }>): Map<number, "delivered"> => {
+      const map = new Map<number, "delivered">();
+      turns.forEach((t, i) => {
+        if (t.content === "go ahead") map.set(i, "delivered");
+      });
+      return map;
+    };
+    render(<SessionThread session={sessionWithTurns()} events={[]} members={[]} assignReceipts={assignReceipts} />);
+    expect(screen.getByLabelText("message delivered").textContent).toBe("✓✓");
+    // one user turn ticked, the atlas turn untouched
+    expect(screen.queryAllByLabelText(/message /)).toHaveLength(1);
+  });
+
+  it("marks failed sends in red", () => {
+    const assignReceipts = (): Map<number, "failed"> => new Map([[0, "failed"]]);
+    const { container } = render(<SessionThread session={sessionWithTurns()} events={[]} members={[]} assignReceipts={assignReceipts} />);
+    expect(screen.getByLabelText("message failed to send").textContent).toBe("!");
+    expect(container.querySelector(".text-danger")).not.toBeNull();
+  });
+});
+
+describe("SessionThread health", () => {
   it("shows no error row for healthy sessions", () => {
     render(<SessionThread session={session()} events={[]} members={[]} />);
     expect(screen.queryByRole("alert")).toBeNull();

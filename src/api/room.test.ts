@@ -692,3 +692,85 @@ test('room members exposes the live roster without an oracle', async () => {
     cleanup(dir)
   }
 })
+
+test('room typing posts fan out to members without touching the store', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await trackedServer(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const typingPath = `/v1/sessions/${created.sessionId}/room/typing`
+
+    const alice = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?name=Alice`)
+    await waitForFrame(alice.frames, (f) => f.type === 'snapshot', 'snapshot')
+
+    const posted = await jsonRequest(srv.port, 'POST', typingPath, { name: 'Bob', typing: true })
+    assert.equal(posted.status, 200)
+    assert.deepEqual(JSON.parse(posted.body), { ok: true })
+
+    const frame = await waitForFrame(
+      alice.frames,
+      (f) => f.type === 'event' && (f.event as Record<string, unknown>)?.type === 'session.typing',
+      'typing event'
+    )
+    const typing = frame.event as Record<string, unknown>
+    assert.deepEqual([typing.name, typing.typing, typing.sessionId], ['Bob', true, created.sessionId])
+    assert.ok(!('eventId' in typing), 'ephemeral fan-out carries no cursor')
+
+    // validation: non-boolean typing is 400, unknown ids stay 404 with no oracle
+    assert.equal((await jsonRequest(srv.port, 'POST', typingPath, { typing: 'yes' })).status, 400)
+    assert.equal((await jsonRequest(srv.port, 'POST', typingPath, {})).status, 400)
+    assert.equal((await jsonRequest(srv.port, 'POST', '/v1/sessions/ses-missing/room/typing', { typing: true })).status, 404)
+    alice.ws.close()
+    await alice.closed
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('room typing frames publish under the join name and dedupe repeats', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await trackedServer(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+
+    const alice = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?name=Alice`)
+    await waitForFrame(alice.frames, (f) => f.type === 'snapshot', 'alice snapshot')
+    const bob = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?name=Bob`)
+    await waitForFrame(bob.frames, (f) => f.type === 'snapshot', 'bob snapshot')
+
+    const typingFrames = (): Array<Record<string, unknown>> =>
+      bob.frames.filter((f) => f.type === 'event' && (f.event as Record<string, unknown>)?.type === 'session.typing')
+
+    alice.ws.send(JSON.stringify({ id: 't1', type: 'typing', typing: true }))
+    await waitForFrame(bob.frames, (f) => f.type === 'event' && (f.event as Record<string, unknown>)?.type === 'session.typing', 'typing true')
+    assert.equal((typingFrames()[0].event as Record<string, unknown>).name, 'Alice')
+
+    // a repeat heartbeat of the same state is dropped, not re-broadcast
+    alice.ws.send(JSON.stringify({ id: 't2', type: 'typing', typing: true }))
+    await new Promise((r) => setTimeout(r, 100))
+    assert.equal(typingFrames().length, 1)
+
+    alice.ws.send(JSON.stringify({ id: 't3', type: 'typing', typing: false }))
+    await waitForFrame(
+      bob.frames,
+      (f) => f.type === 'event' && (f.event as Record<string, unknown>)?.type === 'session.typing' && (f.event as Record<string, unknown>).typing === false,
+      'typing false'
+    )
+    assert.equal(typingFrames().length, 2)
+
+    // malformed typing is an error frame, never a broadcast
+    alice.ws.send(JSON.stringify({ id: 't4', type: 'typing', typing: 'sometimes' }))
+    const err = await waitForFrame(alice.frames, (f) => f.type === 'error' && f.id === 't4', 'typing error')
+    assert.match(err.error as string, /boolean/)
+    assert.equal(typingFrames().length, 2)
+
+    alice.ws.close()
+    await alice.closed
+    bob.ws.close()
+    await bob.closed
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})

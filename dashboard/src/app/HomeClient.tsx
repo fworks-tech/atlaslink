@@ -21,13 +21,16 @@ import { hasStoredSidebarOpen, loadSidebarOpen, saveSidebarOpen } from "@/lib/si
 import { clearLastSession, isDiagramMode, loadDiagramMode, loadLastSession, saveDiagramMode, saveLastSession } from "@/lib/uiPrefs";
 import { replyToSession, steerSession, cancelSession, createTask, ApiError } from "@/lib/api";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
+import { useDeliveryReceipts } from "@/hooks/useDeliveryReceipts";
 import type { GraphMode } from "@/lib/graph";
 import type { BridgeEvent } from "@/lib/types";
 
+// Typing heartbeats older than this drop out of the indicator.
+const TYPING_FRESH_MS = 6000;
+
 // Phones (<md) get the sidebar as an overlay drawer; matchMedia keeps the
 // check mockable in jsdom, which has no viewport of its own.
-function isPhoneViewport(): boolean {
-  try {
+function isPhoneViewport(): boolean {  try {
     return (
       typeof window !== "undefined" &&
       typeof window.matchMedia === "function" &&
@@ -52,7 +55,7 @@ function HomeInner() {
   const mode: GraphMode = (["chain", "fanout", "full"].includes(rawMode) ? rawMode : "full") as GraphMode;
   const { projects, loading: projectsLoading, error: projectsError, addProject } = useProjects();
   const { sessions, loading: sessionsLoading, error: sessionsError, refresh: refreshSessions, hydrateSession } = useSessions();
-  const { events } = useEvents();
+  const { events, sessionTyping = [] } = useEvents();
   const { members } = useRoomPresence(selectedSessionId);
   // Composer drafts are per-session overlay state — empty until the user
   // drops the first palette agent, so the live diagram renders untouched.
@@ -134,6 +137,45 @@ function HomeInner() {
         }) as BridgeEvent,
     );
   }, [selectedSession, events]);
+  // Per-turn delivery ticks: tracks this tab's sends and correlates them
+  // against the live SSE echoes (see useDeliveryReceipts).
+  const { trackSend, settleSend, assign } = useDeliveryReceipts(mergedEvents);
+  // Typing indicators (display-only — this client never publishes): fresh
+  // heartbeats for the selected session, latest state per name wins. Render
+  // stays pure: "now" is derived from the newest heartbeat until a timer
+  // advances the clock state, and timers re-arm through clockNow so entries
+  // drop out without any synchronous setState-in-effect.
+  const [clockNow, setClockNow] = useState<number | null>(null);
+  const typingNames = useMemo(() => {
+    if (!selectedSessionId) return [];
+    const latest = new Map<string, { typing: boolean; at: number }>();
+    for (const t of sessionTyping) {
+      if (t.sessionId !== selectedSessionId) continue;
+      latest.set(t.name, { typing: t.typing, at: t.at });
+    }
+    const newest = [...latest.values()].reduce((m, s) => Math.max(m, s.at), 0);
+    const now = clockNow ?? newest;
+    return [...latest]
+      .filter(([, s]) => s.typing && now - s.at < TYPING_FRESH_MS)
+      .map(([name]) => name)
+      .sort();
+  }, [sessionTyping, selectedSessionId, clockNow]);
+  useEffect(() => {
+    if (!selectedSessionId) return;
+    if (clockNow === null) {
+      // seed the wall clock without a synchronous setState-in-effect — the
+      // pre-seed paint derives "now" from the newest heartbeat instead
+      const seed = window.setTimeout(() => setClockNow(Date.now()), 0);
+      return () => window.clearTimeout(seed);
+    }
+    const remaining = sessionTyping
+      .filter((t) => t.sessionId === selectedSessionId && t.typing)
+      .map((t) => TYPING_FRESH_MS - (clockNow - t.at))
+      .filter((ms) => ms > 0);
+    if (remaining.length === 0) return;
+    const timer = window.setTimeout(() => setClockNow(Date.now()), Math.min(...remaining));
+    return () => window.clearTimeout(timer);
+  }, [sessionTyping, selectedSessionId, clockNow]);
   // The inspector fallback must be transient-only: still resolving means the
   // list is loading or an unresolved deep link has no error yet — a reported
   // error means resolution failed and the fallback applies.
@@ -257,10 +299,13 @@ function HomeInner() {
 
   const sendReply = useCallback(async (content: string) => {
     if (!selectedSessionId || !content.trim()) return;
+    const trimmed = content.trim();
+    const receiptKey = trackSend(selectedSessionId, trimmed);
     setReplyBusy(true);
     setReplyError(null);
     try {
-      const res = await replyToSession(selectedSessionId, content.trim());
+      const res = await replyToSession(selectedSessionId, trimmed);
+      settleSend(receiptKey, true);
       setReplyContent("");
       // the parked original keeps its state server-side, but the list holds a
       // stale copy until refetch — refresh before following the follow-up
@@ -268,11 +313,12 @@ function HomeInner() {
       // linked-session resume: follow the follow-up, the parked original stays behind
       if (res?.resumedSession?.sessionId) handleSelectSession(res.resumedSession.sessionId);
     } catch (e) {
+      settleSend(receiptKey, false);
       setReplyError(e instanceof Error ? e.message : "Reply failed — retry or check the session state.");
     } finally {
       setReplyBusy(false);
     }
-  }, [selectedSessionId, handleSelectSession, refreshSessions]);
+  }, [selectedSessionId, handleSelectSession, refreshSessions, trackSend, settleSend]);
 
   const handleReply = useCallback(() => {
     void sendReply(replyContent);
@@ -280,18 +326,22 @@ function HomeInner() {
 
   const handleSteer = useCallback(async () => {
     if (!selectedSessionId || !steerContent.trim()) return;
+    const trimmed = steerContent.trim();
+    const receiptKey = trackSend(selectedSessionId, trimmed);
     setSteerBusy(true);
     setSteerError(null);
     try {
-      await steerSession(selectedSessionId, steerContent.trim());
+      await steerSession(selectedSessionId, trimmed);
+      settleSend(receiptKey, true);
       setSteerContent("");
       await refreshSessions();
     } catch (e) {
+      settleSend(receiptKey, false);
       setSteerError(e instanceof Error ? e.message : "Steer failed — retry or check the session state.");
     } finally {
       setSteerBusy(false);
     }
-  }, [selectedSessionId, steerContent, refreshSessions]);
+  }, [selectedSessionId, steerContent, refreshSessions, trackSend, settleSend]);
 
   const handleInterrupt = useCallback(async () => {
     if (!selectedSessionId) return;
@@ -444,9 +494,16 @@ function HomeInner() {
                 />
               </ErrorBoundary>
               <ApprovalInbox onSelect={handleSelectSession} />
+              {typingNames.length > 0 ? (
+                <div role="status" aria-live="polite" data-testid="typing-indicator" className="text-xs text-muted">
+                  {typingNames.length === 1
+                    ? `${typingNames[0]} is typing…`
+                    : `${typingNames.join(", ")} are typing…`}
+                </div>
+              ) : null}
               <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
                 <SessionList onSelect={handleSelectSession} />
-                <SessionThread session={selectedSession} events={mergedEvents} members={members} onJump={(id) => handleNodeClick(id, "thread", {})} />
+                <SessionThread session={selectedSession} events={mergedEvents} members={members} onJump={(id) => handleNodeClick(id, "thread", {})} assignReceipts={selectedSession ? (turns) => assign(selectedSession.sessionId, selectedSession.correlationId, turns) : undefined} />
               </div>
               {composerMode === "reply" && awaitingQuestion ? (
                 <div className="rounded-xl border border-accent/30 bg-accent/10 p-4">

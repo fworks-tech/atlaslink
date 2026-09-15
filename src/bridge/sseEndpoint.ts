@@ -10,7 +10,13 @@ export const PING_INTERVAL_MS = 15000
  * `type`, and this endpoint never rewrites it (read-only projection contract).
  */
 export function formatSse(envelope: BridgeEnvelope): string {
-  const lines = [`id: ${envelope.eventId}`, `event: ${envelope.type}`, `data: ${JSON.stringify(envelope)}`]
+  // ephemeral fan-out carries no eventId — emitting `id: undefined` would
+  // poison the client's Last-Event-ID resume, so the line is omitted
+  const lines = [
+    ...(envelope.eventId === undefined ? [] : [`id: ${envelope.eventId}`]),
+    `event: ${envelope.type}`,
+    `data: ${JSON.stringify(envelope)}`,
+  ]
   return lines.join('\n') + '\n\n'
 }
 

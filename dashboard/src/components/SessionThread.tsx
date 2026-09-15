@@ -2,14 +2,29 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { BridgeEvent, Session } from "@/lib/types";
+import type { ReceiptState } from "@/hooks/useDeliveryReceipts";
 import { artifactsFor } from "@/lib/runProjection";
 import { pairTools } from "@/lib/eventPairing";
 import { Markdown } from "@/components/Markdown";
 
 const TURN_WINDOW = 50;
 
+const RECEIPT_TICK: Record<ReceiptState, string> = {
+  sending: "…",
+  sent: "✓",
+  delivered: "✓✓",
+  failed: "!",
+};
+
+const RECEIPT_LABEL: Record<ReceiptState, string> = {
+  sending: "sending",
+  sent: "sent",
+  delivered: "delivered",
+  failed: "failed to send",
+};
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function SessionThread({ session, events, members, onJump }: { session: Session | null; events: BridgeEvent[]; members?: Array<{ name: string }>; onJump?: (nodeId: string) => void }) {
+export function SessionThread({ session, events, members, onJump, assignReceipts }: { session: Session | null; events: BridgeEvent[]; members?: Array<{ name: string }>; onJump?: (nodeId: string) => void; assignReceipts?: (turns: Array<{ content: string; at?: string }>) => Map<number, ReceiptState> }) {
   const artifacts = useMemo(() => (session ? artifactsFor(session.correlationId, events) : null), [session, events]);
   const listRef = useRef<HTMLDivElement>(null);
   // stick-to-bottom chat behavior: follow new turns until the reader scrolls up
@@ -39,6 +54,17 @@ export function SessionThread({ session, events, members, onJump }: { session: S
     if (el) el.scrollTop += el.scrollHeight - prevHeight.current;
     prevHeight.current = el?.scrollHeight ?? 0;
   }, [shown]);
+
+  // receipt ticks ride the visible turns in render order — the assignment is
+  // greedy and pure, so re-renders never shift a tick onto another bubble.
+  // lives above the early return: hook count must not depend on selection.
+  const receipts = useMemo(() => {
+    if (!session || !assignReceipts) return new Map<number, ReceiptState>();
+    const visible = [...(session.interaction ?? [])]
+      .sort((a, b) => String(a.at).localeCompare(String(b.at)))
+      .slice(-shown);
+    return assignReceipts(visible.map((t) => ({ content: String(t.content ?? ""), ...(t.at ? { at: String(t.at) } : {}) })));
+  }, [session, assignReceipts, shown]);
 
   if (!session) return <div className="rounded-xl border border-white/5 bg-surface p-4 text-sm text-muted">Select a session to see its thread.</div>;
 
@@ -70,12 +96,20 @@ export function SessionThread({ session, events, members, onJump }: { session: S
           </button>
         )}
         {turns.length === 0 && <div className="text-xs text-muted">No turns yet.</div>}
-        {turns.map((t, i) => (
-          <div key={i} className={`max-w-[85%] min-w-0 rounded-lg px-3 py-2 text-sm break-words ${t.role === "user" ? "bg-raised ml-auto" : t.role === "atlas" ? "bg-accent/10 border border-accent/30" : "bg-white/5"}`}>
-            <div className="text-[10px] uppercase tracking-widest text-muted">{t.role}{t.member ? ` · ${t.member}` : ""}{t.at && <span className="font-normal lowercase tracking-normal"> · {new Date(t.at).toLocaleTimeString()}</span>}</div>
-            <Markdown text={t.content} className="mt-1 text-sm leading-snug" />
-          </div>
-        ))}
+        {turns.map((t, i) => {
+          const receipt = t.role === "user" ? receipts.get(i) : undefined;
+          return (
+            <div key={i} className={`max-w-[85%] min-w-0 rounded-lg px-3 py-2 text-sm break-words ${t.role === "user" ? "bg-raised ml-auto" : t.role === "atlas" ? "bg-accent/10 border border-accent/30" : "bg-white/5"}`}>
+              <div className="text-[10px] uppercase tracking-widest text-muted">{t.role}{t.member ? ` · ${t.member}` : ""}{t.at && <span className="font-normal lowercase tracking-normal"> · {new Date(t.at).toLocaleTimeString()}</span>}</div>
+              <Markdown text={t.content} className="mt-1 text-sm leading-snug" />
+              {receipt ? (
+                <div className={`mt-1 text-right text-[11px] ${receipt === "failed" ? "text-danger" : "text-muted"}`}>
+                  <span aria-label={`message ${RECEIPT_LABEL[receipt]}`}>{RECEIPT_TICK[receipt]}</span>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
         {artifacts && artifacts.reasoning.length > 0 && (
           <div className="pt-2">
             <div className="text-[10px] uppercase tracking-widest text-muted">reasoning stream</div>

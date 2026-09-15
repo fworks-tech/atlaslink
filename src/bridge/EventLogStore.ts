@@ -10,9 +10,11 @@ const SEQ_BASENAME = 'events.seq'
 /**
  * Broadly-typed bridge envelope. The broadcaster assigns `eventId`; this branch
  * accepts an envelope that already carries one and persists it verbatim.
+ * Ephemeral fan-out (typing indicators) travels without an `eventId` — it is
+ * delivered live only, never persisted, replayed, or counted.
  */
 export interface BridgeEnvelope {
-  eventId: number
+  eventId?: number
   type: string
   [key: string]: unknown
 }
@@ -70,6 +72,8 @@ export class EventLogStore {
   }
 
   append(envelope: BridgeEnvelope): boolean {
+    // id-less envelopes are ephemeral fan-out — never persisted or counted
+    if (envelope.eventId === undefined) return false
     if (!Number.isInteger(envelope.eventId) || envelope.eventId < this.#nextEventId) return false
     this.#nextEventId = envelope.eventId + 1
     const line = JSON.stringify(envelope) + '\n'
@@ -180,7 +184,7 @@ export class EventLogStore {
   #parseLine(line: string): StoredEnvelope | undefined {
     try {
       const envelope = JSON.parse(line) as BridgeEnvelope
-      if (!Number.isInteger(envelope.eventId) || envelope.eventId < 0) return undefined
+      if (typeof envelope.eventId !== 'number' || !Number.isInteger(envelope.eventId) || envelope.eventId < 0) return undefined
       return { eventId: envelope.eventId, envelope }
     } catch {
       return undefined

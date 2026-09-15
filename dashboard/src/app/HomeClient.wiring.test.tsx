@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import type { ReactNode } from "react";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
 import { encodeShareLink } from "@/lib/shareLink";
 import HomeClient from "./HomeClient";
 
@@ -117,7 +117,9 @@ vi.mock("@/components/SessionInspector", () => ({
 }));
 
 vi.mock("@/components/SessionThread", () => ({
-  SessionThread: () => null,
+  SessionThread: ({ assignReceipts }: { assignReceipts?: unknown }) => (
+    <div data-testid="thread" data-has-receipts={assignReceipts ? "true" : "false"} />
+  ),
 }));
 vi.mock("@/components/SessionComposer", () => ({
   SessionComposer: () => null,
@@ -760,6 +762,98 @@ describe("HomeClient mobile room", () => {
     seedRoom("session=ses-1");
     render(<HomeClient />);
     expect(screen.getByRole("button", { name: /add tool node/i })).toBeDefined();
+  });
+});
+
+describe("HomeClient delivery receipts", () => {
+  beforeEach(() => {
+    mobileViewport = false;
+    window.localStorage.clear();
+    replyMock.mockResolvedValue({ ok: true, session: {}, resumedSession: { sessionId: "ses-10" } });
+  });
+
+  it("hands the thread a receipt assigner once a session is selected", () => {
+    seedRoom("session=ses-1");
+    render(<HomeClient />);
+    expect(screen.getByTestId("thread").getAttribute("data-has-receipts")).toBe("true");
+  });
+
+  it("passes no assigner in the composer view", () => {
+    seed("");
+    render(<HomeClient />);
+    expect(screen.queryByTestId("thread")).toBeNull();
+  });
+});
+
+describe("HomeClient typing indicator", () => {
+  beforeEach(() => {
+    mobileViewport = false;
+    window.localStorage.clear();
+  });
+
+  function seedTyping(params: string, typing: Array<{ sessionId: string; name: string; typing: boolean; at: number }>) {
+    seedRoom(params);
+    eventsMock.mockReturnValue({ events: [], sessionTyping: typing });
+  }
+
+  it("shows who is typing in the selected session", async () => {
+    seedTyping("session=ses-1", [{ sessionId: "ses-1", name: "Bob", typing: true, at: Date.now() }]);
+    render(<HomeClient />);
+    expect(await screen.findByTestId("typing-indicator")).toHaveTextContent("Bob is typing…");
+  });
+
+  it("lists several typists", async () => {
+    const at = Date.now();
+    seedTyping("session=ses-1", [
+      { sessionId: "ses-1", name: "Bob", typing: true, at },
+      { sessionId: "ses-1", name: "Ana", typing: true, at },
+    ]);
+    render(<HomeClient />);
+    expect(await screen.findByTestId("typing-indicator")).toHaveTextContent("Ana, Bob are typing…");
+  });
+
+  it("ignores heartbeats for other sessions", () => {
+    seedTyping("session=ses-1", [{ sessionId: "ses-2", name: "Bob", typing: true, at: Date.now() }]);
+    render(<HomeClient />);
+    expect(screen.queryByTestId("typing-indicator")).toBeNull();
+  });
+
+  it("drops a stale heartbeat once the wall clock seeds", async () => {
+    seedTyping("session=ses-1", [{ sessionId: "ses-1", name: "Bob", typing: true, at: Date.now() - 7000 }]);
+    render(<HomeClient />);
+    // pre-seed paint derives "now" from the heartbeat itself, so the stale
+    // entry flashes until the seeded clock recomputes it away
+    expect(screen.getByTestId("typing-indicator")).toBeDefined();
+    await vi.waitFor(() => expect(screen.queryByTestId("typing-indicator")).toBeNull());
+  });
+
+  it("lets the indicator expire after the freshness window", async () => {
+    vi.useFakeTimers();
+    try {
+      seedTyping("session=ses-1", [{ sessionId: "ses-1", name: "Bob", typing: true, at: Date.now() }]);
+      render(<HomeClient />);
+      expect(screen.getByTestId("typing-indicator")).toBeDefined();
+      // advance in two beats so the seeded clock flushes and re-arms expiry
+      await act(async () => {
+        vi.advanceTimersByTime(0);
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(7000);
+      });
+      expect(screen.queryByTestId("typing-indicator")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears when the stop heartbeat lands", () => {
+    const at = Date.now();
+    seedTyping("session=ses-1", [
+      { sessionId: "ses-1", name: "Bob", typing: true, at: at - 1000 },
+      { sessionId: "ses-1", name: "Bob", typing: false, at },
+    ]);
+    render(<HomeClient />);
+    expect(screen.queryByTestId("typing-indicator")).toBeNull();
   });
 });
 
