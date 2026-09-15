@@ -778,6 +778,36 @@ describe("HomeClient delivery receipts", () => {
     expect(screen.getByTestId("thread").getAttribute("data-has-receipts")).toBe("true");
   });
 
+  it("shows the provider badge for sessions with a tweak, hides it otherwise", () => {
+    seedRoom("session=ses-1");
+    sessionsMock.mockReturnValue({
+      loading: false,
+      error: null,
+      hydrateSession: hydrateMock,
+      refresh: refreshMock,
+      sessions: [
+        {
+          sessionId: "ses-1",
+          correlationId: "cor-1",
+          status: "running",
+          version: 1,
+          projectId: "p-1",
+          task: { member: "the-mediator", prompt: "review PR" },
+          tweaks: { provider: "groq", member: { model: "mixtral-8x7b" } },
+        },
+        {
+          sessionId: "ses-2",
+          correlationId: "cor-2",
+          status: "queued",
+          version: 1,
+          task: { member: "the-mediator", prompt: "second" },
+        },
+      ],
+    });
+    render(<HomeClient />);
+    expect(screen.getByTestId("session-provider-badge").textContent).toBe("groq · mixtral-8x7b");
+  });
+
   it("passes no assigner in the composer view", () => {
     seed("");
     render(<HomeClient />);

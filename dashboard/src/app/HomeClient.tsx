@@ -433,6 +433,16 @@ function HomeInner() {
                 ← Back to composer
               </button>
               <span className="rounded bg-white/5 px-2 py-1 font-mono text-xs text-muted">{selectedSessionId.slice(0, 20)}…</span>
+              {(() => {
+                const tweakProvider = selectedSession?.tweaks?.provider;
+                const tweakModel = (selectedSession?.tweaks?.member as Record<string, unknown> | undefined)?.model;
+                return typeof tweakProvider === "string" && tweakProvider.length > 0 ? (
+                  <span data-testid="session-provider-badge" className="rounded bg-white/5 px-2 py-1 text-xs text-muted">
+                    {tweakProvider}
+                    {typeof tweakModel === "string" && tweakModel.length > 0 ? ` · ${tweakModel}` : ""}
+                  </span>
+                ) : null;
+              })()}
               <label htmlFor="diagram-mode" className="text-xs text-muted">Diagram</label>
               <select
                 id="diagram-mode"

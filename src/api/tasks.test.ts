@@ -1072,3 +1072,105 @@ test('POST /tasks/:id/cancel cancels a parked session (parked-forever stays canc
     cleanup(dir)
   }
 })
+// --- providers pick list (#145) ---
+
+const PROVIDERS = [
+  { name: 'opencode-go', model: 'muse-spark-1.3-contributor', models: ['muse-spark-1.3-contributor', 'muse-flow-1.0'], configured: true },
+  { name: 'groq', model: 'mixtral-8x7b-32768', models: [], configured: false },
+]
+
+async function startWithProviders(dir: string) {
+  const previousToken = process.env.ATLASLINK_API_TOKEN
+  delete process.env.ATLASLINK_API_TOKEN
+  try {
+    const log = await EventLogStore.open(dir)
+    const broadcaster = new EventBroadcaster(log)
+    const sse = new SseHandler(log, broadcaster)
+    const registry = new TaskRegistry()
+    const queue = new SessionQueue({ broadcaster, registry, runner: async () => {} })
+    const backend = new SessionStore()
+    const app = await createAppServer({ log, registry, queue, sse, backend, providers: PROVIDERS })
+    const httpServer = app.server
+    await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
+    const port = (httpServer.address() as AddressInfo).port
+    return {
+      port,
+      backend,
+      close: () =>
+        new Promise<void>((resolve) => {
+          httpServer.closeAllConnections?.()
+          httpServer.close(() => resolve())
+        }),
+    }
+  } finally {
+    if (previousToken === undefined) delete process.env.ATLASLINK_API_TOKEN
+    else process.env.ATLASLINK_API_TOKEN = previousToken
+  }
+}
+
+test('GET /providers lists the configured roster without leaking keys', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startWithProviders(dir)
+    const res = await jsonRequest(srv.port, 'GET', '/v1/providers')
+    assert.equal(res.status, 200)
+    const body = JSON.parse(res.body)
+    assert.deepEqual(body, {
+      ok: true,
+      default: 'opencode-go',
+      providers: PROVIDERS,
+    })
+    assert.ok(!res.body.includes('sk-'), 'no secret material in the pick list')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks fast-fails on an unknown provider tweak', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startWithProviders(dir)
+    const res = await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', tweaks: { provider: 'skynet' } })
+    assert.equal(res.status, 400)
+    assert.match(JSON.parse(res.body).error, /unknown provider/)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks validates the member.model tweak shape', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startWithProviders(dir)
+    for (const bad of [42, '', '   ', 'x'.repeat(201)]) {
+      const res = await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', tweaks: { member: { model: bad } } })
+      assert.equal(res.status, 400, `model ${JSON.stringify(bad)} must 400`)
+      assert.match(JSON.parse(res.body).error, /model/)
+    }
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks accepts a known provider+model tweak and persists it', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startWithProviders(dir)
+    const res = await jsonRequest(srv.port, 'POST', '/v1/tasks', {
+      member: 'm',
+      prompt: 'p',
+      tweaks: { provider: 'groq', member: { model: 'mixtral-8x7b-32768' } },
+    })
+    assert.equal(res.status, 201)
+    const created = JSON.parse(res.body).session
+    const stored = await srv.backend.get(created.sessionId)
+    assert.equal(stored?.tweaks?.provider, 'groq')
+    assert.equal((stored?.tweaks?.member as Record<string, unknown>)?.model, 'mixtral-8x7b-32768')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})

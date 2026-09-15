@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createTask, ApiError } from "@/lib/api";
+import { createTask, getProviders, ApiError } from "@/lib/api";
+import type { ProviderChoice } from "@/lib/api";
 import type { Project } from "@/lib/types";
 import FadeIn from "./FadeIn";
 
@@ -37,6 +38,33 @@ export function SessionComposer({
   const [toast, setToast] = useState<{ message: string; kind: "success" | "error" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [cycleIdx, setCycleIdx] = useState(0);
+  // Provider pick (#145): options from the daemon's roster, model prefilled
+  // from the selected provider's default and reset when the pick changes.
+  // Bad provider input 400s server-side too — this is just a nicer snapshot.
+  const [providers, setProviders] = useState<ProviderChoice[] | null>(null);
+  const [providerError, setProviderError] = useState<string | null>(null);
+  const [provider, setProvider] = useState("");
+  const [model, setModel] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    getProviders()
+      .then((res) => {
+        if (cancelled) return;
+        setProviders(res.providers);
+        if (res.default) {
+          setProvider(res.default);
+          const def = res.providers.find((p) => p.name === res.default);
+          if (def?.model) setModel(def.model);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setProviderError("providers unavailable — using defaults");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!toast) return;
@@ -67,6 +95,7 @@ export function SessionComposer({
         member: "the-mediator",
         prompt: trimmed,
         ...(projectId ? { projectId } : {}),
+        ...(provider ? { tweaks: { provider, member: model ? { model } : {} } } : {}),
       });
       setPrompt("");
       setToast({ message: "Task created", kind: "success" });
@@ -124,7 +153,45 @@ export function SessionComposer({
               ))}
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              {providers && providers.length > 0 ? (
+                <>
+                  <label className="flex items-center gap-1.5 text-xs text-muted">
+                    provider
+                    <select
+                      aria-label="provider"
+                      value={provider}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setProvider(next);
+                        const def = providers.find((p) => p.name === next);
+                        setModel(def?.model ?? "");
+                      }}
+                      className="min-h-[44px] rounded-lg border border-white/10 bg-raised px-2.5 py-1.5 text-base text-foreground outline-none focus:border-accent/50 sm:text-sm"
+                    >
+                      {providers.map((p) => (
+                        <option key={p.name} value={p.name}>
+                          {p.name}
+                          {p.configured === false ? " (no key)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-1 items-center gap-1.5 text-xs text-muted sm:flex-none">
+                    model
+                    <input
+                      aria-label="model"
+                      value={model}
+                      onChange={(e) => setModel(e.target.value.slice(0, 200))}
+                      placeholder="default"
+                      className="min-h-[44px] w-40 rounded-lg border border-white/10 bg-raised px-2.5 py-1.5 text-base text-foreground outline-none placeholder:text-muted/50 focus:border-accent/50 sm:text-sm"
+                    />
+                  </label>
+                </>
+              ) : providerError ? (
+                <span className="text-xs text-muted" title={providerError}>provider list unavailable</span>
+              ) : null}
+
               {projects.length > 0 && (
                 <select
                   id="composer-project"
