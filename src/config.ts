@@ -106,10 +106,6 @@ export function availableProviders(global: LLMConfig): ProviderChoice[] {
     name: p.name,
     model: p.model ?? global.model ?? '',
     models: Array.isArray(p.models) ? p.models.filter((m): m is string => typeof m === 'string') : [],
-    configured: typeof p.apiKey === 'string' && p.apiKey.length > 0 || !!process.env[apiKeyEnvFor(p.name)],
+    configured: (typeof p.apiKey === 'string' && p.apiKey.length > 0) || !!process.env[apiKeyEnvFor(p.name)],
   }))
-}
-
-export function isKnownProvider(global: LLMConfig, provider: string): boolean {
-  return availableProviders(global).some((p) => p.name === provider)
 }

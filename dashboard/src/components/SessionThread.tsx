@@ -99,7 +99,7 @@ export function SessionThread({ session, events, members, onJump, assignReceipts
         {turns.map((t, i) => {
           const receipt = t.role === "user" ? receipts.get(i) : undefined;
           return (
-            <div key={i} className={`max-w-[85%] min-w-0 rounded-lg px-3 py-2 text-sm break-words ${t.role === "user" ? "bg-raised ml-auto" : t.role === "atlas" ? "bg-accent/10 border border-accent/30" : "bg-white/5"}`}>
+            <div key={i} data-testid="turn" className={`max-w-[85%] min-w-0 rounded-lg px-3 py-2 text-sm break-words ${t.role === "user" ? "bg-raised ml-auto" : t.role === "atlas" ? "bg-accent/10 border border-accent/30" : "bg-white/5"}`}>
               <div className="text-[10px] uppercase tracking-widest text-muted">{t.role}{t.member ? ` · ${t.member}` : ""}{t.at && <span className="font-normal lowercase tracking-normal"> · {new Date(t.at).toLocaleTimeString()}</span>}</div>
               <Markdown text={t.content} className="mt-1 text-sm leading-snug" />
               {receipt ? (

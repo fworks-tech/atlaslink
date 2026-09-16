@@ -67,6 +67,7 @@ export class AtlasCheckpointStore implements CheckpointStore {
 
   async drop(id: string): Promise<void> {
     this.#live.delete(id)
+    this.channel.forget(id)
     await this.backend.deleteCheckpoint(id)
   }
 }

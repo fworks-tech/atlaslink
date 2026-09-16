@@ -410,3 +410,29 @@ test('PostgresBackend: sessions survive a cold restart of the daemon', async () 
     rmSync(file, { force: true })
   }
 })
+
+// the SQLite dialect's migration 7 down path ships to operators as an escape
+// hatch — exercise it hermetically with a seeded checkpoint channel
+test('SQLite migration 7 down folds delta channels to legacy rows and ups re-apply cleanly', async () => {
+  const db = new Database(':memory:')
+  const adapter = new SQLiteDb(db)
+  await runMigrations(adapter, sqliteMigrations)
+  const backend = new PostgresBackend(adapter)
+  await backend.saveCheckpoint('cor-d', 'ses-1', '{"step":1,"messages":["a"]}')
+  await backend.saveCheckpointDelta('cor-d', 'ses-1', '{"added":["b"],"baseCount":1,"meta":{"step":2}}')
+  await backend.saveCheckpointDelta('cor-d', 'ses-1', '{"added":["c"],"baseCount":2,"meta":{"step":3}}')
+  const snapshotOnly = JSON.parse((await backend.loadCheckpoint('cor-d'))!.data)
+  assert.deepEqual(snapshotOnly.messages, ['a', 'b', 'c'])
+
+  // rollback to 6 runs only migration 7's down (rolling back to 0 is a full
+  // teardown — migration 5's down drops the table migration 7's down recreated).
+  // Post-rollback the table is legacy-shaped, so verify the fold with raw SQL.
+  await rollbackMigrations(adapter, 6, sqliteMigrations)
+  const folded = await adapter.query<{ data: string }>(`SELECT data FROM run_checkpoints`, [])
+  // delta rows are unrecoverable in the legacy shape — latest full wins
+  assert.deepEqual(JSON.parse(folded.rows[0].data).messages, ['a'])
+
+  await runMigrations(adapter, sqliteMigrations)
+  const rehydrated = JSON.parse((await backend.loadCheckpoint('cor-d'))!.data)
+  assert.deepEqual(rehydrated.messages, ['a'])
+})

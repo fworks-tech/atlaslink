@@ -57,8 +57,13 @@ test('message trim or reorder forces a full re-anchor', () => {
   const channel = new DeltaChannel()
   channel.plan('cor-1', checkpoint('cor-1', 1, 5))
   const trimmed = checkpoint('cor-1', 2, 3) // context was trimmed
-  const row = channel.plan('cor-1', trimmed)
-  assert.equal(row?.kind, 'full')
+  assert.equal(channel.plan('cor-1', trimmed)?.kind, 'full')
+  // reorder: same length, different content — prefix check must catch it too
+  const base = checkpoint('cor-1', 3, 3)
+  channel.plan('cor-1', base)
+  const reordered = checkpoint('cor-1', 4, 3)
+  reordered.messages = [reordered.messages[2], reordered.messages[1], reordered.messages[0]]
+  assert.equal(channel.plan('cor-1', reordered)?.kind, 'full')
 })
 
 test('reconstruct replays snapshot + deltas into the latest value', () => {
@@ -77,7 +82,7 @@ test('reconstruct replays snapshot + deltas into the latest value', () => {
 })
 
 test('reconstruct of a delta-only channel yields null', () => {
-  assert.equal(reconstructRows([{ kind: 'delta', step: 0, data: '{"added":[],"meta":{}}' }]), null)
+  assert.equal(reconstructRows([{ kind: 'delta', step: 0, data: '{"added":[],"baseCount":0,"meta":{}}' }]), null)
 })
 
 test('history mirrors the rows pushed through the channel', () => {

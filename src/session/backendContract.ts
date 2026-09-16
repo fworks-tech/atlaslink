@@ -380,23 +380,31 @@ export async function backendContract(name: string, create: () => Promise<Sessio
     await test('checkpoints are invisible across tenants', async () => {
       const store = await create()
       await store.saveCheckpoint('cor-t', 'ses-1', '{}')
+      await store.saveCheckpointDelta('cor-t', 'ses-1', '{"added":[],"baseCount":0,"meta":{}}')
       const other = store.withTenant('other-tenant')
       assert.equal(await other.loadCheckpoint('cor-t'), null)
+      assert.deepEqual(await other.getDeltaChannelHistory('cor-t'), [])
       assert.ok(await store.loadCheckpoint('cor-t'))
     })
 
     await test('delta channel: snapshot + deltas reconstruct on load, history reports rows', async () => {
       const store = await create()
       await store.saveCheckpoint('cor-d', 'ses-1', '{"step":1,"messages":["a"]}')
-      await store.saveCheckpointDelta('cor-d', 'ses-1', '{"added":["b"],"meta":{"step":2}}')
-      await store.saveCheckpointDelta('cor-d', 'ses-1', '{"added":["c"],"meta":{"step":3}}')
+      await store.saveCheckpointDelta('cor-d', 'ses-1', '{"added":["b"],"baseCount":1,"meta":{"step":2}}')
+      await store.saveCheckpointDelta('cor-d', 'ses-1', '{"added":["c"],"baseCount":2,"meta":{"step":3}}')
 
       const revived = JSON.parse((await store.loadCheckpoint('cor-d'))!.data)
       assert.deepEqual(revived, { step: 3, messages: ['a', 'b', 'c'] })
 
+      // a delta whose base no longer matches stops the replay — the caller
+      // gets null rather than a silently spliced history
+      await store.saveCheckpointDelta('cor-d', 'ses-1', '{"added":["x"],"baseCount":99,"meta":{"step":4}}')
+      const partial = JSON.parse((await store.loadCheckpoint('cor-d'))!.data)
+      assert.deepEqual(partial.messages, ['a', 'b', 'c'])
+
       const history = await store.getDeltaChannelHistory('cor-d')
-      assert.deepEqual(history.map((r) => r.kind), ['full', 'delta', 'delta'])
-      assert.deepEqual(history.map((r) => r.step), [0, 1, 2])
+      assert.deepEqual(history.map((r) => r.kind), ['full', 'delta', 'delta', 'delta'])
+      assert.deepEqual(history.map((r) => r.step), [0, 1, 2, 3])
       assert.ok(history.every((r) => r.bytes > 0))
       await store.deleteCheckpoint('cor-d')
       assert.deepEqual(await store.getDeltaChannelHistory('cor-d'), [])

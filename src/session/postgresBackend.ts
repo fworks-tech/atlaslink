@@ -451,18 +451,28 @@ export class PostgresBackend implements SessionBackend {
   }
 
   async #insertCheckpointRow(id: string, sessionId: string, kind: 'full' | 'delta', data: string): Promise<void> {
-    // one row per (id, step); the backend owns step numbering so concurrent
-    // writers of the same id stay collision-free under the primary key
-    const { rows } = await this.db.query<{ next: number }>(
-      `SELECT COALESCE(MAX(step), -1) + 1 AS next FROM run_checkpoints WHERE tenant_id = $1 AND id = $2`,
-      [this.#tenantId, id]
-    )
-    const step = Number(rows[0]?.next ?? 0)
-    await this.db.query(
-      `INSERT INTO run_checkpoints (tenant_id, id, session_id, kind, step, data, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [this.#tenantId, id, sessionId, kind, step, data, new Date().toISOString()]
-    )
+    // rows chain by (id, step); step numbering is read-then-insert, so two
+    // writers of one id can compute the same step — the unique violation
+    // is the guard: fail the read, recompute, retry, and only give up after
+    // sustained contention
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const { rows } = await this.db.query<{ next: number }>(
+        `SELECT COALESCE(MAX(step), -1) + 1 AS next FROM run_checkpoints WHERE tenant_id = $1 AND id = $2`,
+        [this.#tenantId, id]
+      )
+      const step = Number(rows[0]?.next ?? 0)
+      try {
+        await this.db.query(
+          `INSERT INTO run_checkpoints (tenant_id, id, session_id, kind, step, data, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [this.#tenantId, id, sessionId, kind, step, data, new Date().toISOString()]
+        )
+        return
+      } catch (err) {
+        if (!isUniqueViolation(err)) throw err
+      }
+    }
+    throw new Error(`checkpoint step contention for ${id}; too many concurrent writers`)
   }
 
   async loadCheckpoint(id: string): Promise<{ sessionId: string; data: string } | null> {
@@ -477,6 +487,7 @@ export class PostgresBackend implements SessionBackend {
     const value = reconstructRows(
       rows.map((r) => ({ kind: r.kind === 'delta' ? 'delta' : 'full', step: 0, data: r.data })),
     )
+    if (value === null) return null
     return { sessionId, data: JSON.stringify(value) }
   }
 
