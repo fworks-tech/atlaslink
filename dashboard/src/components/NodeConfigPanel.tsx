@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { DEFAULT_CONFIG, PROVIDERS, type AgentConfig } from "@/lib/config";
+import { useEffect, useState } from "react";
+import { DEFAULT_CONFIG, type AgentConfig } from "@/lib/config";
+import { getProviders, type ProviderChoice } from "@/lib/api";
 
 function num(v: string): number {
   const n = Number(v)
@@ -19,6 +20,24 @@ export function NodeConfigPanel({
 }) {
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
+  // Live roster from the daemon (same source as the composer). Until it
+  // arrives (or if it fails) the provider select shows only the saved value
+  // and the model stays a text input — the panel never blocks on the fetch.
+  const [roster, setRoster] = useState<ProviderChoice[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getProviders()
+      .then((res) => {
+        if (!cancelled) setRoster(res.providers)
+      })
+      .catch(() => {
+        if (!cancelled) setRoster(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const resolve = (field: keyof AgentConfig): string | number | string[] => {
     if (field in draft) return draft[field]
@@ -45,6 +64,22 @@ export function NodeConfigPanel({
     onChange({ ...config, [field]: n })
   }
 
+  const pickProvider = (next: string) => {
+    const def = roster?.find((p) => p.name === next)
+    setDraft((d) => ({ ...d, provider: next, model: def?.model ?? "" }))
+    onChange({ ...config, provider: next, model: def?.model ?? "" })
+  }
+
+  const providerOptions = (): { value: string; label: string }[] => {
+    const names = roster?.map((p) => p.name) ?? []
+    const current = (resolve("provider") as string) || config.provider
+    return names.includes(current) ? names.map((n) => ({ value: n, label: n })) : [{ value: current, label: current }, ...names.map((n) => ({ value: n, label: n }))]
+  }
+
+  const activeProvider = roster?.find((p) => p.name === (resolve("provider") as string))
+  const modelChoices = activeProvider?.models?.filter((m) => m.length > 0) ?? []
+  const modelField = (resolve("model") as string) || config.model
+
   const showDefault = (field: "temperature" | "maxTokens") => {
     const current = resolve(field)
     const fallback = DEFAULT_CONFIG[field]
@@ -69,24 +104,45 @@ export function NodeConfigPanel({
         <select
           aria-label="provider"
           value={resolve("provider") as string}
-          onChange={(e) => commitString("provider", e.target.value)}
+          onChange={(e) => pickProvider(e.target.value)}
           className="mt-0.5 w-full rounded border border-white/10 bg-raised px-2 py-1 text-foreground"
         >
-          {PROVIDERS.map((p) => (
-            <option key={p} value={p}>
-              {p}
+          {providerOptions().map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
             </option>
           ))}
         </select>
       </label>
       <label className="block">
         <span className="text-muted">model</span>
-        <input
-          aria-label="model"
-          value={resolve("model") as string}
-          onChange={(e) => commitString("model", e.target.value)}
-          className="mt-0.5 w-full rounded border border-white/10 bg-raised px-2 py-1 text-foreground"
-        />
+        {modelChoices.length > 0 ? (
+          // strict select: only models the daemon's roster lists for this
+          // provider; a provider with no roster models falls back to text
+          <select
+            aria-label="model"
+            value={modelField}
+            onChange={(e) => commitString("model", e.target.value)}
+            className="mt-0.5 w-full rounded border border-white/10 bg-raised px-2 py-1 text-foreground"
+          >
+            {!modelChoices.includes(modelField) && modelField.length > 0 && (
+              <option value={modelField}>{modelField}</option>
+            )}
+            {modelChoices.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            aria-label="model"
+            value={modelField}
+            onChange={(e) => commitString("model", e.target.value)}
+            maxLength={200}
+            className="mt-0.5 w-full rounded border border-white/10 bg-raised px-2 py-1 text-foreground"
+          />
+        )}
       </label>
       <label className="block">
         <span className="text-muted">

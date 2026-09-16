@@ -1,13 +1,39 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { NodeConfigPanel } from "./NodeConfigPanel";
 import type { AgentConfig } from "@/lib/config";
 
-afterEach(cleanup);
+const getProvidersMock = vi.fn();
+
+vi.mock("@/lib/api", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+  return {
+    ...actual,
+    getProviders: (...args: unknown[]) => getProvidersMock(...args),
+  };
+});
+
+const ROSTER = {
+  ok: true,
+  default: "opencode-go",
+  providers: [
+    { name: "opencode-go", model: "muse-spark-1.3", models: ["muse-spark-1.3", "muse-flow-1.0"], configured: true },
+    { name: "groq", model: "mixtral-8x7b", models: [], configured: false },
+  ],
+};
 
 function baseConfig(): AgentConfig {
   return { provider: "opencode", model: "claude-sonnet-4-20250514", temperature: 0.7, maxTokens: 4096, tools: [] };
 }
+
+beforeEach(() => {
+  getProvidersMock.mockResolvedValue(ROSTER);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
 describe("NodeConfigPanel", () => {
   it("renders read-only values for a live node", () => {
@@ -53,5 +79,60 @@ describe("NodeConfigPanel", () => {
   it("shows current vs default for a drifted value", () => {
     render(<NodeConfigPanel config={{ ...baseConfig(), temperature: 0.2 }} editable={true} onChange={() => {}} />);
     expect(screen.getByText(/default: 0\.7/i)).toBeDefined();
+  });
+
+  it("fills the provider select from the live roster once loaded", async () => {
+    render(<NodeConfigPanel config={baseConfig()} editable={true} onChange={() => {}} />);
+    const select = screen.getByLabelText("provider") as HTMLSelectElement;
+    await waitFor(() => {
+      const names = Array.from(select.options).map((o) => o.value);
+      expect(names).toContain("opencode-go");
+    });
+    // saved value not in roster stays selectable so the display stays truthful
+    expect(names().includes("opencode")).toBe(true);
+    function names() {
+      return Array.from(select.options).map((o) => o.value);
+    }
+  });
+
+  it("switching provider resets model to the roster default and emits both", async () => {
+    const onChange = vi.fn();
+    render(<NodeConfigPanel config={baseConfig()} editable={true} onChange={onChange} />);
+    const select = (await waitFor(() => {
+      const s = screen.getByLabelText("provider") as HTMLSelectElement;
+      expect(Array.from(s.options).some((o) => o.value === "groq")).toBe(true);
+      return s;
+    })) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "groq" } });
+    expect(onChange).toHaveBeenCalledWith({ ...baseConfig(), provider: "groq", model: "mixtral-8x7b" });
+  });
+
+  it("model becomes a strict select for providers with roster models", async () => {
+    render(<NodeConfigPanel config={{ ...baseConfig(), provider: "opencode-go", model: "muse-spark-1.3" }} editable={true} onChange={() => {}} />);
+    await waitFor(() => expect((screen.getByLabelText("provider") as HTMLSelectElement).options.length).toBeGreaterThan(1));
+    const model = screen.getByLabelText("model") as HTMLSelectElement;
+    expect(model.tagName).toBe("SELECT");
+    const values = Array.from(model.options).map((o) => o.value);
+    expect(values).toEqual(["muse-spark-1.3", "muse-flow-1.0"]);
+  });
+
+  it("model stays a text input for providers without roster models", async () => {
+    render(<NodeConfigPanel config={{ ...baseConfig(), provider: "groq", model: "mixtral-8x7b" }} editable={true} onChange={() => {}} />);
+    await waitFor(() => expect((screen.getByLabelText("provider") as HTMLSelectElement).options.length).toBeGreaterThan(1));
+    const model = screen.getByLabelText("model") as HTMLInputElement;
+    expect(model.tagName).toBe("INPUT");
+    expect(model.maxLength).toBe(200);
+    fireEvent.change(model, { target: { value: "llama-4" } });
+    expect((model as HTMLInputElement).value).toBe("llama-4");
+  });
+
+  it("falls back to text model and saved provider when the roster fetch fails", async () => {
+    getProvidersMock.mockRejectedValue(new Error("down"));
+    render(<NodeConfigPanel config={baseConfig()} editable={true} onChange={() => {}} />);
+    await waitFor(() => expect(getProvidersMock).toHaveBeenCalled());
+    const select = screen.getByLabelText("provider") as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.value)).toEqual(["opencode"]);
+    const model = screen.getByLabelText("model") as HTMLInputElement;
+    expect(model.tagName).toBe("INPUT");
   });
 });
