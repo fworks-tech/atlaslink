@@ -122,3 +122,21 @@ describe("SessionThread health", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
+
+describe("SessionThread long-thread render cap (#117)", () => {
+  it("renders at most TURN_WINDOW turns for a 1000-turn session", () => {
+    const s = session();
+    s.interaction = Array.from({ length: 1000 }, (_, i) => ({
+      role: "user" as const,
+      at: new Date(1700000000000 + i * 1000).toISOString(),
+      content: `turn ${i}`,
+    })) as NonNullable<Session["interaction"]>;
+    const { container } = render(<SessionThread session={s} events={[]} members={[]} />);
+    const bubbles = container.querySelectorAll('div[class*="max-w-[85%]"]');
+    expect(s.interaction.length).toBe(1000);
+    expect(bubbles.length).toBe(50);
+    expect(screen.queryByText("turn 0")).toBeNull();
+    expect(screen.getByText("turn 999")).toBeDefined();
+    expect(screen.getByRole("button", { name: /950 earlier/ })).toBeDefined();
+  });
+});
