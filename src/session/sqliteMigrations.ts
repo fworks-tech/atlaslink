@@ -116,4 +116,46 @@ export const sqliteMigrations: Migration[] = [
     `,
     down: `DROP TABLE daily_cost_buckets;`,
   },
+  {
+    version: 7,
+    name: 'run_checkpoint_deltas',
+    up: `
+      CREATE TABLE run_checkpoints_deltas (
+        tenant_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'full',
+        step INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, id, step)
+      );
+      INSERT INTO run_checkpoints_deltas (tenant_id, id, session_id, kind, step, data, updated_at)
+        SELECT tenant_id, id, session_id, 'full', 0, data, updated_at FROM run_checkpoints;
+      DROP TABLE run_checkpoints;
+      ALTER TABLE run_checkpoints_deltas RENAME TO run_checkpoints;
+      CREATE INDEX run_checkpoints_session_idx ON run_checkpoints (tenant_id, session_id);
+    `,
+    down: `
+      CREATE TABLE run_checkpoints_legacy (
+        tenant_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (tenant_id, id)
+      );
+      INSERT INTO run_checkpoints_legacy (tenant_id, id, session_id, data, updated_at)
+        SELECT tenant_id, id, session_id, data, updated_at
+        FROM run_checkpoints
+        WHERE kind = 'full'
+          AND step = (
+            SELECT MAX(step) FROM run_checkpoints r2
+            WHERE r2.tenant_id = run_checkpoints.tenant_id AND r2.id = run_checkpoints.id AND r2.kind = 'full'
+          );
+      DROP TABLE run_checkpoints;
+      ALTER TABLE run_checkpoints_legacy RENAME TO run_checkpoints;
+      CREATE INDEX run_checkpoints_session_idx ON run_checkpoints (tenant_id, session_id);
+    `,
+  },
 ]
