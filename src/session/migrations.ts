@@ -152,6 +152,9 @@ export const migrations: Migration[] = [
       CREATE INDEX run_checkpoints_session_idx ON run_checkpoints (tenant_id, session_id);
     `,
     down: `
+      -- folding back to the legacy single-row shape loses delta rows by
+      -- construction (they have no legacy equivalent); the latest full
+      -- snapshot per channel wins
       CREATE TABLE run_checkpoints_legacy (
         tenant_id TEXT NOT NULL,
         id TEXT NOT NULL,

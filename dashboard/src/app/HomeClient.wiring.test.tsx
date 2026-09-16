@@ -808,6 +808,27 @@ describe("HomeClient delivery receipts", () => {
     expect(screen.getByTestId("session-provider-badge").textContent).toBe("groq · mixtral-8x7b");
   });
 
+  it("hides the provider badge for a session without tweaks", () => {
+    seedRoom("session=ses-2");
+    sessionsMock.mockReturnValue({
+      loading: false,
+      error: null,
+      hydrateSession: hydrateMock,
+      refresh: refreshMock,
+      sessions: [
+        {
+          sessionId: "ses-2",
+          correlationId: "cor-2",
+          status: "queued",
+          version: 1,
+          task: { member: "the-mediator", prompt: "second" },
+        },
+      ],
+    });
+    render(<HomeClient />);
+    expect(screen.queryByTestId("session-provider-badge")).toBeNull();
+  });
+
   it("passes no assigner in the composer view", () => {
     seed("");
     render(<HomeClient />);

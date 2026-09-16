@@ -131,11 +131,10 @@ describe("SessionThread long-thread render cap (#117)", () => {
       at: new Date(1700000000000 + i * 1000).toISOString(),
       content: `turn ${i}`,
     })) as NonNullable<Session["interaction"]>;
-    const { container } = render(<SessionThread session={s} events={[]} members={[]} />);
-    const bubbles = container.querySelectorAll('div[class*="max-w-[85%]"]');
-    expect(s.interaction.length).toBe(1000);
-    expect(bubbles.length).toBe(50);
-    expect(screen.queryByText("turn 0")).toBeNull();
+    render(<SessionThread session={s} events={[]} members={[]} />);
+    expect(screen.getAllByTestId("turn").length).toBe(50);
+    expect(screen.queryByText("turn 949")).toBeNull();
+    expect(screen.getByText("turn 950")).toBeDefined();
     expect(screen.getByText("turn 999")).toBeDefined();
     expect(screen.getByRole("button", { name: /950 earlier/ })).toBeDefined();
   });

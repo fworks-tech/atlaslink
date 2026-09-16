@@ -21,6 +21,8 @@ export interface CheckpointRow {
 export interface DeltaPayload {
   /** messages appended since the previous persisted row */
   added: CheckpointData['messages']
+  /** messages length of the base this delta was computed against — replay must match or the chain is broken */
+  baseCount: number
   /** the checkpoint without its messages — overlaid last-wins on replay */
   meta: Omit<CheckpointData, 'messages'>
 }
@@ -70,7 +72,7 @@ export function planWrite(
 
   const row = {
     kind: 'delta' as const,
-    data: JSON.stringify({ added, meta } satisfies DeltaPayload),
+    data: JSON.stringify({ added, baseCount: state.messageCount, meta } satisfies DeltaPayload),
   }
   return {
     row,
@@ -80,10 +82,10 @@ export function planWrite(
 
 /**
  * Replays rows (already in step order) into the latest value. Everything from
- * the last full snapshot onward must chain — a delta that does not directly
- * follow its predecessor stops the replay (the caller then serves the last
- * consistent value rather than a corrupt one). Legacy pre-delta rows are
- * plain full snapshots, so a legacy-only channel reconstructs as-is.
+ * the last full snapshot onward must chain — a delta computed against a
+ * different base stops the replay and the last consistent value is served
+ * rather than a silently spliced history. Legacy pre-delta rows are plain
+ * full snapshots, so a legacy-only channel reconstructs as-is.
  */
 export function reconstructRows(rows: CheckpointRow[]): CheckpointData | null {
   if (rows.length === 0) return null
@@ -95,7 +97,9 @@ export function reconstructRows(rows: CheckpointRow[]): CheckpointData | null {
     }
     if (!value) return null
     const delta = JSON.parse(row.data) as DeltaPayload
-    value = { ...delta.meta, messages: [...(value.messages ?? []), ...delta.added] }
+    const base: CheckpointData['messages'] = value.messages ?? []
+    if (base.length !== delta.baseCount) return value
+    value = { ...delta.meta, messages: [...base, ...delta.added] }
   }
   return value
 }
@@ -120,8 +124,16 @@ export class DeltaChannel {
 
   push(id: string, row: CheckpointRow): void {
     const rows = this.#rows.get(id) ?? []
+    // reconstruction only needs the last snapshot plus the tail after it —
+    // keeping the whole row history would re-grow O(N) in daemon memory
+    if (row.kind === 'full') rows.length = 0
     rows.push(row)
     this.#rows.set(id, rows)
+  }
+
+  forget(id: string): void {
+    this.#state.delete(id)
+    this.#rows.delete(id)
   }
 
   history(id: string): CheckpointRow[] {

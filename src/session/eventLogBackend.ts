@@ -267,6 +267,7 @@ export class EventLogBackend implements SessionBackend {
     const entry = this._checkpoints.get(`${this._tenantId}:${id}`)
     if (!entry) return null
     const value = reconstructRows(entry.rows)
+    if (value === null) return null
     return { sessionId: entry.sessionId, data: JSON.stringify(value) }
   }
 
