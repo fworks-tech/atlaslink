@@ -84,3 +84,27 @@ export function loadDiagramMode(fallback: GraphMode): GraphMode {
 export function saveDiagramMode(mode: GraphMode): void {
   writeRaw(DIAGRAM_MODE_KEY, JSON.stringify(mode));
 }
+
+export type Theme = "dark" | "light";
+
+const THEME_KEY = "atlaslink:ui:theme";
+
+export function isTheme(value: unknown): value is Theme {
+  return value === "dark" || value === "light";
+}
+
+// null = no stored choice: the caller decides (system preference)
+export function loadTheme(): Theme | null {
+  const raw = readRaw(THEME_KEY);
+  if (raw === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return isTheme(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveTheme(theme: Theme): void {
+  writeRaw(THEME_KEY, JSON.stringify(theme));
+}
