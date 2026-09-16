@@ -385,6 +385,23 @@ export async function backendContract(name: string, create: () => Promise<Sessio
       assert.ok(await store.loadCheckpoint('cor-t'))
     })
 
+    await test('delta channel: snapshot + deltas reconstruct on load, history reports rows', async () => {
+      const store = await create()
+      await store.saveCheckpoint('cor-d', 'ses-1', '{"step":1,"messages":["a"]}')
+      await store.saveCheckpointDelta('cor-d', 'ses-1', '{"added":["b"],"meta":{"step":2}}')
+      await store.saveCheckpointDelta('cor-d', 'ses-1', '{"added":["c"],"meta":{"step":3}}')
+
+      const revived = JSON.parse((await store.loadCheckpoint('cor-d'))!.data)
+      assert.deepEqual(revived, { step: 3, messages: ['a', 'b', 'c'] })
+
+      const history = await store.getDeltaChannelHistory('cor-d')
+      assert.deepEqual(history.map((r) => r.kind), ['full', 'delta', 'delta'])
+      assert.deepEqual(history.map((r) => r.step), [0, 1, 2])
+      assert.ok(history.every((r) => r.bytes > 0))
+      await store.deleteCheckpoint('cor-d')
+      assert.deepEqual(await store.getDeltaChannelHistory('cor-d'), [])
+    })
+
     await test('cost usage accumulates per day/agent/model and lists day-ascending', async () => {
       const store = await create()
       assert.deepEqual(await store.listDailyCost({}), [])

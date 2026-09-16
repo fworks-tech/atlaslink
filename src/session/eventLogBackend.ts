@@ -5,6 +5,7 @@ import type { SessionBackend, SessionFilter, SessionList, CostUsageRow, DailyCos
 import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project } from './types'
 import { VersionConflictError } from './types'
 import { DEFAULT_TENANT_ID } from './migrations'
+import { reconstructRows, type CheckpointRow } from './deltaChannel'
 
 function tenantOfSession(session: Session | null): string {
   return session?.tenantId ?? DEFAULT_TENANT_ID
@@ -46,11 +47,11 @@ export class EventLogBackend implements SessionBackend {
   private readonly _deletedProjects: Set<string>
   private readonly _tenantId: string
   /** Checkpoints ride in memory only — same durability as this backend's projects. */
-  private readonly _checkpoints: Map<string, { sessionId: string; data: string }>
+  private readonly _checkpoints: Map<string, { sessionId: string; rows: CheckpointRow[] }>
   /** Cost counters ride in memory only — same durability as this backend's projects. */
   private readonly _costUsage: Map<string, CostUsageRow & { tenant: string }>
 
-  constructor(log: EventLogStore, tenantId: string = DEFAULT_TENANT_ID, shared?: { snapshots: Map<string, SessionSnapshot>; versions: Map<string, number>; projects: Map<string, Project>; deletedProjects: Set<string>; checkpoints: Map<string, { sessionId: string; data: string }>; costUsage: Map<string, CostUsageRow & { tenant: string }> }) {
+  constructor(log: EventLogStore, tenantId: string = DEFAULT_TENANT_ID, shared?: { snapshots: Map<string, SessionSnapshot>; versions: Map<string, number>; projects: Map<string, Project>; deletedProjects: Set<string>; checkpoints: Map<string, { sessionId: string; rows: CheckpointRow[] }>; costUsage: Map<string, CostUsageRow & { tenant: string }> }) {
     this.log = log
     this._tenantId = tenantId
     if (shared) {
@@ -65,7 +66,7 @@ export class EventLogBackend implements SessionBackend {
       this._versions = new Map<string, number>()
       this._projects = new Map<string, Project>()
       this._deletedProjects = new Set<string>()
-      this._checkpoints = new Map<string, { sessionId: string; data: string }>()
+      this._checkpoints = new Map<string, { sessionId: string; rows: CheckpointRow[] }>()
       this._costUsage = new Map<string, CostUsageRow & { tenant: string }>()
     }
   }
@@ -247,11 +248,32 @@ export class EventLogBackend implements SessionBackend {
   }
 
   async saveCheckpoint(id: string, sessionId: string, data: string): Promise<void> {
-    this._checkpoints.set(`${this._tenantId}:${id}`, { sessionId, data })
+    this.#appendCheckpointRow(id, sessionId, 'full', data)
+  }
+
+  async saveCheckpointDelta(id: string, sessionId: string, data: string): Promise<void> {
+    this.#appendCheckpointRow(id, sessionId, 'delta', data)
+  }
+
+  #appendCheckpointRow(id: string, sessionId: string, kind: 'full' | 'delta', data: string): void {
+    const key = `${this._tenantId}:${id}`
+    const existing = this._checkpoints.get(key)
+    const rows = existing?.rows ?? []
+    rows.push({ kind, step: rows.length, data })
+    this._checkpoints.set(key, { sessionId, rows })
   }
 
   async loadCheckpoint(id: string): Promise<{ sessionId: string; data: string } | null> {
-    return this._checkpoints.get(`${this._tenantId}:${id}`) ?? null
+    const entry = this._checkpoints.get(`${this._tenantId}:${id}`)
+    if (!entry) return null
+    const value = reconstructRows(entry.rows)
+    return { sessionId: entry.sessionId, data: JSON.stringify(value) }
+  }
+
+  async getDeltaChannelHistory(id: string): Promise<Array<{ kind: 'full' | 'delta'; step: number; bytes: number }>> {
+    const entry = this._checkpoints.get(`${this._tenantId}:${id}`)
+    if (!entry) return []
+    return entry.rows.map((r) => ({ kind: r.kind, step: r.step, bytes: r.data.length }))
   }
 
   async deleteCheckpoint(id: string): Promise<void> {

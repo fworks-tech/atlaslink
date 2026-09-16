@@ -6,6 +6,7 @@ import type { SessionBackend, SessionFilter, SessionList, CostUsageRow, DailyCos
 import type { Db } from './db'
 import { isUniqueViolation } from './db'
 import { DEFAULT_TENANT_ID } from './migrations'
+import { reconstructRows } from './deltaChannel'
 
 interface EventRow {
   sessionId?: string
@@ -442,25 +443,51 @@ export class PostgresBackend implements SessionBackend {
   }
 
   async saveCheckpoint(id: string, sessionId: string, data: string): Promise<void> {
+    await this.#insertCheckpointRow(id, sessionId, 'full', data)
+  }
+
+  async saveCheckpointDelta(id: string, sessionId: string, data: string): Promise<void> {
+    await this.#insertCheckpointRow(id, sessionId, 'delta', data)
+  }
+
+  async #insertCheckpointRow(id: string, sessionId: string, kind: 'full' | 'delta', data: string): Promise<void> {
+    // one row per (id, step); the backend owns step numbering so concurrent
+    // writers of the same id stay collision-free under the primary key
+    const { rows } = await this.db.query<{ next: number }>(
+      `SELECT COALESCE(MAX(step), -1) + 1 AS next FROM run_checkpoints WHERE tenant_id = $1 AND id = $2`,
+      [this.#tenantId, id]
+    )
+    const step = Number(rows[0]?.next ?? 0)
     await this.db.query(
-      `INSERT INTO run_checkpoints (tenant_id, id, session_id, data, updated_at)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (tenant_id, id) DO UPDATE SET
-         session_id = EXCLUDED.session_id,
-         data = EXCLUDED.data,
-         updated_at = EXCLUDED.updated_at`,
-      [this.#tenantId, id, sessionId, data, new Date().toISOString()]
+      `INSERT INTO run_checkpoints (tenant_id, id, session_id, kind, step, data, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [this.#tenantId, id, sessionId, kind, step, data, new Date().toISOString()]
     )
   }
 
   async loadCheckpoint(id: string): Promise<{ sessionId: string; data: string } | null> {
-    const { rows } = await this.db.query<{ session_id: string; data: string }>(
-      `SELECT session_id, data FROM run_checkpoints
-       WHERE tenant_id = $1 AND id = $2`,
+    const { rows } = await this.db.query<{ session_id: string; kind: string; data: string }>(
+      `SELECT session_id, kind, data FROM run_checkpoints
+       WHERE tenant_id = $1 AND id = $2
+       ORDER BY step ASC`,
       [this.#tenantId, id]
     )
     if (rows.length === 0) return null
-    return { sessionId: rows[0].session_id, data: rows[0].data }
+    const sessionId = rows[0].session_id
+    const value = reconstructRows(
+      rows.map((r) => ({ kind: r.kind === 'delta' ? 'delta' : 'full', step: 0, data: r.data })),
+    )
+    return { sessionId, data: JSON.stringify(value) }
+  }
+
+  async getDeltaChannelHistory(id: string): Promise<Array<{ kind: 'full' | 'delta'; step: number; bytes: number }>> {
+    const { rows } = await this.db.query<{ kind: string; step: number; bytes: number }>(
+      `SELECT kind, step, LENGTH(data) AS bytes FROM run_checkpoints
+       WHERE tenant_id = $1 AND id = $2
+       ORDER BY step ASC`,
+      [this.#tenantId, id]
+    )
+    return rows.map((r) => ({ kind: r.kind === 'delta' ? 'delta' : 'full', step: Number(r.step), bytes: Number(r.bytes) }))
   }
 
   async deleteCheckpoint(id: string): Promise<void> {

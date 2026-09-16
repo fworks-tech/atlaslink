@@ -177,7 +177,7 @@ async function seedEveryTable(adapter: Db): Promise<void> {
     `INSERT INTO api_keys (id, user_id, key_hash, name, tenant_id, created_at) VALUES ('k-1', 'u-1', 'kh', 'k', 'default', now())`
   )
   await adapter.query(
-    `INSERT INTO run_checkpoints (tenant_id, id, session_id, data, updated_at) VALUES ('default', 'cor-1', 'ses-1', '{}', now())`
+    `INSERT INTO run_checkpoints (tenant_id, id, session_id, kind, step, data, updated_at) VALUES ('default', 'cor-1', 'ses-1', 'full', 0, '{}', now())`
   )
   await adapter.query(
     `INSERT INTO daily_cost_buckets (tenant_id, day, agent, model, prompt_tokens, completion_tokens, step_cost) VALUES ('default', '2026-09-10', 'the-builder', 'm1', 10, 4, 0.002)`

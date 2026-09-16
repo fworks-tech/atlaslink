@@ -3,6 +3,7 @@ import { StreamIntegrityError, VersionConflictError, firstQuestionLabel } from '
 import type { SessionBackend, SessionFilter, SessionList, CostUsageRow, DailyCostFilter } from './sessionBackend'
 import { deepFreeze } from './deepFreeze'
 import { DEFAULT_TENANT_ID } from './migrations'
+import { reconstructRows, type CheckpointRow } from './deltaChannel'
 
 export const INTERACTION_CAP = 500
 
@@ -19,7 +20,7 @@ interface SharedStore {
   versions: Map<string, number>
   snapshots: Map<string, SessionSnapshot>
   projects: Map<string, Project>
-  checkpoints: Map<string, { sessionId: string; data: string }>
+  checkpoints: Map<string, { sessionId: string; rows: CheckpointRow[] }>
   costUsage: Map<string, CostUsageRow & { tenant: string }>
 }
 
@@ -169,7 +170,7 @@ export class SessionStore implements SessionBackend {
   private readonly _versions: Map<string, number>
   private readonly _snapshots: Map<string, SessionSnapshot>
   private readonly _projects: Map<string, Project>
-  private readonly _checkpoints: Map<string, { sessionId: string; data: string }>
+  private readonly _checkpoints: Map<string, { sessionId: string; rows: CheckpointRow[] }>
   private readonly _costUsage: Map<string, CostUsageRow & { tenant: string }>
   private readonly _tenantId: string
 
@@ -187,7 +188,7 @@ export class SessionStore implements SessionBackend {
       this._versions = new Map<string, number>()
       this._snapshots = new Map<string, SessionSnapshot>()
       this._projects = new Map<string, Project>()
-      this._checkpoints = new Map<string, { sessionId: string; data: string }>()
+      this._checkpoints = new Map<string, { sessionId: string; rows: CheckpointRow[] }>()
       this._costUsage = new Map<string, CostUsageRow & { tenant: string }>()
     }
   }
@@ -320,11 +321,32 @@ export class SessionStore implements SessionBackend {
   }
 
   async saveCheckpoint(id: string, sessionId: string, data: string): Promise<void> {
-    this._checkpoints.set(`${this._tenantId}:${id}`, { sessionId, data })
+    this.#appendCheckpointRow(id, sessionId, 'full', data)
+  }
+
+  async saveCheckpointDelta(id: string, sessionId: string, data: string): Promise<void> {
+    this.#appendCheckpointRow(id, sessionId, 'delta', data)
+  }
+
+  #appendCheckpointRow(id: string, sessionId: string, kind: 'full' | 'delta', data: string): void {
+    const key = `${this._tenantId}:${id}`
+    const existing = this._checkpoints.get(key)
+    const rows = existing?.rows ?? []
+    rows.push({ kind, step: rows.length, data })
+    this._checkpoints.set(key, { sessionId, rows })
   }
 
   async loadCheckpoint(id: string): Promise<{ sessionId: string; data: string } | null> {
-    return this._checkpoints.get(`${this._tenantId}:${id}`) ?? null
+    const entry = this._checkpoints.get(`${this._tenantId}:${id}`)
+    if (!entry) return null
+    const value = reconstructRows(entry.rows)
+    return { sessionId: entry.sessionId, data: JSON.stringify(value) }
+  }
+
+  async getDeltaChannelHistory(id: string): Promise<Array<{ kind: 'full' | 'delta'; step: number; bytes: number }>> {
+    const entry = this._checkpoints.get(`${this._tenantId}:${id}`)
+    if (!entry) return []
+    return entry.rows.map((r) => ({ kind: r.kind, step: r.step, bytes: r.data.length }))
   }
 
   async deleteCheckpoint(id: string): Promise<void> {

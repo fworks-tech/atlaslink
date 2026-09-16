@@ -67,6 +67,18 @@ export interface SessionBackend {
   loadCheckpoint(id: string): Promise<{ sessionId: string; data: string } | null>
   deleteCheckpoint(id: string): Promise<void>
   /**
+   * Delta-channel append for a checkpoint (#187): stores only what changed
+   * since the previous persisted row. Implementations assign the monotonically
+   * increasing step themselves — rows for one id are ordered by it, and
+   * `loadCheckpoint` replays full-snapshot + deltas into the current value.
+   */
+  saveCheckpointDelta(id: string, sessionId: string, data: string): Promise<void>
+  /**
+   * Per-row storage shape of a checkpoint's delta channel, step ascending —
+   * lets operators see how much a long run actually stores.
+   */
+  getDeltaChannelHistory(id: string): Promise<Array<{ kind: 'full' | 'delta'; step: number; bytes: number }>>
+  /**
    * Durable daily cost counter (migration 6): increment-upsert one reasoning
    * mirror row's spend, scoped to the backend's tenant. Backends that cannot
    * persist (in-memory/file) keep it alongside their other volatile state.
