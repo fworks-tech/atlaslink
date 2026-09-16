@@ -14,8 +14,6 @@ export const DEFAULT_CONFIG: AgentConfig = {
   tools: [],
 }
 
-export const PROVIDERS: string[] = ["opencode", "groq", "ollama"]
-
 function asRecord(v: unknown): Record<string, unknown> {
   return typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {}
 }

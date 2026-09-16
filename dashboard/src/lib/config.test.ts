@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   DEFAULT_CONFIG,
-  PROVIDERS,
   configToTweaks,
   isAgentConfig,
   tweaksToConfig,
@@ -19,8 +18,8 @@ describe("config schema", () => {
   });
 
   it("exposes the supported provider list", () => {
-    expect(PROVIDERS).toContain("opencode");
-    expect(PROVIDERS.length).toBeGreaterThan(0);
+    // provider options now come from the live daemon roster (GET /v1/providers)
+    expect(DEFAULT_CONFIG.provider.length).toBeGreaterThan(0);
   });
 
   it("round-trips a config through tweaks", () => {
