@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { loadLastSession, saveLastSession, clearLastSession, loadDiagramMode, saveDiagramMode } from "./uiPrefs";
+import { loadLastSession, saveLastSession, clearLastSession, loadDiagramMode, saveDiagramMode, loadTheme, saveTheme } from "./uiPrefs";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -51,5 +51,25 @@ describe("uiPrefs diagram mode", () => {
     expect(loadDiagramMode("full")).toBe("full");
     window.localStorage.setItem("atlaslink:ui:diagram-mode", JSON.stringify("grid"));
     expect(loadDiagramMode("full")).toBe("full");
+  });
+});
+
+describe("uiPrefs theme", () => {
+  it("round-trips the theme", () => {
+    saveTheme("light");
+    expect(loadTheme()).toBe("light");
+    saveTheme("dark");
+    expect(loadTheme()).toBe("dark");
+  });
+
+  it("returns null when nothing is stored", () => {
+    expect(loadTheme()).toBeNull();
+  });
+
+  it("returns null for corrupt or unknown stored values", () => {
+    window.localStorage.setItem("atlaslink:ui:theme", "not-json{{{");
+    expect(loadTheme()).toBeNull();
+    window.localStorage.setItem("atlaslink:ui:theme", JSON.stringify("sepia"));
+    expect(loadTheme()).toBeNull();
   });
 });

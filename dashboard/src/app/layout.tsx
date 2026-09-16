@@ -16,11 +16,22 @@ export const metadata: Metadata = {
     "Live diagram of the Agenthood society's session provenance — Atlas holds the sky of sessions.",
 };
 
+// runs before first paint: stored theme wins, else system preference —
+// keeps the palette from flashing dark on a light user's reload
+const THEME_BOOTSTRAP = `try {
+  var s = JSON.parse(localStorage.getItem("atlaslink:ui:theme") || "null");
+  if (s !== "dark" && s !== "light") s = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  var h = document.documentElement;
+  h.dataset.theme = s;
+  h.setAttribute("data-mantine-color-scheme", s);
+} catch (e) {}`;
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="h-full" {...mantineHtmlProps}>
+    <html lang="en" className="h-full" {...mantineHtmlProps} suppressHydrationWarning>
       <head>
         <ColorSchemeScript defaultColorScheme="dark" />
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
       </head>
       <body className="flex min-h-screen flex-col">
         <MantineProvider theme={theme} defaultColorScheme="dark">

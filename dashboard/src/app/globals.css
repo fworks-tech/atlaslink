@@ -1,16 +1,43 @@
 @import "tailwindcss";
 @import "@mantine/core/styles.css";
 
-@theme {
-  --color-background: #0a0e1a;
-  --color-surface: #0f1526;
-  --color-raised: #18203a;
-  --color-foreground: #e7ebf6;
-  --color-muted: #8b94ad;
-  --color-accent: #7aa2ff;
-  --color-ok: #3ddc97;
-  --color-warn: #f0b429;
-  --color-danger: #ff6b6b;
+:root {
+  --background: #0a0e1a;
+  --surface: #0f1526;
+  --raised: #18203a;
+  --foreground: #e7ebf6;
+  --muted: #8b94ad;
+  --accent: #7aa2ff;
+  --ok: #3ddc97;
+  --warn: #f0b429;
+  --danger: #ff6b6b;
+}
+
+/* light overrides: same hues, lifted for daylight contrast */
+[data-theme="light"] {
+  --background: #f5f7fc;
+  --surface: #ffffff;
+  --raised: #eef1f9;
+  --foreground: #10162b;
+  --muted: #5a6478;
+  --accent: #3b5bdb;
+  --ok: #0ca678;
+  --warn: #b7791f;
+  --danger: #e03131;
+}
+
+/* inline so utilities emit var(--background) etc. and the palette swaps at
+   runtime with data-theme instead of being baked at build time */
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
     Helvetica, Arial, sans-serif;
@@ -19,9 +46,10 @@
 }
 
 body {
-  background: var(--color-background);
+  background: var(--background);
   color: var(--color-foreground);
   font-family: var(--font-sans);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 *:focus-visible {

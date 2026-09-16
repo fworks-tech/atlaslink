@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 import { usePathname } from "next/navigation";
 import { track } from "@vercel/analytics";
 import { Burger, Drawer, Group, Stack } from "@mantine/core";
+import ThemeToggle from "@/components/ThemeToggle";
 import { useCost } from "@/hooks/useCost";
 
 interface NavLink {
@@ -47,7 +48,9 @@ export default function Header() {
           atlaslink
         </Link>
 
-        <Group visibleFrom="md" gap="lg" c="dimmed" fz="sm">
+        <div className="flex items-center gap-2">
+          <ThemeToggle className="hidden sm:block" />
+          <Group visibleFrom="md" gap="lg" c="dimmed" fz="sm">
           <Link href="/cost" className="text-sm font-medium text-accent" onClick={() => trackNav("cost")}>
             {costTotal}
           </Link>
@@ -74,7 +77,8 @@ export default function Header() {
               </Link>
             )
           )}
-        </Group>
+          </Group>
+        </div>
 
         <Burger
           opened={menuOpen}
@@ -98,6 +102,7 @@ export default function Header() {
         }
       >
         <Stack gap="sm">
+          <ThemeToggle />
           <Link
             href="/cost"
             onClick={() => {
