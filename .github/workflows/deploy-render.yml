@@ -28,3 +28,23 @@ jobs:
           echo "Triggering Render deploy for atlaslink-daemon..."
           curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL"
           echo "Deploy hook accepted — Render is rebuilding from main."
+
+      - name: Wait for the service to come back with the new build
+        # The hook returning 200 only means Render accepted the trigger; a
+        # failed image build leaves the stale release running and this job
+        # would have gone green anyway. Poll /health so a dead or stale
+        # daemon fails the workflow instead of the users finding it.
+        env:
+          RENDER_SERVICE_URL: ${{ secrets.RENDER_SERVICE_URL }}
+        if: env.RENDER_SERVICE_URL != ''
+        run: |
+          for i in $(seq 1 30); do
+            sleep 10
+            if curl -fsS --max-time 10 "$RENDER_SERVICE_URL/health" | grep -q '"ok":true'; then
+              echo "Service is healthy after $((i * 10))s"
+              exit 0
+            fi
+            echo "attempt $i: not healthy yet"
+          done
+          echo "::error::service did not become healthy within 5 minutes — check the Render dashboard (build status, suspension, instance hours)"
+          exit 1
