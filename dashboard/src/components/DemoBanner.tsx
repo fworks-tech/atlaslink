@@ -11,7 +11,7 @@ export default function DemoBanner() {
     <div className="mx-auto max-w-6xl px-4 pt-4 sm:px-8">
       <div role="status" className="flex flex-wrap items-center justify-center gap-2 rounded-lg border border-accent/30 bg-accent/10 px-4 py-2 text-xs text-muted sm:justify-between">
         <span>
-          You're browsing the <strong className="text-foreground">demo</strong> — sessions live in the shared tenant.
+          You&apos;re browsing the <strong className="text-foreground">demo</strong> — sessions live in the shared tenant.
         </span>
         <Link href="/login" className="text-accent underline">
           Sign in to keep your sessions
