@@ -8,7 +8,7 @@ import type { SseHandler } from '../bridge/sseEndpoint'
 import type { TaskRegistry } from '../tasks/taskRegistry'
 import { availableProviders, type ProviderChoice } from '../config'
 import { tenantBackendForRequest } from './tenant'
-import { appendChatMessage, isTerminal, replyToParked, steerSession } from './sessionActions'
+import { appendChatMessage, askFollowup, isTerminal, replyToParked, steerSession } from './sessionActions'
 import { checkpointIdFor } from '../session/checkpointStore'
 import { log } from '../log'
 
@@ -318,6 +318,40 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         session: sessionToWire(result.session),
         ...(result.interrupted ? { interrupted: true as const } : {}),
       })
+    }
+  )
+
+  // Question about a terminal session: the run is over, so steer, reply
+  // and message all 409 there — the question spawns a linked follow-up
+  // answered by the same member instead.
+  app.post<{ Params: { sessionId: string }; Body: { content: string } }>(
+    '/tasks/:sessionId/followup',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['content'],
+          properties: {
+            content: { type: 'string', minLength: 1, maxLength: 10000 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const tenantCtx = tenantBackendForRequest(request, deps.backend)
+      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const backend = tenantCtx.backend
+      const tenantId = tenantCtx.tenantId!
+      const sessionId = request.params.sessionId
+      const result = await askFollowup(
+        { backend, registry: deps.registry, queue: deps.queue, broadcaster: deps.sse.broadcaster },
+        { sessionId, tenantId, content: request.body.content }
+      )
+      if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
+      const followup = await backend.get(result.followupId)
+      if (!followup) return reply.code(404).send({ ok: false, error: 'unknown session' })
+      return reply.code(201).send({ ok: true, session: sessionToWire(result.session), followupSession: sessionToWire(followup) })
     }
   )
 

@@ -18,6 +18,8 @@ const cancelMock = vi.fn();
 const presenceMock = vi.fn();
 const hydrateMock = vi.fn();
 const createMock = vi.fn();
+const followupMock = vi.fn();
+const patchMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: routerPush, replace: routerReplace }),
@@ -54,6 +56,7 @@ vi.mock("@/lib/api", () => ({
   steerSession: (...args: unknown[]) => steerMock(...args),
   cancelSession: (...args: unknown[]) => cancelMock(...args),
   createTask: (...args: unknown[]) => createMock(...args),
+  askFollowup: (...args: unknown[]) => followupMock(...args),
 }));
 
 vi.mock("@/components/ApprovalInbox", () => ({
@@ -159,6 +162,7 @@ function seed(params: string) {
       },
     ],
     refresh: refreshMock,
+    patchSessionStatus: patchMock,
   });
   eventsMock.mockReturnValue({ events: [] });
 }
@@ -206,6 +210,7 @@ function seedRoom(params: string) {
       },
     ],
     refresh: refreshMock,
+    patchSessionStatus: patchMock,
   });
   eventsMock.mockReturnValue({ events: [] });
 }
@@ -441,13 +446,24 @@ describe("HomeClient room wiring", () => {
     expect(hydrateMock).not.toHaveBeenCalled();
   });
 
-  it("Enter submits the chat form", async () => {
-    // the chat composer is terminal-only and inputless now — Enter wiring
-    // moved to the reply composer (covered by "submits the reply composer
-    // with Enter"); kept here as a status quard against composer regression
+  it("asks terminal-session questions as a linked follow-up answered by the same member", async () => {
     seedRoom("session=ses-7");
+    followupMock.mockResolvedValue({ ok: true, session: {}, followupSession: { sessionId: "ses-11" } });
     render(<HomeClient />);
-    expect(screen.queryByLabelText("Message the room")).toBeNull();
+    const input = screen.getByLabelText("Ask about this session");
+    fireEvent.change(input, { target: { value: "What happened?" } });
+    fireEvent.submit(input.closest("form") as HTMLFormElement);
+    await vi.waitFor(() => expect(followupMock).toHaveBeenCalledWith("ses-7", "What happened?"));
+    await vi.waitFor(() => expect(routerPush).toHaveBeenCalledWith(expect.stringContaining("session=ses-11")));
+  });
+
+  it("syncs terminal SSE frames into the session list so Steer cannot go stale", () => {
+    seedRoom("session=ses-1");
+    eventsMock.mockReturnValue({
+      events: [{ eventId: 41, type: "session.failed", sessionId: "ses-1", status: "failed" }],
+    });
+    render(<HomeClient />);
+    expect(patchMock).toHaveBeenCalledWith("ses-1", "failed");
   });
 
   it("shows the room presence count in the chat header", () => {

@@ -90,5 +90,23 @@ export function useSessions() {
     }
   }, []);
 
-  return { sessions, total, loading, error, refresh, hydrateSession };
+  // Live status sync: lifecycle transitions arriving over SSE patch the row
+  // in place — the list loads once, so without this a session that fails
+  // seconds after load still offers Steer until a manual refresh. The rank
+  // guard never regresses a row on a stale or replayed frame; the store
+  // stays truth and the next refresh corrects anything else.
+  const patchSessionStatus = useCallback((sessionId: string, status: Session["status"]) => {
+    setSessions((prev) => {
+      const idx = prev.findIndex((s) => s.sessionId === sessionId);
+      if (idx === -1 || prev[idx].status === status) return prev;
+      const rank = (s: Session["status"]): number =>
+        s === "queued" ? 0 : s === "running" || s === "awaiting_input" ? 1 : 2;
+      if (rank(prev[idx].status) > rank(status)) return prev;
+      const next = [...prev];
+      next[idx] = { ...prev[idx], status };
+      return next;
+    });
+  }, []);
+
+  return { sessions, total, loading, error, refresh, hydrateSession, patchSessionStatus };
 }

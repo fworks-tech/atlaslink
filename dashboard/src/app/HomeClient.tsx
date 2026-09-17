@@ -19,7 +19,7 @@ import { useEvents } from "@/hooks/useEvents";
 import { decodeShareLink, encodeShareLink, canonicalUrl } from "@/lib/shareLink";
 import { hasStoredSidebarOpen, loadSidebarOpen, saveSidebarOpen } from "@/lib/sidebarState";
 import { clearLastSession, isDiagramMode, loadDiagramMode, loadLastSession, saveDiagramMode, saveLastSession } from "@/lib/uiPrefs";
-import { replyToSession, steerSession, cancelSession, createTask, ApiError } from "@/lib/api";
+import { replyToSession, steerSession, cancelSession, createTask, askFollowup, ApiError } from "@/lib/api";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
 import { useDeliveryReceipts } from "@/hooks/useDeliveryReceipts";
 import type { GraphMode } from "@/lib/graph";
@@ -54,7 +54,7 @@ function HomeInner() {
   const rawMode = (searchParams.get("mode") ?? (decoded?.m as string) ?? loadDiagramMode("full")) as GraphMode;
   const mode: GraphMode = (["chain", "fanout", "full"].includes(rawMode) ? rawMode : "full") as GraphMode;
   const { projects, loading: projectsLoading, error: projectsError, addProject, ensureInbox } = useProjects();
-  const { sessions, loading: sessionsLoading, error: sessionsError, refresh: refreshSessions, hydrateSession } = useSessions();
+  const { sessions, loading: sessionsLoading, error: sessionsError, refresh: refreshSessions, hydrateSession, patchSessionStatus } = useSessions();
   const { events, sessionTyping = [] } = useEvents();
   const { members } = useRoomPresence(selectedSessionId);
   // Composer drafts are per-session overlay state — empty until the user
@@ -123,6 +123,28 @@ function HomeInner() {
   const [steerError, setSteerError] = useState<string | null>(null);
 
   const selectedSession = useMemo(() => sessions.find((s) => s.sessionId === selectedSessionId) ?? null, [sessions, selectedSessionId]);
+  // Live status sync: the list loads once, so lifecycle transitions arriving
+  // over SSE patch the row in place — without this a session that fails
+  // seconds after load still offers Steer until a manual refresh. The
+  // eventId cursor applies each frame once; patchSessionStatus rank-guards
+  // against stale or replayed frames.
+  const processedEventRef = useRef<number>(-1);
+  useEffect(() => {
+    if (!patchSessionStatus) return;
+    for (const e of events) {
+      if (typeof e.eventId !== "number" || e.eventId <= processedEventRef.current) continue;
+      processedEventRef.current = e.eventId;
+      const status =
+        e.type === "session.queued" ? "queued"
+        : e.type === "session.started" ? "running"
+        : e.type === "session.awaiting_input" || e.type === "session.parked" ? "awaiting_input"
+        : e.type === "session.succeeded" ? "succeeded"
+        : e.type === "session.failed" ? "failed"
+        : e.type === "session.cancelled" ? "cancelled"
+        : null;
+      if (status && typeof e.sessionId === "string") patchSessionStatus(e.sessionId, status);
+    }
+  }, [events, patchSessionStatus]);
   // Terminal sessions replay the durable memberEvents instead of the live
   // stream — past/failed runs must fill the inspector without an SSE replay;
   // non-terminal sessions keep the live feed exactly as before.
@@ -363,6 +385,9 @@ function HomeInner() {
 
   const [resumeBusy, setResumeBusy] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
+  const [followupContent, setFollowupContent] = useState("");
+  const [followupBusy, setFollowupBusy] = useState(false);
+  const [followupError, setFollowupError] = useState<string | null>(null);
   // Spin up a follow-up carrying the same member/prompt/project/provider
   // instead of making pasted-prompt surgery on a terminal corpse.
   const handleResume = useCallback(async () => {
@@ -384,6 +409,26 @@ function HomeInner() {
       setResumeBusy(false);
     }
   }, [selectedSession, router, refreshSessions]);
+
+  // Question about a terminal session: steer/reply/message all 409 there,
+  // so the question becomes a linked follow-up answered by the same member
+  // (the mediator delegates to exactly one) — then the room follows it.
+  const handleFollowup = useCallback(async () => {
+    if (!selectedSession || !followupContent.trim()) return;
+    const trimmed = followupContent.trim();
+    setFollowupBusy(true);
+    setFollowupError(null);
+    try {
+      const res = await askFollowup(selectedSession.sessionId, trimmed);
+      setFollowupContent("");
+      await refreshSessions();
+      handleSelectSession(res.followupSession.sessionId);
+    } catch (e) {
+      setFollowupError(e instanceof Error ? e.message : "Follow-up failed — resume or start a new session instead.");
+    } finally {
+      setFollowupBusy(false);
+    }
+  }, [selectedSession, followupContent, refreshSessions, handleSelectSession]);
 
   return (
     <div className="flex min-h-[60vh] flex-1 overflow-hidden" data-testid="home-content">
@@ -546,14 +591,19 @@ function HomeInner() {
               {composerMode === "chat" ? (
                 <div className="rounded-xl border border-line bg-surface p-4">
                   <div className="text-sm font-medium text-foreground">Room chat · visible to everyone here{members.length > 0 ? ` · ${members.length} here` : ""}</div>
-                  {/* chat mode = terminal session; the daemon rejects every
-                      append with 409, so the composer offers a next step
-                      instead of a type-then-fail loop */}
+                  {/* chat mode = terminal session: steer/reply/message all
+                      409 there, so a question becomes a linked follow-up
+                      answered by the same member instead of a type-then-fail loop */}
                   <div className="mt-3 text-sm text-muted">
                     This session has ended
-                    {selectedSession ? ` (${selectedSession.status})` : ""}. Resume it with the same member and
-                    prompt, or start a new session to continue the conversation.
+                    {selectedSession ? ` (${selectedSession.status})` : ""}. Ask about it and the same member
+                    answers in a linked follow-up, or resume it as-is.
                   </div>
+                  <form onSubmit={(e) => { e.preventDefault(); void handleFollowup(); }} className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <input value={followupContent} onChange={(e) => setFollowupContent(e.target.value)} placeholder="Ask about this session…" aria-label="Ask about this session" className="flex-1 rounded border border-line bg-raised px-3 py-2 text-base text-foreground placeholder:text-muted sm:text-sm" />
+                    <button type="submit" disabled={followupBusy || !followupContent.trim() || !selectedSession} className="min-h-[44px] rounded bg-accent px-4 py-2 text-sm text-background disabled:opacity-50">Ask the room</button>
+                  </form>
+                  {followupError ? <div role="alert" className="mt-2 text-xs text-danger">{followupError}</div> : null}
                   <button type="button" onClick={() => void handleResume()} disabled={resumeBusy || !selectedSession} className="mt-3 min-h-[44px] rounded bg-accent px-4 py-2 text-sm text-background disabled:opacity-50">
                     {resumeBusy ? "Resuming…" : "Resume this session"}
                   </button>

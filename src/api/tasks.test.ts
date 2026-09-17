@@ -794,6 +794,69 @@ test('POST /tasks/:id/reply rejects unknown, non-parked, blank and terminal sess
   }
 })
 
+test('POST /tasks/:id/followup spawns a linked follow-up on a failed session to the interactive lane', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServerWithQueueSpy(dir)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'the-mediator', prompt: 'review the PR', projectId: 'proj-1' })).body).session
+    await srv.backend.append({ type: 'session.failed', sessionId: created.sessionId, correlationId: created.correlationId, at: new Date().toISOString(), error: 'All providers failed' })
+
+    const res = await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/followup`, { content: 'What happened?' })
+    assert.equal(res.status, 201)
+    const parsed = JSON.parse(res.body)
+
+    // the failed original stays failed — the question does not rewrite history
+    assert.equal(parsed.session.status, 'failed')
+
+    // the follow-up is a new session linked back, carrying outcome + question
+    const followup = parsed.followupSession
+    assert.ok(followup.sessionId.startsWith('ses-'))
+    assert.notEqual(followup.sessionId, created.sessionId)
+    assert.equal(followup.status, 'queued')
+    assert.equal(followup.resumeOf, created.sessionId)
+    assert.equal(followup.task.member, 'the-mediator')
+    assert.ok(followup.task.prompt.includes('review the PR'))
+    // delimited fold so the model cannot mistake human text for instructions
+    assert.ok(followup.task.prompt.includes('<human_followup session_status="failed" failure="All providers failed">'))
+    assert.ok(followup.task.prompt.includes('What happened?\n</human_followup>'))
+
+    // the follow-up jumps the standard lane — a human is waiting on the answer
+    assert.deepEqual(srv.declares, [
+      { id: created.sessionId, lane: undefined },
+      { id: followup.sessionId, lane: 'interactive' },
+    ])
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /tasks/:id/followup rejects unknown, active, blank and oversize sessions', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServerWithQueueSpy(dir)
+    const missing = await jsonRequest(srv.port, 'POST', '/v1/tasks/ses-nope/followup', { content: 'hi' })
+    assert.equal(missing.status, 404)
+
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1' })).body).session
+    const active = await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/followup`, { content: 'too soon' })
+    assert.equal(active.status, 409)
+    assert.equal(JSON.parse(active.body).error, 'session still active; steer it or wait for it to finish')
+
+    await srv.backend.append({ type: 'session.failed', sessionId: created.sessionId, correlationId: created.correlationId, at: new Date().toISOString() })
+    const blank = await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/followup`, { content: '   ' })
+    assert.equal(blank.status, 400)
+
+    const oversize = await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/followup`, { content: 'x'.repeat(10001) })
+    assert.equal(oversize.status, 400)
+    // no follow-ups declared — guards reject before the commit
+    assert.equal(srv.declares.length, 1)
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
 test('POST /tasks/:id/reply answers once per park; a second reply 409s without forking', async () => {
   const dir = tmpDataDir()
   try {
