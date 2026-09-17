@@ -112,7 +112,7 @@ export function Sidebar({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <span className="text-xs font-medium uppercase tracking-widest text-muted">Projects</span>
         <button
           onClick={() => setShowNewProject(!showNewProject)}
@@ -124,14 +124,14 @@ export function Sidebar({
       </div>
 
       {showNewProject && (
-        <form onSubmit={handleCreateProject} className="border-b border-white/5 px-4 py-3">
+        <form onSubmit={handleCreateProject} className="border-b border-line px-4 py-3">
           <input
             autoFocus
             value={newProjectName}
             onChange={(e) => setNewProjectName(e.target.value)}
             placeholder="Project name"
             maxLength={200}
-            className="w-full rounded-md border border-white/10 bg-raised px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted/70 focus:border-accent/50"
+            className="w-full rounded-md border border-line bg-raised px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-muted/70 focus:border-accent/50"
           />
           {createError && <p className="mt-1 text-xs text-danger">{createError}</p>}
         </form>
@@ -142,9 +142,9 @@ export function Sidebar({
           <div className="space-y-2 px-2 py-2" aria-busy="true" aria-label="Loading projects">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="space-y-2">
-                <div className="h-7 animate-pulse rounded-md bg-white/10" />
-                <div className="ml-3 h-4 animate-pulse rounded bg-white/5" />
-                <div className="ml-3 h-4 w-3/4 animate-pulse rounded bg-white/5" />
+                <div className="h-7 animate-pulse rounded-md bg-line" />
+                <div className="ml-3 h-4 animate-pulse rounded bg-line" />
+                <div className="ml-3 h-4 w-3/4 animate-pulse rounded bg-line" />
               </div>
             ))}
           </div>
@@ -185,7 +185,7 @@ export function Sidebar({
             })}
 
             {unassigned.length > 0 && (
-              <div className="mt-2 border-t border-white/5 pt-2">
+              <div className="mt-2 border-t border-line pt-2">
                 {Array.from(groupByDate(unassigned).entries()).map(([label, items]) => (
                   <SessionGroup
                     key={label}

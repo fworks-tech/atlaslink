@@ -32,17 +32,18 @@ export default function Header() {
   const pathname = usePathname();
   // the /cost page already polls useCost + useCostHistory — skip a second
   // interval there so the header never duplicates pollers on that route
-  const { total } = useCost({ poll: pathname !== "/cost" });
+  const { total, error } = useCost({ poll: pathname !== "/cost" });
   // compact on purpose: the badge keeps 2 decimals while /cost shows 4 —
   // intentional precision split, the header stays narrow on small screens
+  const hasCost = !error && total.stepCost > 0;
   const costTotal = total.stepCost > 0 ? `$${total.stepCost.toFixed(2)}` : "—";
 
   return (
-    <nav className="border-b border-zinc-800">
+    <nav className="border-b border-line">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <Link
           href="/"
-          className="font-semibold tracking-tight text-white transition-colors hover:text-zinc-200 text-xl sm:text-2xl"
+          className="font-semibold tracking-tight text-foreground transition-colors hover:text-foreground/80 text-xl sm:text-2xl"
           onClick={() => trackNav("atlaslink")}
         >
           atlaslink
@@ -51,9 +52,12 @@ export default function Header() {
         <div className="flex items-center gap-2">
           <ThemeToggle className="hidden sm:block" />
           <Group visibleFrom="md" gap="lg" c="dimmed" fz="sm">
-          <Link href="/cost" className="text-sm font-medium text-accent" onClick={() => trackNav("cost")}>
-            {costTotal}
-          </Link>
+          {hasCost && (
+            <Link href="/cost" onClick={() => trackNav("cost")} className="flex items-center gap-1.5 text-sm text-muted">
+              <span>cost</span>
+              <span className="rounded bg-raised px-2 py-0.5 font-medium text-accent">{costTotal}</span>
+            </Link>
+          )}
           {navLinks.map((link) =>
             link.external ? (
               <a
@@ -62,7 +66,7 @@ export default function Header() {
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => trackNav(link.label)}
-                className="transition-colors hover:text-white"
+                className="transition-colors hover:text-foreground"
               >
                 {link.label}
               </a>
@@ -71,7 +75,7 @@ export default function Header() {
                 key={link.href + link.label}
                 href={link.href}
                 onClick={() => trackNav(link.label)}
-                className="transition-colors hover:text-white"
+                className="transition-colors hover:text-foreground"
               >
                 {link.label}
               </Link>
@@ -96,23 +100,25 @@ export default function Header() {
         padding="md"
         hiddenFrom="md"
         title={
-          <Link href="/" className="font-semibold tracking-tight text-white" onClick={() => setMenuOpen(false)}>
+          <Link href="/" className="font-semibold tracking-tight text-foreground">
             atlaslink
           </Link>
         }
       >
         <Stack gap="sm">
           <ThemeToggle />
-          <Link
-            href="/cost"
-            onClick={() => {
-              trackNav("cost");
-              setMenuOpen(false);
-            }}
-            className="block text-sm font-medium text-accent"
-          >
-            {costTotal}
-          </Link>
+          {hasCost && (
+            <Link
+              href="/cost"
+              onClick={() => {
+                trackNav("cost");
+                setMenuOpen(false);
+              }}
+              className="block text-sm font-medium text-accent"
+            >
+              {costTotal}
+            </Link>
+          )}
           {navLinks.map((link) =>
             link.external ? (
               <a
@@ -124,7 +130,7 @@ export default function Header() {
                   trackNav(link.label);
                   setMenuOpen(false);
                 }}
-                className="block text-zinc-400 transition-colors hover:text-white"
+                className="block text-muted transition-colors hover:text-foreground"
               >
                 {link.label}
               </a>
@@ -136,7 +142,7 @@ export default function Header() {
                   trackNav(link.label);
                   setMenuOpen(false);
                 }}
-                className="block text-zinc-400 transition-colors hover:text-white"
+                className="block text-muted transition-colors hover:text-foreground"
               >
                 {link.label}
               </Link>

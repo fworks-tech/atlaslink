@@ -66,7 +66,7 @@ export function SessionThread({ session, events, members, onJump, assignReceipts
     return assignReceipts(visible.map((t) => ({ content: String(t.content ?? ""), ...(t.at ? { at: String(t.at) } : {}) })));
   }, [session, assignReceipts, shown]);
 
-  if (!session) return <div className="rounded-xl border border-white/5 bg-surface p-4 text-sm text-muted">Select a session to see its thread.</div>;
+  if (!session) return <div className="rounded-xl border border-line bg-surface p-4 text-sm text-muted">Select a session to see its thread.</div>;
 
   const allTurns = [...(session.interaction ?? [])].sort((a, b) => String(a.at).localeCompare(String(b.at)));
   const turns = allTurns.slice(-shown);
@@ -74,8 +74,8 @@ export function SessionThread({ session, events, members, onJump, assignReceipts
   const here = members ?? [];
 
   return (
-    <div className="relative flex h-[480px] max-h-[60vh] min-h-[320px] flex-col overflow-hidden rounded-xl border border-white/5 bg-surface">
-      <div className="border-b border-white/5 px-3 py-2 text-xs uppercase tracking-widest text-muted" title={here.map((m) => m.name).join(", ")}>
+    <div className="relative flex h-[480px] max-h-[60vh] min-h-[320px] flex-col overflow-hidden rounded-xl border border-line bg-surface">
+      <div className="border-b border-line px-3 py-2 text-xs uppercase tracking-widest text-muted" title={here.map((m) => m.name).join(", ")}>
         thread · {session.sessionId.slice(0, 8)}…{here.length > 0 ? ` · ${here.length} here` : ""}
       </div>
       <div
@@ -99,7 +99,7 @@ export function SessionThread({ session, events, members, onJump, assignReceipts
         {turns.map((t, i) => {
           const receipt = t.role === "user" ? receipts.get(i) : undefined;
           return (
-            <div key={i} data-testid="turn" className={`max-w-[85%] min-w-0 rounded-lg px-3 py-2 text-sm break-words ${t.role === "user" ? "bg-raised ml-auto" : t.role === "atlas" ? "bg-accent/10 border border-accent/30" : "bg-white/5"}`}>
+            <div key={i} data-testid="turn" className={`max-w-[85%] min-w-0 rounded-lg px-3 py-2 text-sm break-words ${t.role === "user" ? "bg-raised ml-auto" : t.role === "atlas" ? "bg-accent/10 border border-accent/30" : "bg-line"}`}>
               <div className="text-[10px] uppercase tracking-widest text-muted">{t.role}{t.member ? ` · ${t.member}` : ""}{t.at && <span className="font-normal lowercase tracking-normal"> · {new Date(t.at).toLocaleTimeString()}</span>}</div>
               <Markdown text={t.content} className="mt-1 text-sm leading-snug" />
               {receipt ? (
@@ -126,7 +126,7 @@ export function SessionThread({ session, events, members, onJump, assignReceipts
             <div className="pt-2">
               <div className="text-[10px] uppercase tracking-widest text-muted">live activity</div>
               {toolPairs.map((p, i) => (
-                <div key={i} className="mt-1 truncate rounded bg-white/5 px-2 py-1 font-mono text-[11px] text-muted" title={String(p.called.name ?? "tool")}>
+                <div key={i} className="mt-1 truncate rounded bg-line px-2 py-1 font-mono text-[11px] text-muted" title={String(p.called.name ?? "tool")}>
                   {p.result ? "✓" : "▸"} {String(p.called.name ?? "tool")}
                 </div>
               ))}

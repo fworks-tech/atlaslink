@@ -6,7 +6,7 @@ const STATUS_STYLE: Record<SessionStatus, string> = {
   awaiting_input: "border-accent/30 bg-accent/10 text-accent animate-pulse",
   succeeded: "border-ok/30 bg-ok/15 text-ok",
   failed: "border-danger/30 bg-danger/15 text-danger",
-  cancelled: "border-white/10 bg-white/10 text-muted",
+  cancelled: "border-line bg-line text-muted",
 };
 
 export function StatusBadge({ status }: { status: SessionStatus }) {

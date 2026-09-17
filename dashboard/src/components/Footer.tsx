@@ -9,9 +9,9 @@ interface FooterProps {
 
 export default function Footer({ className = "" }: FooterProps) {
   return (
-    <footer className={`border-t border-zinc-800 px-6 py-8 mx-auto w-full max-w-7xl ${className}`}>
+    <footer className={`border-t border-line px-6 py-8 mx-auto w-full max-w-7xl ${className}`}>
       <Group justify="space-between" align="center" gap="lg" className="flex-col sm:flex-row">
-        <Group gap="sm" className="text-sm text-zinc-500">
+        <Group gap="sm" >
           <Text size="sm" c="dimmed">
             atlaslink · by{" "}
             <Anchor href="https://flabs.tech" c="dimmed" target="_blank" rel="noopener noreferrer">
@@ -19,7 +19,7 @@ export default function Footer({ className = "" }: FooterProps) {
             </Anchor>
           </Text>
         </Group>
-        <Group gap="2" className="flex flex-row items-start" >
+        <Group gap="2" >
           <Anchor
             href="https://github.com/fworks-tech/atlaslink"
             target="_blank"

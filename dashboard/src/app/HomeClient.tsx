@@ -104,7 +104,7 @@ function HomeInner() {
         setSidebarOpen(next);
         if (next) closeRef.current?.focus();
       }}
-      className="inline-flex min-h-[44px] items-center rounded-md border border-white/10 bg-raised px-3 py-1.5 text-sm text-foreground hover:bg-raised/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent transition-colors"
+      className="inline-flex min-h-[44px] items-center rounded-md border border-line bg-raised px-3 py-1.5 text-sm text-foreground hover:bg-raised/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent transition-colors"
     >
       ☰
     </button>
@@ -386,7 +386,7 @@ function HomeInner() {
       <aside
         id="sidebar"
         data-state={sidebarOpen ? "open" : "closed"}
-        className={`fixed md:static inset-y-0 left-0 z-40 flex w-64 max-w-[85vw] shrink-0 flex-col border-r border-white/5 bg-surface overflow-hidden transition-[transform,width] ${
+        className={`fixed md:static inset-y-0 left-0 z-40 flex w-64 max-w-[85vw] shrink-0 flex-col border-r border-line bg-surface overflow-hidden transition-[transform,width] ${
           sidebarOpen ? "translate-x-0 md:w-64" : "-translate-x-full md:translate-x-0 md:w-0 md:border-0"
         }`}
         aria-label="Sidebar"
@@ -428,16 +428,16 @@ function HomeInner() {
               <button
                 type="button"
                 onClick={handleCloseSession}
-                className="inline-flex min-h-[44px] items-center rounded-md border border-white/10 bg-raised px-3 py-1.5 text-sm text-foreground hover:bg-raised/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent transition-colors"
+      className="inline-flex min-h-[44px] items-center rounded-md border border-line bg-raised px-3 py-1.5 text-sm text-foreground hover:bg-raised/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent transition-colors md:hidden"
               >
                 ← Back to composer
               </button>
-              <span className="rounded bg-white/5 px-2 py-1 font-mono text-xs text-muted">{selectedSessionId.slice(0, 20)}…</span>
+              <span className="rounded bg-line px-2 py-1 font-mono text-xs text-muted">{selectedSessionId.slice(0, 20)}…</span>
               {(() => {
                 const tweakProvider = selectedSession?.tweaks?.provider;
                 const tweakModel = (selectedSession?.tweaks?.member as Record<string, unknown> | undefined)?.model;
                 return typeof tweakProvider === "string" && tweakProvider.length > 0 ? (
-                  <span data-testid="session-provider-badge" className="rounded bg-white/5 px-2 py-1 text-xs text-muted">
+                  <span data-testid="session-provider-badge" className="rounded bg-line px-2 py-1 text-xs text-muted">
                     {tweakProvider}
                     {typeof tweakModel === "string" && tweakModel.length > 0 ? ` · ${tweakModel}` : ""}
                   </span>
@@ -453,7 +453,7 @@ function HomeInner() {
                   if (isDiagramMode(e.target.value)) saveDiagramMode(e.target.value);
                   router.push(`?${p.toString()}`);
                 }}
-                className="rounded border border-white/10 bg-raised px-2 py-1 text-xs text-foreground"
+                className="rounded border border-line bg-raised px-2 py-1 text-xs text-foreground"
               >
                 <option value="chain">chain</option>
                 <option value="fanout">fanout</option>
@@ -461,7 +461,7 @@ function HomeInner() {
               </select>
               <button
                 onClick={() => void handleCopyLink()}
-                className="rounded bg-accent px-2 py-1 text-xs text-white hover:bg-accent/80"
+                className="rounded bg-accent px-2 py-1 text-xs text-background hover:bg-accent/80"
               >
                 copy link
               </button>
@@ -475,16 +475,16 @@ function HomeInner() {
               <p className="mt-2 text-sm leading-6 text-muted">Atlas holds the sky of sessions. Click any card to inspect reasoning, tools, decisions. {selectedSession?.status === "awaiting_input" ? "Atlas is awaiting your input — reply below." : ""}</p>
             </header>
             {sharedSessionGone ? (
-              <div role="alert" className="mb-4 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">
+              <div role="alert" className="mb-4 rounded-xl border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
                 The shared session is no longer available — backend storage was reset on the last restart.{" "}
-                <button type="button" onClick={handleCloseSession} className="underline hover:text-white">Start a new session</button>
+                <button type="button" onClick={handleCloseSession} className="underline hover:text-foreground">Start a new session</button>
               </div>
             ) : sessionsError && !selectedSession && !dismissedSessionsError ? (
-              <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">
+              <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
                 <span className="flex flex-wrap items-center gap-2">
                   {sessionsError.includes("Server is starting") ? "Backend is waking — retrying automatically…" : `Couldn't load sessions (${sessionsError}).`}
                 </span>
-                <button type="button" onClick={() => void refreshSessions()} className="underline hover:text-red-200">Retry</button>
+                <button type="button" onClick={() => void refreshSessions()} className="underline hover:text-danger">Retry</button>
                 <button type="button" onClick={() => setDismissedSessionsError(true)} className="ml-2 underline hover:text-green-400">Dismiss</button>
               </div>
             ) : null}
@@ -522,25 +522,25 @@ function HomeInner() {
                     <div className="mt-1 text-xs text-muted">{awaitingQuestion.context}</div>
                   ) : null}
                   <form onSubmit={(e) => { e.preventDefault(); handleReply(); }} className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <input value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Type your reply…" aria-label="Reply to Atlas" className="flex-1 rounded border border-white/10 bg-surface px-3 py-2 text-base text-foreground placeholder:text-muted sm:text-sm" />
-                    <button type="submit" disabled={replyBusy || !replyContent.trim()} className="min-h-[44px] rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Send</button>
+                    <input value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="Type your reply…" aria-label="Reply to Atlas" className="flex-1 rounded border border-line bg-surface px-3 py-2 text-base text-foreground placeholder:text-muted sm:text-sm" />
+                    <button type="submit" disabled={replyBusy || !replyContent.trim()} className="min-h-[44px] rounded bg-accent px-4 py-2 text-sm text-background disabled:opacity-50">Send</button>
                   </form>
-                  {replyError ? <div role="alert" className="mt-2 text-xs text-red-400">{replyError}</div> : null}
+                  {replyError ? <div role="alert" className="mt-2 text-xs text-danger">{replyError}</div> : null}
                 </div>
               ) : null}
               {composerMode === "steer" ? (
-                <div className="rounded-xl border border-white/10 bg-surface p-4">
+                <div className="rounded-xl border border-line bg-surface p-4">
                   <div className="text-sm font-medium text-foreground">Steer {selectedSession?.status === "running" ? "· interrupts the live run first" : "· rewrites the queued prompt"}</div>
                   <form onSubmit={(e) => { e.preventDefault(); void handleSteer(); }} className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <input value={steerContent} onChange={(e) => setSteerContent(e.target.value)} placeholder="Redirect this session…" aria-label="Redirect this session" className="flex-1 rounded border border-white/10 bg-raised px-3 py-2 text-base text-foreground placeholder:text-muted sm:text-sm" />
-                    <button type="submit" disabled={steerBusy || !steerContent.trim()} className="min-h-[44px] rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">Steer</button>
-                    <button type="button" onClick={handleInterrupt} disabled={steerBusy} className="min-h-[44px] rounded border border-red-400/40 px-4 py-2 text-sm text-red-300 disabled:opacity-50">Interrupt</button>
+                    <input value={steerContent} onChange={(e) => setSteerContent(e.target.value)} placeholder="Redirect this session…" aria-label="Redirect this session" className="flex-1 rounded border border-line bg-raised px-3 py-2 text-base text-foreground placeholder:text-muted sm:text-sm" />
+                    <button type="submit" disabled={steerBusy || !steerContent.trim()} className="min-h-[44px] rounded bg-accent px-4 py-2 text-sm text-background disabled:opacity-50">Steer</button>
+                    <button type="button" onClick={handleInterrupt} disabled={steerBusy} className="min-h-[44px] rounded border border-danger/40 px-4 py-2 text-sm text-danger disabled:opacity-50">Interrupt</button>
                   </form>
-                  {steerError ? <div role="alert" className="mt-2 text-xs text-red-400">{steerError}</div> : null}
+                  {steerError ? <div role="alert" className="mt-2 text-xs text-danger">{steerError}</div> : null}
                 </div>
               ) : null}
               {composerMode === "chat" ? (
-                <div className="rounded-xl border border-white/10 bg-surface p-4">
+                <div className="rounded-xl border border-line bg-surface p-4">
                   <div className="text-sm font-medium text-foreground">Room chat · visible to everyone here{members.length > 0 ? ` · ${members.length} here` : ""}</div>
                   {/* chat mode = terminal session; the daemon rejects every
                       append with 409, so the composer offers a next step
@@ -550,10 +550,10 @@ function HomeInner() {
                     {selectedSession ? ` (${selectedSession.status})` : ""}. Resume it with the same member and
                     prompt, or start a new session to continue the conversation.
                   </div>
-                  <button type="button" onClick={() => void handleResume()} disabled={resumeBusy || !selectedSession} className="mt-3 min-h-[44px] rounded bg-accent px-4 py-2 text-sm text-white disabled:opacity-50">
+                  <button type="button" onClick={() => void handleResume()} disabled={resumeBusy || !selectedSession} className="mt-3 min-h-[44px] rounded bg-accent px-4 py-2 text-sm text-background disabled:opacity-50">
                     {resumeBusy ? "Resuming…" : "Resume this session"}
                   </button>
-                  {resumeError ? <div role="alert" className="mt-2 text-xs text-red-400">{resumeError}</div> : null}
+                  {resumeError ? <div role="alert" className="mt-2 text-xs text-danger">{resumeError}</div> : null}
                 </div>
               ) : null}
             </div>

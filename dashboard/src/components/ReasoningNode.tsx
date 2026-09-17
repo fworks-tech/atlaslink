@@ -16,7 +16,7 @@ export function ReasoningNode(props: NodeProps) {
         className="w-full min-w-[160px] overflow-hidden border border-amber-400/30 bg-amber-500/10 p-2.5 shadow-lg"
         style={{ clipPath: "polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)" }}
       >
-        <Handle type="target" position={Position.Top} className="!bg-white/30" />
+        <Handle type="target" position={Position.Top} className="!bg-muted" />
         <div className="text-[9px] uppercase tracking-widest text-amber-300">reasoning · step {data.step}</div>
         <div title={content} className="mt-1 line-clamp-2 text-[11px] leading-snug break-words text-foreground">{content.slice(0, 120)}</div>
         {summary && <div title={summary} className="mt-1 truncate text-[10px] text-muted">↳ {summary.slice(0, 80)}</div>}

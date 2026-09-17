@@ -62,13 +62,13 @@ export function ApprovalInbox({ onSelect }: { onSelect: (sessionId: string) => v
         <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden="true" />
         waiting for you · {waiting.length}
       </div>
-      <ul className="divide-y divide-white/5">
+      <ul className="divide-y divide-line">
         {visible.map((s) => (
           <li key={s.sessionId}>
             <button
               type="button"
               onClick={() => onSelect(s.sessionId)}
-              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-white/5"
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-line"
             >
               <span className="shrink-0 rounded bg-raised px-2 py-0.5 text-[11px] text-muted">
                 {s.nextStep?.member ?? s.task.member}

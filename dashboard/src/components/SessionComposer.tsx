@@ -42,14 +42,14 @@ export function SessionComposer({
   // from the selected provider's default and reset when the pick changes.
   // Bad provider input 400s server-side too — this is just a nicer snapshot.
   const [providers, setProviders] = useState<ProviderChoice[] | null>(null);
-  const [providerError, setProviderError] = useState<string | null>(null);
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    getProviders()
-      .then((res) => {
+    const load = async (attempt: number): Promise<void> => {
+      try {
+        const res = await getProviders();
         if (cancelled) return;
         setProviders(res.providers);
         if (res.default) {
@@ -57,10 +57,19 @@ export function SessionComposer({
           const def = res.providers.find((p) => p.name === res.default);
           if (def?.model) setModel(def.model);
         }
-      })
-      .catch(() => {
-        if (!cancelled) setProviderError("providers unavailable — using defaults");
-      });
+      } catch {
+        // transient backend hiccups (cold start, proxy blip) must not
+        // permanently disable the picker — retry, then fall back silently:
+        // the form works with the daemon default without a roster
+        if (cancelled) return;
+        if (attempt < 3) {
+          setTimeout(() => {
+            if (!cancelled) void load(attempt + 1);
+          }, 2000 * attempt);
+        }
+      }
+    };
+    void load(0);
     return () => {
       cancelled = true;
     };
@@ -128,7 +137,7 @@ export function SessionComposer({
 
       <div className="relative z-10 w-full max-w-2xl">
 
-        <form onSubmit={submit} className="rounded-xl border border-white/5 bg-surface/80 backdrop-blur-sm p-6">
+        <form onSubmit={submit} className="rounded-xl border border-line bg-surface/80 backdrop-blur-sm p-6">
           <div className="flex flex-col gap-4">
             <textarea
               id="composer-prompt"
@@ -138,7 +147,7 @@ export function SessionComposer({
               rows={3}
               maxLength={10000}
               autoFocus
-              className="w-full rounded-lg border border-white/10 bg-raised px-4 py-3 text-base text-foreground outline-none placeholder:text-muted/50 focus:border-accent/50 resize-none sm:text-sm"
+              className="w-full rounded-lg border border-line bg-raised px-4 py-3 text-base text-foreground outline-none placeholder:text-muted/50 focus:border-accent/50 resize-none sm:text-sm"
             />
             <div className="flex flex-wrap gap-1.5">
               {SAMPLE_PROMPTS.slice(0, 4).map((p) => (
@@ -146,7 +155,7 @@ export function SessionComposer({
                   key={p}
                   type="button"
                   onClick={() => setPrompt(p)}
-                  className="rounded-full border border-white/10 bg-raised px-2.5 py-1 text-[11px] text-muted transition-colors hover:border-accent/30 hover:text-foreground"
+                  className="rounded-full border border-line bg-raised px-2.5 py-1 text-[11px] text-muted transition-colors hover:border-accent/30 hover:text-foreground"
                 >
                   {p.slice(0, 32)}…
                 </button>
@@ -167,7 +176,7 @@ export function SessionComposer({
                         const def = providers.find((p) => p.name === next);
                         setModel(def?.model ?? "");
                       }}
-                      className="min-h-[44px] rounded-lg border border-white/10 bg-raised px-2.5 py-1.5 text-base text-foreground outline-none focus:border-accent/50 sm:text-sm"
+                      className="min-h-[44px] rounded-lg border border-line bg-raised px-2.5 py-1.5 text-base text-foreground outline-none focus:border-accent/50 sm:text-sm"
                     >
                       {providers.map((p) => (
                         <option key={p.name} value={p.name}>
@@ -184,12 +193,10 @@ export function SessionComposer({
                       value={model}
                       onChange={(e) => setModel(e.target.value.slice(0, 200))}
                       placeholder="default"
-                      className="min-h-[44px] w-40 rounded-lg border border-white/10 bg-raised px-2.5 py-1.5 text-base text-foreground outline-none placeholder:text-muted/50 focus:border-accent/50 sm:text-sm"
+                      className="min-h-[44px] w-40 rounded-lg border border-line bg-raised px-2.5 py-1.5 text-base text-foreground outline-none placeholder:text-muted/50 focus:border-accent/50 sm:text-sm"
                     />
                   </label>
                 </>
-              ) : providerError ? (
-                <span className="text-xs text-muted" title={providerError}>provider list unavailable</span>
               ) : null}
 
               {projects.length > 0 && (
@@ -197,7 +204,7 @@ export function SessionComposer({
                   id="composer-project"
                   value={projectId}
                   onChange={(e) => setProjectId(e.target.value)}
-                  className="rounded-lg border border-white/10 bg-raised px-2.5 py-1.5 text-xs text-muted outline-none focus:border-accent/50"
+                  className="rounded-lg border border-line bg-raised px-2.5 py-1.5 text-xs text-muted outline-none focus:border-accent/50"
                 >
                   <option value="">no project</option>
                   {projects.map((p) => (
