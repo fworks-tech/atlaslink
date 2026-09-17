@@ -2,6 +2,7 @@ import Link from "next/link";
 import { IconEye, IconGitFork, IconShieldCheck, IconWallet } from "@tabler/icons-react";
 import FadeIn from "@/components/FadeIn";
 import LandingCanvas from "@/components/LandingCanvas";
+import AskTerminal from "@/components/AskTerminal";
 
 /**
  * Marketing surface for visitors — the app lives at /atlas (spec:
@@ -37,18 +38,8 @@ export default function LandingPage() {
   return (
     <main className="font-sans">
       {/* Hero — watermark + display type + live canvas */}
-      <section className="relative overflow-hidden">
-        {/* the great ATLAS watermark, full-bleed */}
-        <div className="pointer-events-none absolute inset-0 flex select-none items-center justify-center" aria-hidden>
-          <span
-            className="text-[22vw] font-black leading-none tracking-tighter text-foreground/[0.05]"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            ATLAS
-          </span>
-        </div>
-
-        <div className="relative mx-auto max-w-6xl px-6 pb-16 pt-14 sm:pt-20">
+      <section>
+        <div className="mx-auto max-w-6xl px-6 pb-16 pt-14 sm:pt-20">
           <div className="grid items-center gap-10 lg:grid-cols-[1fr_1.15fr]">
             <FadeIn>
               <span className="mb-5 inline-block rounded-full border border-gold/40 px-3 py-1 text-xs uppercase tracking-widest text-gold">
@@ -146,15 +137,10 @@ export default function LandingPage() {
         </section>
       </FadeIn>
 
-      {/* Final CTA */}
+      {/* Final CTA — the terminal speaks for itself */}
       <FadeIn>
-        <section className="relative overflow-hidden">
-          <div className="pointer-events-none absolute inset-0 flex select-none items-center justify-center" aria-hidden>
-            <span className="text-[18vw] font-black leading-none tracking-tighter text-foreground/[0.04]" style={{ fontFamily: "var(--font-display)" }}>
-              ATLAS
-            </span>
-          </div>
-          <div className="relative mx-auto max-w-6xl px-6 pb-24 pt-12 text-center">
+        <section>
+          <div className="mx-auto max-w-6xl px-6 pb-24 pt-12 text-center">
             <h2
               className="mb-4 text-4xl font-semibold text-foreground"
               style={{ fontFamily: "var(--font-display)" }}
@@ -162,9 +148,12 @@ export default function LandingPage() {
               Hand it to the room.
             </h2>
             <p className="mx-auto mb-8 max-w-lg text-muted">
-              Watch the Society earn it — live — or claim your own Atlas with
+              Watch the room earn it — live — or claim your own Atlas with
               your projects, your sessions, your costs.
             </p>
+            <div className="mx-auto mb-10 max-w-2xl">
+              <AskTerminal />
+            </div>
             <div className="flex flex-wrap items-center justify-center gap-3">
               <Link
                 href="/atlas"

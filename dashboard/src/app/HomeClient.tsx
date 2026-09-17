@@ -475,13 +475,13 @@ function HomeInner() {
               {selectedProjectId && <span className="text-xs text-muted">project {selectedProjectId.slice(0, 8)}…</span>}
             </div>
             <header className="mb-6">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">Live Society Diagram</h1>
-              <p className="mt-2 text-sm leading-6 text-muted">Atlas holds the sky of sessions. Click any card to inspect reasoning, tools, decisions. {selectedSession?.status === "awaiting_input" ? "Atlas is awaiting your input — reply below." : ""}</p>
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>The room, live.</h1>
+              <p className="mt-2 text-sm leading-6 text-muted">The session as a live diagram — reasoning, tools, decisions, all on the record. Click any card to inspect. {selectedSession?.status === "awaiting_input" ? "Atlas is awaiting your input — reply below." : ""}</p>
             </header>
             {sharedSessionGone ? (
-              <div role="alert" className="mb-4 rounded-xl border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-                The shared session is no longer available — backend storage was reset on the last restart.{" "}
-                <button type="button" onClick={handleCloseSession} className="underline hover:text-foreground">Start a new session</button>
+              <div role="alert" className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-gold/40 bg-gold/10 p-4 text-sm text-gold">
+                <span>That room is gone — demo storage resets when the backend restarts. Start fresh and invite the room back.</span>
+                <button type="button" onClick={handleCloseSession} className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-background transition-opacity hover:opacity-90">Start a new session</button>
               </div>
             ) : sessionsError && !selectedSession && !dismissedSessionsError ? (
               <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-danger/30 bg-danger/10 p-3 text-sm text-danger">

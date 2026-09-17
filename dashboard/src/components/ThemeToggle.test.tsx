@@ -12,16 +12,18 @@ describe("ThemeToggle", () => {
   it("starts from system preference when nothing is stored", () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as unknown as typeof window.matchMedia;
     render(<ThemeToggle />);
-    expect(screen.getByRole("button", { name: "Toggle theme" }).textContent).toBe("dark");
+    const btn = screen.getByRole("button", { name: "Toggle theme" });
+    expect(btn.getAttribute("title")).toBe("theme: light");
+    expect(btn.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("starts from the stored theme and toggles + persists", () => {
     window.localStorage.setItem("atlaslink:ui:theme", JSON.stringify("dark"));
     render(<ThemeToggle />);
     const button = screen.getByRole("button", { name: "Toggle theme" });
-    expect(button.textContent).toBe("light");
+    expect(button.getAttribute("title")).toBe("theme: dark");
     fireEvent.click(button);
-    expect(button.textContent).toBe("dark");
+    expect(button.getAttribute("title")).toBe("theme: light");
     expect(JSON.parse(window.localStorage.getItem("atlaslink:ui:theme")!)).toBe("light");
     expect(document.documentElement.dataset.theme).toBe("light");
     fireEvent.click(button);

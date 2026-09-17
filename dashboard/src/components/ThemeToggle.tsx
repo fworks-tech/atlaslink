@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { IconSun, IconMoonStars } from "@tabler/icons-react";
 import { loadTheme, saveTheme, type Theme } from "@/lib/uiPrefs";
 
 // Applies the resolved theme to <html> and keeps Mantine's color-scheme
@@ -37,9 +38,9 @@ export default function ThemeToggle({ className }: { className?: string }) {
       aria-pressed={theme === "light"}
       title={`theme: ${theme}`}
       suppressHydrationWarning
-      className={`min-h-[44px] min-w-[44px] rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-accent/30 hover:text-foreground ${className ?? ""}`}
+      className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-line text-muted transition-colors hover:border-accent/30 hover:text-gold ${className ?? ""}`}
     >
-      {theme === "light" ? "dark" : "light"}
+      {theme === "light" ? <IconSun size={18} stroke={1.6} /> : <IconMoonStars size={18} stroke={1.6} />}
     </button>
   );
 }

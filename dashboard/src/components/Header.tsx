@@ -48,7 +48,7 @@ export default function Header() {
           className="text-xl font-semibold tracking-tight text-foreground transition-colors hover:text-foreground/80 sm:text-2xl" style={{ fontFamily: "var(--font-display)" }}
           onClick={() => trackNav("atlaslink")}
         >
-          atlaslink
+          atlaslink<span className="text-gold">.</span>
         </Link>
 
         <div className="flex items-center gap-2">
@@ -124,7 +124,7 @@ export default function Header() {
         hiddenFrom="md"
         title={
           <Link href="/" className="font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-            atlaslink
+            atlaslink<span className="text-gold">.</span>
           </Link>
         }
       >
