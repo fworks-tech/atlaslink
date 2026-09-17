@@ -249,7 +249,7 @@ function Dropzone({
         e.preventDefault();
         onDraftDrop(agentType, screenToFlowPosition({ x: e.clientX, y: e.clientY }));
       }}
-      className="h-[480px] overflow-hidden rounded-xl border border-white/5 bg-surface"
+      className="h-[480px] overflow-hidden rounded-xl border border-line bg-surface"
     >
       {children}
     </div>

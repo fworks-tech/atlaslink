@@ -105,7 +105,7 @@ export function NodeConfigPanel({
           aria-label="provider"
           value={resolve("provider") as string}
           onChange={(e) => pickProvider(e.target.value)}
-          className="mt-0.5 w-full rounded border border-white/10 bg-raised px-2 py-1 text-foreground"
+          className="mt-0.5 w-full rounded border border-line bg-raised px-2 py-1 text-foreground"
         >
           {providerOptions().map((o) => (
             <option key={o.value} value={o.value}>
@@ -123,7 +123,7 @@ export function NodeConfigPanel({
             aria-label="model"
             value={modelField}
             onChange={(e) => commitString("model", e.target.value)}
-            className="mt-0.5 w-full rounded border border-white/10 bg-raised px-2 py-1 text-foreground"
+            className="mt-0.5 w-full rounded border border-line bg-raised px-2 py-1 text-foreground"
           >
             {!modelChoices.includes(modelField) && modelField.length > 0 && (
               <option value={modelField}>{modelField}</option>
@@ -140,7 +140,7 @@ export function NodeConfigPanel({
             value={modelField}
             onChange={(e) => commitString("model", e.target.value)}
             maxLength={200}
-            className="mt-0.5 w-full rounded border border-white/10 bg-raised px-2 py-1 text-foreground"
+            className="mt-0.5 w-full rounded border border-line bg-raised px-2 py-1 text-foreground"
           />
         )}
       </label>
@@ -153,7 +153,7 @@ export function NodeConfigPanel({
           aria-label="temperature"
           value={resolve("temperature")}
           onChange={(e) => commitNumber("temperature", e.target.value, 0, 2, "temperature")}
-          className="mt-0.5 w-full rounded border border-white/10 bg-raised px-2 py-1 text-foreground"
+          className="mt-0.5 w-full rounded border border-line bg-raised px-2 py-1 text-foreground"
         />
       </label>
       <label className="block">
@@ -165,7 +165,7 @@ export function NodeConfigPanel({
           aria-label="max tokens"
           value={resolve("maxTokens")}
           onChange={(e) => commitNumber("maxTokens", e.target.value, 1, 1000000, "max tokens", true)}
-          className="mt-0.5 w-full rounded border border-white/10 bg-raised px-2 py-1 text-foreground"
+          className="mt-0.5 w-full rounded border border-line bg-raised px-2 py-1 text-foreground"
         />
       </label>
       {error && (

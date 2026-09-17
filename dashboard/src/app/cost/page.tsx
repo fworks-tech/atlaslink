@@ -56,7 +56,7 @@ function HistoryChart({ buckets }: { buckets: CostBucket[] }) {
           </button>
         ))}
       </div>
-      <div role="img" aria-label={`${label} LLM spend, ${aggregated.length} ${periodNoun}, most recent total $${last.stepCost.toFixed(4)}`} className="flex h-40 items-end gap-1 overflow-x-auto rounded-xl border border-white/5 bg-surface p-4">
+      <div role="img" aria-label={`${label} LLM spend, ${aggregated.length} ${periodNoun}, most recent total $${last.stepCost.toFixed(4)}`} className="flex h-40 items-end gap-1 overflow-x-auto rounded-xl border border-line bg-surface p-4">
         {aggregated.map((b) => {
           const byAgent = new Map(b.agents.map((a) => [a.agent, a.stepCost]));
           const overflowCost = b.agents
@@ -121,9 +121,9 @@ export default function CostPage() {
         ← Back to diagram
       </Link>
       {error ? (
-        <div role="alert" className="mt-6 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">
+        <div role="alert" className="mt-6 rounded-xl border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
           Couldn&apos;t load cost data ({error}).{" "}
-          <button type="button" onClick={() => void refresh()} className="underline hover:text-red-200">Retry</button>
+          <button type="button" onClick={() => void refresh()} className="underline hover:text-danger">Retry</button>
         </div>
       ) : loading ? (
         <p className="mt-6 text-sm text-muted">Loading…</p>
@@ -135,9 +135,9 @@ export default function CostPage() {
             <span className="rounded bg-accent/20 px-2 py-1 text-accent">${total.stepCost.toFixed(4)}</span>
           </div>
           {history.error ? (
-            <div role="alert" className="mt-6 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-300">
+            <div role="alert" className="mt-6 rounded-xl border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
               Couldn&apos;t load cost history ({history.error}).{" "}
-              <button type="button" onClick={() => void history.refresh()} className="underline hover:text-red-200">Retry</button>
+              <button type="button" onClick={() => void history.refresh()} className="underline hover:text-danger">Retry</button>
             </div>
           ) : history.loading ? (
             <p className="mt-6 text-sm text-muted">Loading history…</p>
@@ -159,7 +159,7 @@ export default function CostPage() {
               </thead>
               <tbody>
                 {breakdown.map((row) => (
-                  <tr key={row.agent} className="border-t border-white/10">
+                  <tr key={row.agent} className="border-t border-line">
                     <td className="py-2 text-foreground">{row.agent}</td>
                     <td className="py-2 text-muted">{row.promptTokens.toLocaleString()}</td>
                     <td className="py-2 text-muted">{row.completionTokens.toLocaleString()}</td>

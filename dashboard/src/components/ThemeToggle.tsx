@@ -37,7 +37,7 @@ export default function ThemeToggle({ className }: { className?: string }) {
       aria-pressed={theme === "light"}
       title={`theme: ${theme}`}
       suppressHydrationWarning
-      className={`min-h-[44px] min-w-[44px] rounded-lg border border-white/10 px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-accent/30 hover:text-foreground ${className ?? ""}`}
+      className={`min-h-[44px] min-w-[44px] rounded-lg border border-line px-2.5 py-1.5 text-xs text-muted transition-colors hover:border-accent/30 hover:text-foreground ${className ?? ""}`}
     >
       {theme === "light" ? "dark" : "light"}
     </button>

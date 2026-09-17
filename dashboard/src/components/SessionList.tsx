@@ -36,16 +36,16 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
 
   if (loading) {
     return (
-      <div className="overflow-hidden rounded-xl border border-white/5 bg-surface" aria-busy="true" aria-label="Loading sessions">
-        <div className="border-b border-white/5 px-4 py-3">
-          <div className="h-3 w-20 animate-pulse rounded bg-white/10" />
+      <div className="overflow-hidden rounded-xl border border-line bg-surface" aria-busy="true" aria-label="Loading sessions">
+        <div className="border-b border-line px-4 py-3">
+          <div className="h-3 w-20 animate-pulse rounded bg-line" />
         </div>
-        <div className="divide-y divide-white/5">
+        <div className="divide-y divide-line">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="flex items-center gap-4 px-4 py-3">
-              <div className="h-3 w-32 animate-pulse rounded bg-white/10" />
-              <div className="h-3 w-24 animate-pulse rounded bg-white/5" />
-              <div className="ml-auto h-5 w-16 animate-pulse rounded-full bg-white/5" />
+              <div className="h-3 w-32 animate-pulse rounded bg-line" />
+              <div className="h-3 w-24 animate-pulse rounded bg-line" />
+              <div className="ml-auto h-5 w-16 animate-pulse rounded-full bg-line" />
             </div>
           ))}
         </div>
@@ -66,7 +66,7 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
 
   if (live.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-white/10 bg-surface/50 px-6 py-10 text-center">
+      <div className="rounded-xl border border-dashed border-line bg-surface/50 px-6 py-10 text-center">
         <p className="text-sm text-muted">
           No sessions yet. Start one above — e.g. “Fix issue #42 — login redirects to
           /dashboard” — and it appears here the moment it is created.
@@ -78,9 +78,9 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
   // Non-virtual path for small lists keeps the table simple and test-friendly
   if (live.length <= VIRTUALIZE_AT) {
     return (
-      <div className="overflow-x-auto rounded-xl border border-white/5 bg-surface">
+      <div className="overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full min-w-[640px] text-left text-sm">
-          <thead className="border-b border-white/5 text-xs uppercase tracking-widest text-muted">
+          <thead className="border-b border-line text-xs uppercase tracking-widest text-muted">
             <tr>
               <th className="px-4 py-3 font-medium">session</th>
               <th className="px-4 py-3 font-medium">member</th>
@@ -91,7 +91,7 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
           </thead>
           <tbody>
             {live.map((session) => (
-              <tr key={session.sessionId} className="border-b border-white/5 last:border-0">
+              <tr key={session.sessionId} className="border-b border-line last:border-0">
                 <td className="max-w-xs truncate px-4 py-3 pr-8">
                   {onSelect ? (
                     <button
@@ -134,10 +134,10 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
   const bottomPad = (live.length - end) * ROW_HEIGHT;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-white/5 bg-surface">
+    <div className="overflow-hidden rounded-xl border border-line bg-surface">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] text-left text-sm">
-          <thead className="border-b border-white/5 text-xs uppercase tracking-widest text-muted">
+          <thead className="border-b border-line text-xs uppercase tracking-widest text-muted">
             <tr>
               <th className="px-4 py-3 font-medium">session</th>
               <th className="px-4 py-3 font-medium">member</th>
@@ -163,7 +163,7 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
               </tr>
             )}
             {slice.map((session) => (
-              <tr key={session.sessionId} style={{ height: ROW_HEIGHT }} className="border-b border-white/5 last:border-0">
+              <tr key={session.sessionId} style={{ height: ROW_HEIGHT }} className="border-b border-line last:border-0">
                 <td className="max-w-xs truncate px-4 py-3 pr-8">
                   {onSelect ? (
                     <button

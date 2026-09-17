@@ -42,7 +42,7 @@ function ConfigSection({
 
   if (isDraft) {
     return (
-      <div className="mt-2 border-t border-white/5 pt-2">
+      <div className="mt-2 border-t border-line pt-2">
         <div className="mb-1 text-[11px] uppercase tracking-widest text-muted">config</div>
         <NodeConfigPanel
           config={config}
@@ -54,7 +54,7 @@ function ConfigSection({
   }
 
   return (
-    <div className="mt-2 border-t border-white/5 pt-2">
+    <div className="mt-2 border-t border-line pt-2">
       <div className="mb-1 text-[11px] uppercase tracking-widest text-muted">config</div>
       <NodeConfigPanel config={config} editable={false} onChange={() => {}} />
     </div>
@@ -222,9 +222,9 @@ export function SessionInspector({
       tabIndex={-1}
       role="dialog"
       aria-label="Session inspector"
-      className="fixed inset-y-0 right-0 z-40 flex w-[380px] max-w-[90vw] flex-col border-l border-white/10 bg-surface shadow-2xl outline-none max-sm:w-full max-sm:max-w-full"
+      className="fixed inset-y-0 right-0 z-40 flex w-[380px] max-w-[90vw] flex-col border-l border-line bg-surface shadow-2xl outline-none max-sm:w-full max-sm:max-w-full"
     >
-      <div className="flex items-center justify-between border-b border-white/5 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <div className="text-xs uppercase tracking-widest text-muted">inspector</div>
         <button onClick={onClose} className="rounded px-2 py-1 text-sm text-muted hover:bg-raised">
           ✕
@@ -235,7 +235,7 @@ export function SessionInspector({
       ) : (
         <>
           {selectedNode && (
-            <div className="border-b border-white/5 bg-raised/40 px-4 py-3">
+            <div className="border-b border-line bg-raised/40 px-4 py-3">
               <div className="flex items-center gap-2">
                 <span className="text-xs uppercase tracking-widest text-muted">selected node</span>
                 <span className="rounded bg-accent/20 px-1.5 py-0.5 font-mono text-[11px] text-accent">{selectedNode.type}</span>
@@ -250,7 +250,7 @@ export function SessionInspector({
             <div className="p-4 text-xs text-muted">{contextLoading ? "Loading session context…" : "Session context not loaded yet — node payload shown above."}</div>
           ) : (
           <>
-          <div className="flex gap-1 border-b border-white/5 px-2 py-1">
+          <div className="flex gap-1 border-b border-line px-2 py-1">
             {(["overview", "reasoning", "tools", "decisions"] as const).map((t) => (
               <button
                 key={t}
@@ -287,7 +287,7 @@ export function SessionInspector({
                   <div className="text-xs text-muted">No reasoning yet — mediator has not streamed.</div>
                 ) : (
                   artifacts.reasoning.map((e, i) => (
-                    <div key={i} className="rounded border border-white/5 bg-raised/40 p-2">
+                    <div key={i} className="rounded border border-line bg-raised/40 p-2">
                       <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
                         <span>step {String((e as Record<string, unknown>).step ?? i)} · {String(e.member ?? "")}</span>
                         {typeof (e as Record<string, unknown>).model === "string" && <span className="rounded bg-raised px-1.5 font-mono">{String((e as Record<string, unknown>).model)}</span>}
@@ -314,7 +314,7 @@ export function SessionInspector({
                   <div className="text-xs text-muted">No tool calls yet.</div>
                 ) : (
                   toolPairs.map((p, i) => (
-                    <div key={i} className="rounded border border-white/5 bg-raised/40 p-2">
+                    <div key={i} className="rounded border border-line bg-raised/40 p-2">
                       <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
                         <span className="text-xs font-medium text-foreground">{String(p.called.name ?? "tool")}</span>
                         {p.latencyMs ? <span className="rounded bg-raised px-1.5">{(p.latencyMs / 1000).toFixed(1)}s</span> : null}

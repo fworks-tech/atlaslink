@@ -13,7 +13,7 @@ export default function HelpTip({ text, side = "top", className = "" }: HelpTipP
     <span className={className}>
       <Tooltip label={text} position={side} withArrow openDelay={300}>
         <span
-          className="cursor-help inline-flex items-center justify-center rounded-full border border-zinc-700 px-1.5 text-[10px] leading-4 text-zinc-500 hover:text-zinc-300 hover:border-zinc-500 transition-colors select-none"
+          className="cursor-help inline-flex items-center justify-center rounded-full border border-line px-1.5 text-[10px] leading-4 text-muted hover:text-foreground hover:border-line transition-colors select-none"
           aria-label={`Help: ${text}`}
         >
           ?

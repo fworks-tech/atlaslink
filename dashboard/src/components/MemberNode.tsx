@@ -14,10 +14,10 @@ export function MemberNode({ data, selected }: NodeProps<MemberGraphNode>) {
       <div
         aria-label={`Member ${member}: ${active ? "holding the podium" : "completed"}`}
         className={`flex w-full min-w-32 items-center gap-1.5 overflow-hidden rounded-full border bg-raised px-3 py-1.5 shadow-lg ${
-          active ? "border-ok/60" : "border-white/10"
+          active ? "border-ok/60" : "border-line"
         }`}
       >
-        <Handle type="target" position={Position.Top} className="!bg-white/30" />
+        <Handle type="target" position={Position.Top} className="!bg-muted" />
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />
         <span title={member} className={`truncate text-[11px] ${active ? "text-ok" : "text-foreground/80"}`}>
           {member.replace(/^the-/, "")}

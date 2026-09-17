@@ -47,7 +47,8 @@ describe("SessionComposer provider selector", () => {
     getProvidersMock.mockRejectedValue(new Error("down"));
     render(<SessionComposer projects={[]} onCreateSession={vi.fn()} />);
     expect(screen.queryByLabelText("provider")).toBeNull();
-    await waitFor(() => expect(screen.getByText(/provider list unavailable/i)).toBeInTheDocument());
+    await waitFor(() => expect(getProvidersMock.mock.calls.length).toBeGreaterThanOrEqual(2));
+    expect(screen.queryByText(/provider list unavailable/i)).toBeNull();
   });
 
   it("switching providers resets the model to the new provider default", async () => {

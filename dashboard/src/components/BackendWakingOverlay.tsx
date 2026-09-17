@@ -33,9 +33,9 @@ export function BackendWakingOverlay() {
       aria-label="Server is starting"
       className="fixed inset-0 z-[200] flex items-center justify-center bg-background/80 backdrop-blur-sm"
     >
-      <div className="mx-4 w-full max-w-sm rounded-xl border border-white/10 bg-surface px-6 py-5 text-center shadow-xl">
+      <div className="mx-4 w-full max-w-sm rounded-xl border border-line bg-surface px-6 py-5 text-center shadow-xl">
         <div
-          className="mx-auto h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-accent"
+          className="mx-auto h-5 w-5 animate-spin rounded-full border-2 border-line border-t-accent"
           aria-hidden
         />
         <p className="mt-3 text-sm font-medium text-foreground">Server is starting — please wait</p>

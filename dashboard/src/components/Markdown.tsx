@@ -30,8 +30,8 @@ const mdComponents: Components = {
   li: ({ children }) => <li className="leading-snug break-words whitespace-pre-wrap">{children}</li>,
   // block code arrives wrapped in pre — strip the inline pill there; bare
   // code keeps it
-  pre: ({ children }) => <pre className="max-h-[420px] overflow-auto rounded bg-black/40 p-2 font-mono text-[11px] leading-snug [&_code]:bg-transparent [&_code]:p-0">{children}</pre>,
-  code: ({ children }) => <code className="rounded bg-white/10 px-1 py-0.5 font-mono text-[11px] break-words">{children}</code>,
+  pre: ({ children }) => <pre className="max-h-[420px] overflow-auto rounded bg-line p-2 font-mono text-[11px] leading-snug [&_code]:bg-transparent [&_code]:p-0">{children}</pre>,
+  code: ({ children }) => <code className="rounded bg-line px-1 py-0.5 font-mono text-[11px] break-words">{children}</code>,
   // images never auto-load beacons without constraint: lazy, no referrer,
   // bounded box
   img: ({ src, alt }) => (
@@ -43,10 +43,10 @@ const mdComponents: Components = {
       <table className="my-1 w-full border-collapse text-[11px]">{children}</table>
     </div>
   ),
-  th: ({ children }) => <th className="border border-white/15 bg-white/5 px-2 py-1 text-left font-semibold">{children}</th>,
-  td: ({ children }) => <td className="border border-white/10 px-2 py-1 break-words">{children}</td>,
+  th: ({ children }) => <th className="border border-line bg-line px-2 py-1 text-left font-semibold">{children}</th>,
+  td: ({ children }) => <td className="border border-line px-2 py-1 break-words">{children}</td>,
   blockquote: ({ children }) => <blockquote className="my-1 border-l-2 border-accent/50 pl-2 text-muted">{children}</blockquote>,
-  hr: () => <hr className="my-2 border-white/10" />,
+  hr: () => <hr className="my-2 border-line" />,
 };
 
 export function Markdown({ text, className }: { text: string; className?: string }) {

@@ -20,7 +20,7 @@ export function NodePalette({ onSelect }: { onSelect?: (agentType: string) => vo
           // touch has no drag-and-drop — a tap drops the agent at the
           // canvas cascade position via the same draft path as a drop
           onClick={() => onSelect?.(agent.type)}
-          className="min-h-[44px] cursor-grab rounded-md border border-white/10 bg-raised px-3 py-1.5 text-xs text-foreground active:cursor-grabbing"
+          className="min-h-[44px] cursor-grab rounded-md border border-line bg-raised px-3 py-1.5 text-xs text-foreground active:cursor-grabbing"
         >
           + {agent.label}
         </button>
