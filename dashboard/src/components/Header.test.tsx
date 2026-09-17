@@ -27,6 +27,13 @@ vi.mock("next/navigation", () => ({
   usePathname: () => pathnameMock(),
 }));
 
+vi.mock("@/hooks/useAuth", () => ({
+  useAuth: () => authMock(),
+}));
+
+const signOut = vi.fn();
+const authMock = vi.fn<(session?: { jwt: string; email: string; userId: string } | null) => { session: { jwt: string; email: string; userId: string } | null; signOut: () => void }>(() => ({ session: null, signOut }));
+
 vi.mock("@/hooks/useCost", () => ({
   useCost: (opts?: { poll?: boolean }) => costMock(opts),
 }));
@@ -94,5 +101,23 @@ describe("Header cost badge", () => {
     });
     const costLinks = screen.getAllByRole("link").filter((l) => l.getAttribute("href") === "/cost");
     expect(costLinks.every((l) => l.textContent?.includes("$0.02"))).toBe(true);
+  });
+});
+
+describe("Header My Atlas / identity", () => {
+  it("shows My Atlas linking to /login for anonymous visitors", () => {
+    seed("/", 0);
+    renderHeader();
+    const link = screen.getByRole("link", { name: "My Atlas" });
+    expect(link.getAttribute("href")).toBe("/login");
+  });
+
+  it("shows the signed-in email with sign-out instead", async () => {
+    seed("/", 0);
+    authMock.mockReturnValue({ session: { jwt: "j", email: "a@b.c", userId: "u" }, signOut });
+    renderHeader();
+    expect(screen.getByRole("button", { name: /a@b\.c/ }).textContent).toMatch(/sign out/);
+    fireEvent.click(screen.getByRole("button", { name: /a@b\.c/ }));
+    expect(signOut).toHaveBeenCalled();
   });
 });

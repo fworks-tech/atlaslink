@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { track } from "@vercel/analytics";
 import { Burger, Drawer, Group, Stack } from "@mantine/core";
 import ThemeToggle from "@/components/ThemeToggle";
+import { useAuth } from "@/hooks/useAuth";
 import { useCost } from "@/hooks/useCost";
 
 interface NavLink {
@@ -30,6 +31,7 @@ export default function Header() {
   }, []);
 
   const pathname = usePathname();
+  const { session, signOut } = useAuth();
   // the /cost page already polls useCost + useCostHistory — skip a second
   // interval there so the header never duplicates pollers on that route
   const { total, error } = useCost({ poll: pathname !== "/cost" });
@@ -52,6 +54,27 @@ export default function Header() {
         <div className="flex items-center gap-2">
           <ThemeToggle className="hidden sm:block" />
           <Group visibleFrom="md" gap="lg" c="dimmed" fz="sm">
+          {session ? (
+            <button
+              type="button"
+              onClick={() => {
+                trackNav("signout");
+                signOut();
+              }}
+              title="sign out"
+              className="max-w-[180px] truncate rounded-lg border border-line bg-raised px-3 py-1.5 text-xs text-foreground transition-colors hover:border-accent/40"
+            >
+              {session.email} · sign out
+            </button>
+          ) : (
+            <Link
+              href="/login"
+              onClick={() => trackNav("my-atlas")}
+              className="rounded-lg bg-accent/15 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/25"
+            >
+              My Atlas
+            </Link>
+          )}
           {hasCost && (
             <Link href="/cost" onClick={() => trackNav("cost")} className="flex items-center gap-1.5 text-sm text-muted">
               <span>cost</span>
@@ -107,6 +130,26 @@ export default function Header() {
       >
         <Stack gap="sm">
           <ThemeToggle />
+          {session ? (
+            <button
+              type="button"
+              onClick={() => signOut()}
+              className="block rounded-lg border border-line bg-raised px-3 py-2 text-left text-xs text-foreground"
+            >
+              {session.email} · sign out
+            </button>
+          ) : (
+            <Link
+              href="/login"
+              onClick={() => {
+                trackNav("my-atlas");
+                setMenuOpen(false);
+              }}
+              className="block rounded-lg bg-accent/15 px-3 py-2 text-center text-sm font-medium text-accent"
+            >
+              My Atlas
+            </Link>
+          )}
           {hasCost && (
             <Link
               href="/cost"

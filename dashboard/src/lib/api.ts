@@ -1,4 +1,5 @@
 import type { Session, TaskListResponse, Project, ProjectListResponse } from "./types";
+import { loadAuth, clearAuth, saveAuth } from "./auth";
 
 export class ApiError extends Error {
   constructor(
@@ -29,6 +30,14 @@ export async function fetchJSON<T>(
   const headers = new Headers(rest.headers);
   // a caller-provided content type wins over the JSON default
   if (rest.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  // the browser bearer upgrades the request from the shared legacy token into
+  // the signed-in user's tenant — a caller-provided authorization wins; a 401
+  // invalidates the stored session (expired/rotated) so the UI falls back to
+  // demo mode on the next render
+  if (!headers.has("Authorization")) {
+    const session = loadAuth();
+    if (session) headers.set("Authorization", `Bearer ${session.jwt}`);
+  }
 
   let signal = rest.signal ?? undefined;
   if (timeoutMs) {
@@ -55,6 +64,7 @@ export async function fetchJSON<T>(
     throw err;
   }
   if (!res.ok) {
+    if (res.status === 401) clearAuth();
     let message = res.statusText;
     try {
       const body = (await res.json()) as { error?: string };
@@ -243,4 +253,22 @@ export interface RoomMember {
  */
 export function getRoomMembers(sessionId: string): Promise<{ ok: boolean; members: RoomMember[] }> {
   return fetchJSON<{ ok: boolean; members: RoomMember[] }>(`/sessions/${encodeURIComponent(sessionId)}/room/members`);
+}
+export interface AuthResponse {
+  ok: boolean;
+  token: string;
+  user: { id: string; email: string };
+}
+
+function persistAuth(res: AuthResponse): AuthResponse {
+  saveAuth(res.token, res.user.email, res.user.id);
+  return res;
+}
+
+export function registerAccount(email: string, password: string): Promise<AuthResponse> {
+  return fetchJSON<AuthResponse>("/auth/register", { method: "POST", body: JSON.stringify({ email, password }) }).then(persistAuth);
+}
+
+export function login(email: string, password: string): Promise<AuthResponse> {
+  return fetchJSON<AuthResponse>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }).then(persistAuth);
 }
