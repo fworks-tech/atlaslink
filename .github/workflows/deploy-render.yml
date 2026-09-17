@@ -40,11 +40,14 @@ jobs:
         run: |
           for i in $(seq 1 30); do
             sleep 10
-            if curl -fsS --max-time 10 "$RENDER_SERVICE_URL/health" | grep -q '"ok":true'; then
-              echo "Service is healthy after $((i * 10))s"
+            # "providers":N with N >= 1 is the build marker — /health ok:true
+            # alone is also true on a stale release, which is exactly what we
+            # must fail on
+            if curl -fsS --max-time 10 "$RENDER_SERVICE_URL/health" | grep -Eq '"providers":[1-9]'; then
+              echo "Service is healthy on a current build after $((i * 10))s"
               exit 0
             fi
-            echo "attempt $i: not healthy yet"
+            echo "attempt $i: not healthy on the new build yet"
           done
-          echo "::error::service did not become healthy within 5 minutes — check the Render dashboard (build status, suspension, instance hours)"
+          echo "::error::service did not report the current build within 5 minutes — check the Render dashboard (build status, suspension, instance hours)"
           exit 1
