@@ -213,6 +213,20 @@ export function sendChatMessage(sessionId: string, content: string): Promise<Cha
   });
 }
 
+export interface FollowupSessionResponse {
+  ok: boolean;
+  session: Session;
+  followupSession: Session;
+}
+
+/** Question about a terminal session: spawns a linked follow-up answered by the same member. */
+export function askFollowup(sessionId: string, content: string): Promise<FollowupSessionResponse> {
+  return fetchJSON<FollowupSessionResponse>(`/tasks/${encodeURIComponent(sessionId)}/followup`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
 export interface SteerSessionResponse {
   ok: boolean;
   session: Session;

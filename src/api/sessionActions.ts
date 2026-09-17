@@ -91,6 +91,8 @@ async function casAppendSessionEvents(
 export const MAX_FOLD_QUESTION = ASK_HUMAN_MAX_QUESTION_LENGTH
 export const MAX_FOLD_CONTEXT = ASK_HUMAN_MAX_CONTEXT_LENGTH
 export const MAX_FOLD_REPLY = 4000
+/** A failed run's error rides the follow-up prompt, so it stays a hint, not the prompt. */
+export const MAX_FOLD_FAILURE = 2000
 /** Anytime chat is unbounded by lifecycle, so the log itself carries the bound. */
 export const MAX_SESSION_MESSAGES = 500
 
@@ -206,6 +208,99 @@ async function spawnResumeFollowup(
     return { error: 'resume failed after commit; follow-up cancelled' }
   }
   return { followupId }
+}
+
+export type FollowupResult =
+  | { code: 201; session: AggregateSession; followupId: string }
+  | ActionError
+
+/**
+ * Follow-up prompt: the original prompt plus the terminal outcome and the
+ * human's question. Delimited so the model cannot mistake human text for
+ * instructions; capped so a hostile reply or a verbose provider error cannot
+ * smuggle an unbounded prompt into the new run; the closing tag is
+ * neutralized so a crafted reply cannot break out of the delimiter.
+ */
+export function foldFollowupPrompt(originalPrompt: string, status: string, error: string | undefined, question: string): string {
+  const q = truncateFold(question, MAX_FOLD_REPLY)
+    .replace(/<\/human_followup/gi, '</ human_followup')
+    .trim()
+  const failure = error === undefined || error.length === 0 ? '' : ` failure="${truncateFold(error, MAX_FOLD_FAILURE).replace(/"/g, "'").replace(/[<>\r\n]+/g, ' ')}"`
+  return `${originalPrompt}\n\n<human_followup session_status="${status}"${failure}>\n${q}\n</human_followup>`
+}
+
+/**
+ * Question about a terminal session: the run is over, so steer, reply and
+ * message all 409 there — the question spawns a linked follow-up instead,
+ * answered by the same member (the mediator delegates to exactly one) with
+ * the original prompt, the terminal outcome, and the question folded in.
+ * Committed to the store first, then created + enqueued to the interactive
+ * lane (a human is waiting on this answer). The provider override rides
+ * along — a pinned provider must not silently revert on follow-up. A
+ * declare failure after the store commit cancels the follow-up instead of
+ * orphaning it queued-forever.
+ */
+export async function askFollowup(
+  deps: IngressDeps,
+  args: { sessionId: string; tenantId: string; content: string }
+): Promise<FollowupResult> {
+  const { sessionId, tenantId, content } = args
+  const blank = rejectBlank(content)
+  if (blank) return blank
+  const original = await deps.backend.get(sessionId)
+  if (!original) return { code: 404, error: 'unknown session' }
+  if (!isTerminal(original.status)) return { code: 409, error: 'session still active; steer it or wait for it to finish' }
+  const followupId = `ses-${randomUUID()}`
+  const followupCorrelationId = `cor-${randomUUID()}`
+  const at = new Date().toISOString()
+  const prompt = foldFollowupPrompt(original.task.prompt, original.status, original.error, content)
+  const resumeProvider = typeof original.tweaks?.provider === 'string' ? original.tweaks.provider : undefined
+  await deps.backend.append({
+    type: 'session.created',
+    sessionId: followupId,
+    correlationId: followupCorrelationId,
+    at,
+    member: original.task.member,
+    prompt,
+    tenantId,
+    ...(original.projectId !== undefined ? { projectId: original.projectId } : {}),
+    ...(original.tweaks !== undefined ? { tweaks: original.tweaks } : {}),
+    resumeOf: sessionId,
+  })
+  try {
+    const created = deps.registry.create({
+      member: original.task.member,
+      prompt,
+      ...(resumeProvider !== undefined ? { provider: resumeProvider } : {}),
+      id: followupId,
+      correlationId: followupCorrelationId,
+    })
+    deps.queue.declareSession(created, { lane: 'interactive' })
+  } catch (err) {
+    try {
+      deps.registry.cancel(followupId)
+    } catch {
+      // registry entry missing — nothing to withdraw
+    }
+    try {
+      await deps.backend.append({
+        type: 'session.cancelled',
+        sessionId: followupId,
+        correlationId: followupCorrelationId,
+        at: new Date().toISOString(),
+      })
+    } catch {
+      // store truth stays queued; it surfaces in listing but never runs
+    }
+    log.error('task follow-up failed after commit; follow-up cancelled', {
+      sessionId,
+      followupId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return { code: 500, error: 'follow-up failed after commit; follow-up cancelled' }
+  }
+  const after = await deps.backend.get(sessionId)
+  return { code: 201, session: after ?? original, followupId }
 }
 
 function rejectBlank(content: string): ActionError | null {
