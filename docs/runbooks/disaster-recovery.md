@@ -158,6 +158,22 @@ tar -czf events_$(date +%Y%m%d_%H%M%S).tar.gz /data/events/
    ```
 4. Verify health: `curl https://atlas.flabs.tech/health`
 
+### Scenario 4b: Stale or Suspended Render Service
+
+**Symptoms (observed 2026-09-17):**
+- Every dashboard data surface fails at once: provider picker down, cost page 404, empty sessions — but `/health` via the BFF still returns 200
+- Direct daemon curl of a **newly added route** returns the JSON `{"ok":false,"error":"not found"}` while older routes work → the running image predates that route (stale release)
+- `curl -i <service-url>/health` shows `x-render-routing: no-server` and a plain-text `Not Found` → Render's edge has no server to route to: service suspended (free-tier instance hours), deleted, or renamed (renaming changes the `*.onrender.com` URL)
+
+**Key distinction:** the deploy workflow going green proves only that the deploy hook accepted the trigger — never that the image built or the service restarted. A failed image build leaves the last good release serving indefinitely.
+
+**Recovery steps:**
+1. Render dashboard → the web service → **Events**: check for failed builds after the latest merge; fix the build error or roll back the offending commit
+2. If suspended (free plan): suspend/resume or Manual Deploy → **Deploy latest commit**; free-tier instance hours are shared across the workspace's services (pollers on the dashboard keep waking the daemon, burning hours)
+3. If the service was renamed/recreated, update `ATLASLINK_API_URL` in the Vercel dashboard to the new `*.onrender.com` URL
+4. Verify the release is current with a build-marker route (a route that only recent code has), e.g. `curl "$ATLASLINK_API_URL/v1/providers"` → 200 with the provider roster
+5. Confirm the deploy hook belongs to the live service: Render → service → Settings → Deploy Hook, and re-copy it into the `RENDER_DEPLOY_HOOK_URL` GitHub secret after any rename/recreation
+
 ### Scenario 5: Dashboard Failure
 
 **Symptoms:**
