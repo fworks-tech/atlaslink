@@ -45,7 +45,7 @@ export default function Header() {
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
         <Link
           href="/"
-          className="font-semibold tracking-tight text-foreground transition-colors hover:text-foreground/80 text-xl sm:text-2xl"
+          className="text-xl font-semibold tracking-tight text-foreground transition-colors hover:text-foreground/80 sm:text-2xl" style={{ fontFamily: "var(--font-display)" }}
           onClick={() => trackNav("atlaslink")}
         >
           atlaslink
@@ -123,7 +123,7 @@ export default function Header() {
         padding="md"
         hiddenFrom="md"
         title={
-          <Link href="/" className="font-semibold tracking-tight text-foreground">
+          <Link href="/" className="font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
             atlaslink
           </Link>
         }

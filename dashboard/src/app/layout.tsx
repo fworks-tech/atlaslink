@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import { MantineProvider, ColorSchemeScript, mantineHtmlProps } from "@mantine/core";
+import { Space_Grotesk } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
@@ -9,6 +10,12 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { BackendWakingOverlay } from "@/components/BackendWakingOverlay";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+
+// display face for the Atlas identity — hero, watermark, section titles
+const display = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-display",
+});
 
 export const metadata: Metadata = {
   title: "Atlaslink — Live Dashboard",
@@ -28,7 +35,7 @@ const THEME_BOOTSTRAP = `try {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="h-full" {...mantineHtmlProps} suppressHydrationWarning>
+    <html lang="en" className={`h-full ${display.variable}`} {...mantineHtmlProps} suppressHydrationWarning>
       <head>
         <ColorSchemeScript defaultColorScheme="dark" />
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
