@@ -45,7 +45,11 @@ interface RotateKeyBody {
  */
 export function registerAuthRoutes(
   app: FastifyInstance,
-  authStore: AuthStore
+  authStore: AuthStore,
+  deps?: {
+    /** Auto-provision the user's default project ("inbox") right after registration. */
+    createInbox?: (user: { id: string; tenant_id: string }) => Promise<void>
+  }
 ): void {
   app.post<{ Body: RegisterBody }>(
     '/auth/register',
@@ -95,6 +99,15 @@ export function registerAuthRoutes(
 
       const token = createToken(user.id, user.tenant_id)
       log.info('user registered', { userId: user.id, email: user.email })
+
+      // sessions must live in a project — seed the user's default one. A
+      // failure here must not fail registration: the UI lazily creates the
+      // inbox on first use instead.
+      try {
+        await deps?.createInbox?.({ id: user.id, tenant_id: user.tenant_id })
+      } catch (err) {
+        log.warn('inbox project creation failed', { userId: user.id, error: err instanceof Error ? err.message : String(err) })
+      }
 
       return reply.code(201).send({
         ok: true,

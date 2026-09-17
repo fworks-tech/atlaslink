@@ -74,6 +74,7 @@ test('POST /tasks creates a queued session in the store and returns 201', async 
     const res = await jsonRequest(srv.port, 'POST', '/v1/tasks', {
       member: 'the-scribe',
       prompt: 'describe the diff',
+      projectId: 'proj-1',
       tweaks: { provider: 'groq' },
     })
     assert.equal(res.status, 201)
@@ -84,6 +85,7 @@ test('POST /tasks creates a queued session in the store and returns 201', async 
     assert.equal(parsed.session.status, 'queued')
     assert.equal(parsed.session.version, 1)
     assert.deepEqual(parsed.session.tweaks, { provider: 'groq' })
+    assert.equal(parsed.session.projectId, 'proj-1')
     await srv.close()
   } finally {
     cleanup(dir)
@@ -94,7 +96,7 @@ test('POST /tasks rejects a missing prompt with the error envelope', async () =>
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const res = await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'the-scribe' })
+    const res = await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'the-scribe', projectId: 'proj-1'})
     assert.equal(res.status, 400)
     const parsed = JSON.parse(res.body)
     assert.equal(parsed.ok, false)
@@ -109,7 +111,7 @@ test('GET /tasks/{id} returns the current aggregate; unknown ids 404', async () 
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body)
     const id = created.session.sessionId
     const res = await jsonRequest(srv.port, 'GET', `/v1/tasks/${id}`)
     assert.equal(res.status, 200)
@@ -130,8 +132,8 @@ test('GET /tasks lists sessions newest-first with filters and pagination', async
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'a', prompt: 'first' })
-    await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'b', prompt: 'second' })
+    await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'a', prompt: 'first', projectId: 'proj-1'})
+    await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'b', prompt: 'second', projectId: 'proj-1'})
 
     const all = JSON.parse((await jsonRequest(srv.port, 'GET', '/v1/tasks')).body)
     assert.equal(all.total, 2)
@@ -156,7 +158,7 @@ test('cancel moves a queued session to cancelled (202); a terminal session confl
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session.sessionId
 
     const cancelled = await jsonRequest(srv.port, 'POST', `/v1/tasks/${id}/cancel`)
     assert.equal(cancelled.status, 202)
@@ -176,7 +178,7 @@ test('cancel of a running session is acknowledged as best-effort', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     const id = created.sessionId
     await srv.backend.append({ type: 'session.running', sessionId: id, correlationId: created.correlationId, at: new Date().toISOString() })
 
@@ -196,7 +198,7 @@ test('GET /events/{id} replays and live-tails only that session\'s events', asyn
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     const cor = created.correlationId
 
     srv.broadcaster.emit(runEnv(0, { type: 'run.started', correlationId: cor }))
@@ -242,7 +244,7 @@ test('the bearer token gate (spec §7) protects /runs, /events, and the task-res
   try {
     const srv = await startServer(dir, { token: 'secret' })
 
-    const deniedTasks = await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })
+    const deniedTasks = await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})
     assert.equal(deniedTasks.status, 401)
     const deniedRuns = await jsonRequest(srv.port, 'POST', '/v1/runs', { member: 'm', prompt: 'p' })
     assert.equal(deniedRuns.status, 401)
@@ -256,7 +258,8 @@ test('the bearer token gate (spec §7) protects /runs, /events, and the task-res
       srv.port,
       'POST',
       '/v1/tasks',
-      { member: 'm', prompt: 'p' },
+      { member: 'm', prompt: 'p' ,
+      projectId: 'proj-1' },
       { authorization: 'Bearer secret' }
     )
     assert.equal(allowed.status, 201)
@@ -282,9 +285,9 @@ test('the gated scope rate-limits the cost-bearing surface (429 after the cap)',
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir, { rateLimit: { max: 2, timeWindow: '1 second' } })
-    await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })
-    await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })
-    const limited = await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })
+    await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})
+    await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})
+    const limited = await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})
     assert.equal(limited.status, 429)
     assert.equal(JSON.parse(limited.body).error, 'rate limit exceeded')
     await srv.close()
@@ -304,7 +307,7 @@ test('POST /tasks with projectId creates a session in that project', async () =>
     const res = await jsonRequest(srv.port, 'POST', '/v1/tasks', {
       member: 'the-scribe',
       prompt: 'describe the diff',
-      projectId: project.id,
+      projectId: project.id
     })
     assert.equal(res.status, 201)
     const parsed = JSON.parse(res.body)
@@ -377,7 +380,8 @@ test('CORS allows only the configured origins and preflight does not need a toke
       srv.port,
       'POST',
       '/v1/tasks',
-      { member: 'm', prompt: 'p' },
+      { member: 'm', prompt: 'p' ,
+      projectId: 'proj-1' },
       { origin: 'https://evil.example', authorization: 'Bearer secret' }
     )
     assert.equal(unknown.status, 201)
@@ -410,7 +414,7 @@ test('DELETE /projects/:id removes the project and its sessions', async () => {
     const srv = await startServer(dir)
     const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/projects', { name: 'to-delete' })).body)
     const id = created.project.id
-    await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: id })
+    await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: id})
     const del = await jsonRequest(srv.port, 'DELETE', `/v1/projects/${id}`)
     assert.equal(del.status, 200)
     assert.equal(JSON.parse(del.body).ok, true)
@@ -432,7 +436,7 @@ test('POST /tasks/:id/message appends chat without changing status', async () =>
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session.sessionId
 
     const res = await jsonRequest(srv.port, 'POST', `/v1/tasks/${id}/message`, { content: 'hello?' })
     assert.equal(res.status, 201)
@@ -453,7 +457,7 @@ test('POST /tasks/:id/message on a running session keeps it running', async () =
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     const id = created.sessionId
     await srv.backend.append({ type: 'session.running', sessionId: id, correlationId: created.correlationId, at: new Date().toISOString() })
 
@@ -477,7 +481,7 @@ test('POST /tasks/:id/message is tenant-isolated', async () => {
   try {
     const srv = await startServer(dir)
     const id = JSON.parse(
-      (await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' }, { 'x-tenant-id': 'tenant-a' })).body
+      (await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'}, { 'x-tenant-id': 'tenant-a' })).body
     ).session.sessionId
 
     const foreign = await jsonRequest(srv.port, 'POST', `/v1/tasks/${id}/message`, { content: 'hi' }, { 'x-tenant-id': 'tenant-b' })
@@ -504,7 +508,7 @@ test('POST /tasks/:id/message 404s unknown sessions and 409s terminal ones', asy
     assert.equal(missing.status, 404)
     assert.equal(JSON.parse(missing.body).error, 'unknown session')
 
-    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session.sessionId
     await jsonRequest(srv.port, 'POST', `/v1/tasks/${id}/cancel`)
     const terminal = await jsonRequest(srv.port, 'POST', `/v1/tasks/${id}/message`, { content: 'late' })
     assert.equal(terminal.status, 409)
@@ -519,7 +523,7 @@ test('POST /tasks/:id/message rejects missing or empty content with the error en
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session.sessionId
 
     const missing = await jsonRequest(srv.port, 'POST', `/v1/tasks/${id}/message`, {})
     assert.equal(missing.status, 400)
@@ -548,7 +552,7 @@ test('POST /tasks/:id/message 409s succeeded and failed sessions, not just cance
   try {
     const srv = await startServer(dir)
     for (const terminal of ['session.succeeded', 'session.failed'] as const) {
-      const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+      const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
       await srv.backend.append({ type: terminal, sessionId: created.sessionId, correlationId: created.correlationId, at: new Date().toISOString() })
       const res = await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/message`, { content: 'late' })
       assert.equal(res.status, 409)
@@ -564,7 +568,7 @@ test('POST /tasks/:id/message on awaiting_input preserves nextStep', async () =>
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     const id = created.sessionId
     await srv.backend.append({
       type: 'session.awaiting_input',
@@ -592,7 +596,7 @@ test('POST /tasks/:id/message fans out a session.message SSE envelope', async ()
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session.sessionId
 
     const seen: BridgeEnvelope[] = []
     const unsubscribe = srv.broadcaster.subscribe((envelope) => {
@@ -618,7 +622,7 @@ test('POST /tasks/:id/message retries a version conflict, then 409s a persistent
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session.sessionId
 
     const orig = srv.backend.readModifyWrite.bind(srv.backend)
     let calls = 0
@@ -646,7 +650,7 @@ test('POST /tasks/:id/message retries a version conflict, then 409s a persistent
 test('POST /tasks/:id/message stores markup verbatim (escape-at-render contract)', async () => {  const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session.sessionId
 
     const payload = '<script>alert(1)</script>'
     const res = await jsonRequest(srv.port, 'POST', `/v1/tasks/${id}/message`, { content: payload })
@@ -664,7 +668,7 @@ test('POST /tasks/:id/message 409s once the log reaches MAX_SESSION_MESSAGES', a
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     // seed the log directly — 500 HTTP posts would only test our patience
     const at = new Date().toISOString()
     for (let i = 0; i < MAX_SESSION_MESSAGES; i++) {
@@ -689,7 +693,7 @@ test('POST /tasks/:id/cancel fans out a session.cancelled SSE envelope', async (
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session.sessionId
+    const id = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session.sessionId
 
     const seen: BridgeEnvelope[] = []
     const unsubscribe = srv.broadcaster.subscribe((envelope) => {
@@ -714,7 +718,7 @@ test('POST /tasks/:id/reply keeps the parked original and re-queues a linked fol
   const dir = tmpDataDir()
   try {
     const srv = await startServerWithQueueSpy(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'the-architect', prompt: 'plan the release' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'the-architect', prompt: 'plan the release', projectId: 'proj-1'})).body).session
     await parkSession(srv.backend, created.sessionId, created.correlationId)
 
     const seen: BridgeEnvelope[] = []
@@ -768,7 +772,7 @@ test('POST /tasks/:id/reply rejects unknown, non-parked, blank and terminal sess
     const missing = await jsonRequest(srv.port, 'POST', '/v1/tasks/ses-nope/reply', { content: 'hi' })
     assert.equal(missing.status, 404)
 
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     const early = await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/reply`, { content: 'too soon' })
     assert.equal(early.status, 409)
     assert.equal(JSON.parse(early.body).error, 'session not awaiting input')
@@ -794,7 +798,7 @@ test('POST /tasks/:id/reply answers once per park; a second reply 409s without f
   const dir = tmpDataDir()
   try {
     const srv = await startServerWithQueueSpy(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     await parkSession(srv.backend, created.sessionId, created.correlationId)
 
     const first = await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/reply`, { content: 'first answer' })
@@ -851,7 +855,7 @@ test('POST /tasks/:id/reply retries a version conflict once without double-decla
   const dir = tmpDataDir()
   try {
     const srv = await startServerWithQueueSpy(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     await parkSession(srv.backend, created.sessionId, created.correlationId)
 
     const orig = srv.backend.readModifyWrite.bind(srv.backend)
@@ -876,7 +880,7 @@ test('POST /tasks/:id/reply cancels the follow-up instead of orphaning it when d
   const dir = tmpDataDir()
   try {
     const srv = await startServerWithQueueSpy(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     await parkSession(srv.backend, created.sessionId, created.correlationId)
     srv.queueControl.throwOnDeclare = true
 
@@ -900,7 +904,7 @@ test('POST /tasks/:id/steer rewrites a queued session prompt in store and regist
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'old mission' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'old mission', projectId: 'proj-1'})).body).session
 
     const seen: BridgeEnvelope[] = []
     const unsubscribe = srv.broadcaster.subscribe((envelope) => {
@@ -936,7 +940,7 @@ test('POST /tasks/:id/steer on a started session records the direction and abort
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'old mission' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'old mission', projectId: 'proj-1'})).body).session
     // fabricate the live run: registry started, controller attached, store running
     srv.registry.start(created.sessionId)
     const controller = new AbortController()
@@ -968,7 +972,7 @@ test('POST /tasks/:id/steer rejects unknown, terminal, awaiting, blank and alrea
     const missing = await jsonRequest(srv.port, 'POST', '/v1/tasks/ses-missing/steer', { content: 'x' })
     assert.equal(missing.status, 404)
 
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     const blank = await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/steer`, { content: '   ' })
     assert.equal(blank.status, 400)
 
@@ -1011,7 +1015,7 @@ test('POST /tasks/:id/cancel on a tracked run fires its abort controller', async
   const dir = tmpDataDir()
   try {
     const srv = await startServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     srv.registry.start(created.sessionId)
     const controller = new AbortController()
     srv.registry.attachAbort(created.sessionId, controller)
@@ -1061,7 +1065,7 @@ test('POST /tasks/:id/cancel cancels a parked session (parked-forever stays canc
   const dir = tmpDataDir()
   try {
     const srv = await startServerWithQueueSpy(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     await parkSession(srv.backend, created.sessionId, created.correlationId)
 
     const cancelled = await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/cancel`)
@@ -1131,7 +1135,7 @@ test('POST /tasks fast-fails on an unknown provider tweak', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await startWithProviders(dir)
-    const res = await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', tweaks: { provider: 'skynet' } })
+    const res = await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1', tweaks: { provider: 'skynet' } })
     assert.equal(res.status, 400)
     assert.match(JSON.parse(res.body).error, /unknown provider/)
     await srv.close()
@@ -1145,7 +1149,7 @@ test('POST /tasks validates the member.model tweak shape', async () => {
   try {
     const srv = await startWithProviders(dir)
     for (const bad of [42, '', '   ', 'x'.repeat(201)]) {
-      const res = await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', tweaks: { member: { model: bad } } })
+      const res = await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1', tweaks: { member: { model: bad } } })
       assert.equal(res.status, 400, `model ${JSON.stringify(bad)} must 400`)
       assert.match(JSON.parse(res.body).error, /model/)
     }
@@ -1162,6 +1166,7 @@ test('POST /tasks accepts a known provider+model tweak and persists it', async (
     const res = await jsonRequest(srv.port, 'POST', '/v1/tasks', {
       member: 'm',
       prompt: 'p',
+      projectId: 'proj-1',
       tweaks: { provider: 'groq', member: { model: 'mixtral-8x7b-32768' } },
     })
     assert.equal(res.status, 201)

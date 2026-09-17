@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { listProjects, createProject, ApiError } from "@/lib/api";
 import type { Project } from "@/lib/types";
 
@@ -35,6 +35,21 @@ export function useProjects() {
     setError(null);
   }, []);
 
+  // sessions always live in a project (spec: auth-app-flow §3) — when the
+  // tenant has none (demo visitor, fresh account whose inbox seeding failed)
+  // create the default one once so the composer can submit
+  const ensuredInbox = useRef(false);
+  const ensureInbox = useCallback(async (): Promise<void> => {
+    if (ensuredInbox.current) return;
+    const res = await listProjects();
+    setProjects(res.projects);
+    if (res.projects.length === 0) {
+      const created = await createProject({ name: "inbox" });
+      setProjects([created.project]);
+    }
+    ensuredInbox.current = true;
+  }, []);
+
   const addProject = useCallback(
     async (name: string): Promise<Project | null> => {
       try {
@@ -55,5 +70,5 @@ export function useProjects() {
     [],
   );
 
-  return { projects, loading, error, refresh, addProject };
+  return { projects, loading, error, refresh, addProject, ensureInbox };
 }

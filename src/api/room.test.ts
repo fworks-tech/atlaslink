@@ -164,7 +164,7 @@ test('room join delivers snapshot; two clients see each other chat live', async 
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
 
     const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?name=Alice`)
     const snapshot = await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
@@ -228,7 +228,7 @@ test('room rejects other tenants without an existence oracle', async () => {
   try {
     const srv = await trackedServer(dir)
     const created = JSON.parse(
-      (await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' }, { 'x-tenant-id': 'tenant-a' })).body
+      (await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'}, { 'x-tenant-id': 'tenant-a' })).body
     ).session
 
     // tenant B guesses the session id: same answer as a missing session
@@ -256,7 +256,7 @@ test('room resume replays missed events; fallen-off cursors get a gap', async ()
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
 
     const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
@@ -302,7 +302,7 @@ test('room approval inbox: parked question in snapshot, reply frame resumes', as
   try {
     const srv = await trackedServer(dir)
     const created = JSON.parse(
-      (await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'the-architect', prompt: 'plan' })).body
+      (await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'the-architect', prompt: 'plan', projectId: 'proj-1'})).body
     ).session
     await parkSession(srv.backend, created.sessionId, created.correlationId)
 
@@ -333,7 +333,7 @@ test('room steer rewrites queued prompts and interrupts fabricated runs', async 
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'old' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'old', projectId: 'proj-1'})).body).session
 
     const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
@@ -397,7 +397,7 @@ test('room auth refuses missing and wrong credentials; both bearer paths join', 
   process.env.ATLASLINK_API_TOKEN = 'secret'
   try {
     const srv = await trackedServer(dir, { token: 'secret' })
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' }, { authorization: 'Bearer secret' })).body)
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'}, { authorization: 'Bearer secret' })).body)
       .session
 
     // no credential at all: the gate rejects the upgrade itself (401, no socket)
@@ -432,7 +432,7 @@ test('room closes unknown sessions without an oracle', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
 
     const missing = await connect(srv.port, '/v1/sessions/ses-missing/room')
     await missing.closed
@@ -453,7 +453,7 @@ test('room validates ingress frames without dropping the connection', async () =
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
 
     const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
@@ -499,7 +499,7 @@ test('room throttles per-connection ingress floods', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
 
     const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
@@ -524,8 +524,8 @@ test('room fan-out never crosses sessions', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const first = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'one' })).body).session
-    const second = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'two' })).body).session
+    const first = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'one', projectId: 'proj-1'})).body).session
+    const second = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'two', projectId: 'proj-1'})).body).session
 
     const a = await connect(srv.port, `/v1/sessions/${first.sessionId}/room`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot A')
@@ -558,7 +558,7 @@ test('room maps store failures to error acks, not silent success', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/cancel`)
 
     const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`)
@@ -588,7 +588,7 @@ test('room sanitizes display names before they reach the roster', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
 
     const joinName = async (raw: string): Promise<string> => {
       const client = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?name=${encodeURIComponent(raw)}`)
@@ -617,7 +617,7 @@ test('room honors the tenant upgrade header, not just the query', async () => {
   try {
     const srv = await trackedServer(dir)
     const created = JSON.parse(
-      (await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' }, { 'x-tenant-id': 'tenant-a' })).body
+      (await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'}, { 'x-tenant-id': 'tenant-a' })).body
     ).session
 
     const owner = await connect(srv.port, `/v1/sessions/${created.sessionId}/room`, { 'x-tenant-id': 'tenant-a' })
@@ -638,7 +638,7 @@ test('room rejects a non-numeric since cursor with an explicit error', async () 
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
 
     const a = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?since=not-a-number`)
     await waitForFrame(a.frames, (f) => f.type === 'snapshot', 'snapshot')
@@ -657,7 +657,7 @@ test('room members exposes the live roster without an oracle', async () => {
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' }, { 'x-tenant-id': 'tenant-a' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'}, { 'x-tenant-id': 'tenant-a' })).body).session
     const membersPath = (tenant?: string): string =>
       `/v1/sessions/${created.sessionId}/room/members${tenant ? `?tenant=${tenant}` : ''}`
 
@@ -697,7 +697,7 @@ test('room typing posts fan out to members without touching the store', async ()
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
     const typingPath = `/v1/sessions/${created.sessionId}/room/typing`
 
     const alice = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?name=Alice`)
@@ -732,7 +732,7 @@ test('room typing frames publish under the join name and dedupe repeats', async 
   const dir = tmpDataDir()
   try {
     const srv = await trackedServer(dir)
-    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p' })).body).session
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1'})).body).session
 
     const alice = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?name=Alice`)
     await waitForFrame(alice.frames, (f) => f.type === 'snapshot', 'alice snapshot')

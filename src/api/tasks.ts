@@ -23,7 +23,7 @@ export interface TaskDeps {
 interface PostBody {
   member: string
   prompt: string
-  projectId?: string
+  projectId: string
   tweaks?: { provider?: string; member?: Record<string, unknown>; team?: Record<string, unknown> }
 }
 
@@ -53,11 +53,11 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         body: {
           type: 'object',
           additionalProperties: false,
-          required: ['member', 'prompt'],
+          required: ['member', 'prompt', 'projectId'],
           properties: {
             member: { type: 'string', minLength: 1 },
             prompt: { type: 'string', minLength: 1, maxLength: 10000 },
-            projectId: { type: 'string', maxLength: 200 },
+            projectId: { type: 'string', minLength: 1, maxLength: 200 },
             tweaks: {
               type: 'object',
               additionalProperties: false,
@@ -103,7 +103,7 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         member,
         prompt,
         tenantId,
-        ...(projectId !== undefined ? { projectId } : {}),
+        projectId,
         ...(tweaks !== undefined ? { tweaks } : {}),
       }
       // the aggregate is committed first; the queue then runs by the same ids

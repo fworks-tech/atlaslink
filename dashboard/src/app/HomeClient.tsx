@@ -53,7 +53,7 @@ function HomeInner() {
   const selectedNodeId = searchParams.get("node") ?? decoded?.n ?? undefined;
   const rawMode = (searchParams.get("mode") ?? (decoded?.m as string) ?? loadDiagramMode("full")) as GraphMode;
   const mode: GraphMode = (["chain", "fanout", "full"].includes(rawMode) ? rawMode : "full") as GraphMode;
-  const { projects, loading: projectsLoading, error: projectsError, addProject } = useProjects();
+  const { projects, loading: projectsLoading, error: projectsError, addProject, ensureInbox } = useProjects();
   const { sessions, loading: sessionsLoading, error: sessionsError, refresh: refreshSessions, hydrateSession } = useSessions();
   const { events, sessionTyping = [] } = useEvents();
   const { members } = useRoomPresence(selectedSessionId);
@@ -74,6 +74,10 @@ function HomeInner() {
   }
   const toggleRef = useRef<HTMLButtonElement | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
+  // the composer requires a project — a tenant with none gets its inbox on load
+  useEffect(() => {
+    if (!projectsLoading) void ensureInbox();
+  }, [projectsLoading, ensureInbox]);
   useEffect(() => {
     saveSidebarOpen(sidebarOpen);
   }, [sidebarOpen]);

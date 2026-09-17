@@ -40,7 +40,16 @@ async function createTestServer(): Promise<{
   const registry = new TaskRegistry()
   const queue = new SessionQueue({ broadcaster, registry, runner: async () => {} })
   const backend = new SessionStore()
-  const app = await createAppServer({ log, registry, queue, sse, backend, authStore })
+  const inboxProjects: Array<{ id: string; name: string; tenant: string }> = []
+  const app = await createAppServer({
+    log, registry, queue, sse, backend, authStore,
+    authDeps: {
+      createInbox: async (user) => {
+        const project = await backend.createProject(`proj-inbox-${user.id}`, 'inbox')
+        inboxProjects.push({ id: project.id, name: project.name, tenant: user.tenant_id })
+      },
+    },
+  })
   const httpServer = app.server
   await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
   const port = (httpServer.address() as AddressInfo).port
@@ -355,6 +364,27 @@ test('Auth gate — rejects invalid JWT', async () => {
       authorization: 'Bearer invalid.token.here',
     })
     assert.equal(res.status, 401)
+  } finally {
+    await close()
+  }
+})
+
+test('POST /auth/register — seeds the inbox project for the new tenant', async () => {
+  const { port, close } = await createTestServer()
+  try {
+    const res = await jsonRequest(port, 'POST', '/v1/auth/register', {
+      email: 'inbox@example.com',
+      password: 'password123',
+    })
+    assert.equal(res.status, 201)
+    const user = JSON.parse(res.body).user
+    const list = JSON.parse((await jsonRequest(port, 'GET', '/v1/projects', undefined, {
+      authorization: `Bearer ${JSON.parse(res.body).token}`,
+    })).body)
+    const project = (list.projects ?? []).find((p: { name: string }) => p.name === 'inbox')
+    assert.equal(list.ok, true, JSON.stringify(list))
+    assert.ok(project)
+    assert.equal(project.id, `proj-inbox-${user.id}`)
   } finally {
     await close()
   }
