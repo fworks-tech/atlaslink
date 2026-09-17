@@ -207,6 +207,9 @@ export async function createAppServer(params: {
       version: appVersion,
       uptime: process.uptime(),
       memory: { rss: mem.rss, heapUsed: mem.heapUsed },
+      // build marker: a stale release (failed image build keeps the old one
+      // serving) reports 0 — the deploy workflow's health poll keys on this
+      providers: params.providers?.length ?? 0,
     }
   })
 
