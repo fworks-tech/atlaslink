@@ -69,3 +69,23 @@ describe("LandingCanvas choreography", () => {
     vi.useRealTimers();
   });
 });
+
+
+describe("AskTerminal", () => {
+  it("types the command and reveals the session outcome lines, looping", async () => {
+    vi.useFakeTimers();
+    const AskTerminal = (await import("@/components/AskTerminal")).default;
+    render(<AskTerminal />);
+    expect(screen.getByTestId("ask-terminal")).toBeInTheDocument();
+    // typing completes for the first example (~54 chars * 26ms)
+    act(() => { vi.advanceTimersByTime(1600); });
+    expect(screen.getByText(/fix issue #42/i)).toBeInTheDocument();
+    // outcome lines reveal
+    act(() => { vi.advanceTimersByTime(1200); });
+    expect(screen.getByText(/session\.succeeded/i)).toBeInTheDocument();
+    // next example cycles in and types its command
+    act(() => { vi.advanceTimersByTime(4200); });
+    expect(screen.getByText(/review my PR for security holes/i)).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+});

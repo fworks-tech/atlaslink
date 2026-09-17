@@ -510,7 +510,7 @@ describe("HomeClient room wiring", () => {
     eventsMock.mockReturnValue({ events: [] });
     hydrateMock.mockRejectedValue(new (await import("@/lib/api")).ApiError(404, "gone"));
     render(<HomeClient />);
-    await vi.waitFor(() => expect(screen.getByText(/no longer available/)).toBeDefined());
+    await vi.waitFor(() => expect(screen.getByText(/That room is gone/)).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: "Start a new session" }));
     expect(routerPush).toHaveBeenCalledWith("/");
   });
@@ -941,7 +941,7 @@ describe("HomeClient ui prefs", () => {
     seedRoom(`q=${q}`);
     render(<HomeClient />);
     expect(routerReplace).not.toHaveBeenCalled();
-    expect(screen.getByText(/Live Society Diagram/)).toBeDefined();
+    expect(screen.getByText(/The room, live/)).toBeDefined();
   });
 
   it("saving flows through session selection into the next fresh visit", () => {
@@ -996,7 +996,7 @@ describe("HomeClient ui prefs", () => {
     eventsMock.mockReturnValue({ events: [] });
     hydrateMock.mockRejectedValue(new (await import("@/lib/api")).ApiError(404, "gone"));
     render(<HomeClient />);
-    await vi.waitFor(() => expect(screen.getByText(/no longer available/)).toBeDefined());
+    await vi.waitFor(() => expect(screen.getByText(/That room is gone/)).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: "Start a new session" }));
     expect(window.localStorage.getItem("atlaslink:ui:last-session")).toBeNull();
     expect(routerPush).toHaveBeenCalledWith("/");
