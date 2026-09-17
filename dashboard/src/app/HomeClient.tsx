@@ -108,7 +108,7 @@ function HomeInner() {
         setSidebarOpen(next);
         if (next) closeRef.current?.focus();
       }}
-      className="inline-flex min-h-[44px] items-center rounded-md border border-line bg-raised px-3 py-1.5 text-sm text-foreground hover:bg-raised/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent transition-colors"
+      className="inline-flex min-h-[44px] items-center rounded-md border border-line bg-raised px-3 py-1.5 text-sm text-foreground hover:bg-raised/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent transition-colors md:hidden"
     >
       ☰
     </button>

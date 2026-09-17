@@ -8,7 +8,7 @@ export default function DemoBanner() {
   const { session } = useAuth();
   if (session) return null;
   return (
-    <div className="mx-auto max-w-6xl px-4 pt-4 sm:px-8">
+    <div className="mx-auto max-w-6xl px-4 py-4 sm:px-8">
       <div role="status" className="flex flex-wrap items-center justify-center gap-2 rounded-lg border border-accent/30 bg-accent/10 px-4 py-2 text-xs text-muted sm:justify-between">
         <span>
           You&apos;re browsing the <strong className="text-foreground">demo</strong> — sessions live in the shared tenant.
