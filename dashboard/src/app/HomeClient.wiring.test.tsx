@@ -135,7 +135,7 @@ function seed(params: string) {
   searchParamsMock.mockReturnValue(new URLSearchParams(params));
   presenceMock.mockReturnValue({ members: [] });
   hydrateMock.mockResolvedValue({ sessionId: "ses-hydrated" });
-  projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+  projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn(), ensureInbox: vi.fn() });
   sessionsMock.mockReturnValue({
     loading: false,
     error: null,
@@ -167,7 +167,7 @@ function seedRoom(params: string) {
   searchParamsMock.mockReturnValue(new URLSearchParams(params));
   presenceMock.mockReturnValue({ members: [] });
   hydrateMock.mockResolvedValue({ sessionId: "ses-hydrated" });
-  projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+  projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn(), ensureInbox: vi.fn() });
   sessionsMock.mockReturnValue({
     loading: false,
     error: null,
@@ -339,7 +339,7 @@ describe("HomeClient room wiring", () => {
   it("prefers the reply composer when a live run also awaits input", () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-8"));
     presenceMock.mockReturnValue({ members: [] });
-    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn(), ensureInbox: vi.fn() });
     sessionsMock.mockReturnValue({
       sessions: [
         {
@@ -367,7 +367,7 @@ describe("HomeClient room wiring", () => {
   it("replies to legacy awaiting sessions without a next step", () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-6"));
     presenceMock.mockReturnValue({ members: [] });
-    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn(), ensureInbox: vi.fn() });
     sessionsMock.mockReturnValue({
       sessions: [
         {
@@ -417,7 +417,7 @@ describe("HomeClient room wiring", () => {
   it("hydrates a deep-linked session missing from the list", async () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
     presenceMock.mockReturnValue({ members: [] });
-    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn(), ensureInbox: vi.fn() });
     hydrateMock.mockResolvedValue({ sessionId: "ses-9" });
     sessionsMock.mockReturnValue({ sessions: [], loading: false, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
     eventsMock.mockReturnValue({ events: [] });
@@ -434,7 +434,7 @@ describe("HomeClient room wiring", () => {
   it("does not hydrate while the list is still loading", () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
     presenceMock.mockReturnValue({ members: [] });
-    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn(), ensureInbox: vi.fn() });
     sessionsMock.mockReturnValue({ sessions: [], loading: true, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
     eventsMock.mockReturnValue({ events: [] });
     render(<HomeClient />);
@@ -460,7 +460,7 @@ describe("HomeClient room wiring", () => {
   it("shows a sessions load error with retry", async () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
     presenceMock.mockReturnValue({ members: [] });
-    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn(), ensureInbox: vi.fn() });
     sessionsMock.mockReturnValue({ sessions: [], loading: false, error: "boom", refresh: refreshMock, hydrateSession: hydrateMock });
     eventsMock.mockReturnValue({ events: [] });
     render(<HomeClient />);
@@ -472,7 +472,7 @@ describe("HomeClient room wiring", () => {
   it("resolves inspector context after deep-link hydration", async () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
     presenceMock.mockReturnValue({ members: [] });
-    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn(), ensureInbox: vi.fn() });
     const hydrated = { sessionId: "ses-9", correlationId: "cor-9", status: "running", version: 1, task: { member: "m", prompt: "p" } };
     hydrateMock.mockResolvedValue(hydrated);
     sessionsMock.mockReturnValue({ sessions: [], loading: false, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
@@ -492,7 +492,7 @@ describe("HomeClient room wiring", () => {
   it("stops the inspector loading state when the list reports an error", () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
     presenceMock.mockReturnValue({ members: [] });
-    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn(), ensureInbox: vi.fn() });
     sessionsMock.mockReturnValue({ sessions: [], loading: false, error: "boom", refresh: refreshMock, hydrateSession: hydrateMock });
     eventsMock.mockReturnValue({ events: [] });
     render(<HomeClient />);
@@ -505,7 +505,7 @@ describe("HomeClient room wiring", () => {
   it("shows the gone banner and a start-over CTA when a shared 404 hydrates", async () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-dead"));
     presenceMock.mockReturnValue({ members: [] });
-    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn(), ensureInbox: vi.fn() });
     sessionsMock.mockReturnValue({ sessions: [], loading: false, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
     eventsMock.mockReturnValue({ events: [] });
     hydrateMock.mockRejectedValue(new (await import("@/lib/api")).ApiError(404, "gone"));
@@ -518,7 +518,7 @@ describe("HomeClient room wiring", () => {
   it("dismiss hides the sessions error banner until reload", async () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
     presenceMock.mockReturnValue({ members: [] });
-    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn(), ensureInbox: vi.fn() });
     sessionsMock.mockReturnValue({ sessions: [], loading: false, error: "boom", refresh: refreshMock, hydrateSession: hydrateMock });
     eventsMock.mockReturnValue({ events: [] });
     render(<HomeClient />);
@@ -539,7 +539,7 @@ describe("HomeClient room wiring", () => {
   it("marks inspector context loading while the list loads", () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-9"));
     presenceMock.mockReturnValue({ members: [] });
-    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn(), ensureInbox: vi.fn() });
     sessionsMock.mockReturnValue({ sessions: [], loading: true, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
     eventsMock.mockReturnValue({ events: [] });
     render(<HomeClient />);
@@ -991,7 +991,7 @@ describe("HomeClient ui prefs", () => {
     window.localStorage.setItem("atlaslink:ui:last-session", JSON.stringify({ session: "ses-dead" }));
     searchParamsMock.mockReturnValue(new URLSearchParams("session=ses-dead"));
     presenceMock.mockReturnValue({ members: [] });
-    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn() });
+    projectsMock.mockReturnValue({ projects: [], loading: false, error: null, addProject: vi.fn(), ensureInbox: vi.fn() });
     sessionsMock.mockReturnValue({ sessions: [], loading: false, error: null, refresh: refreshMock, hydrateSession: hydrateMock });
     eventsMock.mockReturnValue({ events: [] });
     hydrateMock.mockRejectedValue(new (await import("@/lib/api")).ApiError(404, "gone"));

@@ -134,6 +134,8 @@ export async function createAppServer(params: {
   backend?: SessionBackend
   providers?: ProviderChoice[]
   authStore?: AuthStore | null
+  /** Forwarded to the ungated auth routes (inbox seeding on register). */
+  authDeps?: Parameters<typeof registerAuthRoutes>[2]
   bindHost?: string
   version?: string
   rateLimit?: { max: number; timeWindow: string }
@@ -217,8 +219,13 @@ export async function createAppServer(params: {
   // These are intentionally outside the auth gate — you cannot authenticate
   // to register or login. Versioned under /v1/ for backward compatibility.
   if (params.authStore) {
+    // default inbox seeding wired here; tests may inject their own authDeps
     app.register(async (unauth) => {
-      registerAuthRoutes(unauth, params.authStore!)
+      registerAuthRoutes(unauth, params.authStore!, params.authDeps ?? {
+        createInbox: async (user) => {
+          await backendForTenant(backend, user.tenant_id).createProject(`proj-inbox-${user.id}`, 'inbox')
+        },
+      })
     }, { prefix: '/v1' })
   }
 

@@ -59,10 +59,12 @@ describe("SessionComposer provider selector", () => {
   });
 
   it("submits tweaks with provider and model alongside the task", async () => {
-    render(<SessionComposer projects={[]} onCreateSession={vi.fn()} />);
+    const projects = [{ id: "proj-1", name: "alpha", createdAt: new Date().toISOString() }];
+    render(<SessionComposer projects={projects} onCreateSession={vi.fn()} />);
     const select = await screen.findByLabelText("provider");
     fireEvent.change(select, { target: { value: "groq" } });
     fireEvent.change(screen.getByLabelText("model"), { target: { value: "llama-4" } });
+    fireEvent.change(screen.getByLabelText("project"), { target: { value: "proj-1" } });
     fireEvent.change(screen.getByPlaceholderText(/review my pull request/i), { target: { value: "do thing" } });
     fireEvent.click(screen.getByRole("button", { name: /ask atlas/i }));
     await waitFor(() =>
@@ -70,6 +72,7 @@ describe("SessionComposer provider selector", () => {
         expect.objectContaining({
           prompt: "do thing",
           member: "the-mediator",
+          projectId: "proj-1",
           tweaks: { provider: "groq", member: { model: "llama-4" } },
         }),
       ),
@@ -91,5 +94,31 @@ describe("SessionComposer provider selector", () => {
     const select = await screen.findByLabelText("provider");
     expect(select.className).toMatch(/min-h-\[44px\]/);
     expect((screen.getByLabelText("model") as HTMLElement).className).toMatch(/min-h-\[44px\]/);
+  });
+});
+
+describe("SessionComposer project requirement", () => {
+  it("disables submit until a project is selected", async () => {
+    const projects = [
+      { id: "proj-1", name: "alpha", createdAt: new Date().toISOString() },
+      { id: "proj-2", name: "beta", createdAt: new Date().toISOString() },
+    ];
+    render(<SessionComposer projects={projects} onCreateSession={vi.fn()} />);
+    const select = screen.getByLabelText("project") as HTMLSelectElement;
+    expect(select.value).toBe("");
+    const submit = screen.getByRole("button", { name: /ask atlas/i });
+    expect(submit).toBeDisabled();
+    fireEvent.change(select, { target: { value: "proj-1" } });
+    fireEvent.change(screen.getByPlaceholderText(/review my pull request/i), { target: { value: "do thing" } });
+    expect(submit).not.toBeDisabled();
+  });
+
+  it("submits the selected projectId", async () => {
+    const projects = [{ id: "proj-9", name: "gamma", createdAt: new Date().toISOString() }];
+    render(<SessionComposer projects={projects} onCreateSession={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("project"), { target: { value: "proj-9" } });
+    fireEvent.change(screen.getByPlaceholderText(/review my pull request/i), { target: { value: "do thing" } });
+    fireEvent.click(screen.getByRole("button", { name: /ask atlas/i }));
+    await waitFor(() => expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj-9" })));
   });
 });

@@ -199,25 +199,29 @@ export function SessionComposer({
                 </>
               ) : null}
 
-              {projects.length > 0 && (
-                <select
-                  id="composer-project"
-                  value={projectId}
-                  onChange={(e) => setProjectId(e.target.value)}
-                  className="rounded-lg border border-line bg-raised px-2.5 py-1.5 text-xs text-muted outline-none focus:border-accent/50"
-                >
-                  <option value="">no project</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+              {/* sessions always live in a project (spec: auth-app-flow §3);
+                  with no projects yet the submit stays disabled — the inbox
+                  is auto-created by the app shell */}
+              <select
+                id="composer-project"
+                aria-label="project"
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                className="rounded-lg border border-line bg-raised px-2.5 py-1.5 text-xs text-muted outline-none focus:border-accent/50"
+              >
+                <option value="" disabled>
+                  {projects.length > 0 ? "select project" : "no projects yet"}
+                </option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
 
               <button
                 type="submit"
-                disabled={submitting || !prompt.trim()}
+                disabled={submitting || !prompt.trim() || !projectId}
                 className="ml-auto min-h-[44px] rounded-lg bg-accent/15 px-4 py-1.5 text-sm font-medium text-accent transition-colors hover:bg-accent/25 disabled:opacity-40"
               >
                 {submitting ? "sending…" : "Ask Atlas"}
