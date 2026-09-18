@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadDaemonConfig, loadEnvFile, resolveSessionConfig, DEFAULT_HOST, DEFAULT_PORT } from './config'
+import { availableProviders, loadDaemonConfig, loadEnvFile, resolveSessionConfig, DEFAULT_HOST, DEFAULT_PORT } from './config'
 import { validateConfig } from './daemon/contextFactory'
 
 test('loadDaemonConfig uses documented defaults', async () => {
@@ -116,5 +116,19 @@ test('loadAgenthoodConfig fails fast on a corrupt config file', async () => {
   } finally {
     process.chdir(cwd)
     rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('availableProviders resolves opencode-go to OPENCODE_API_KEY, not the derived name', () => {
+  const previous = process.env.OPENCODE_API_KEY
+  delete process.env.OPENCODE_GO_API_KEY
+  process.env.OPENCODE_API_KEY = 'sk-test'
+  try {
+    const global = { providers: [{ name: 'opencode-go', model: 'm' }] } as never
+    const [entry] = availableProviders(global)
+    assert.equal(entry.configured, true)
+  } finally {
+    if (previous === undefined) delete process.env.OPENCODE_API_KEY
+    else process.env.OPENCODE_API_KEY = previous
   }
 })

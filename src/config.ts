@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { loadConfig as loadAgenthoodConfig } from 'agenthood/dist/commands/config.js'
+import { PROVIDER_KEYS } from 'agenthood/dist/llm/validateApiKeys.js'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
 
 export const DEFAULT_HOST = '127.0.0.1'
@@ -91,9 +92,12 @@ export interface ProviderChoice {
   configured: boolean
 }
 
-/** Env var that would configure the provider (e.g. groq → GROQ_API_KEY). */
+/** Env var that would configure the provider (e.g. groq → GROQ_API_KEY).
+ * Names do not always derive mechanically — opencode-go reads
+ * OPENCODE_API_KEY — so the canonical agenthood registry wins and the
+ * derivation is only a fallback for unknown providers. */
 function apiKeyEnvFor(name: string): string {
-  return name.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_API_KEY'
+  return PROVIDER_KEYS[name]?.envVar ?? name.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_API_KEY'
 }
 
 /**
