@@ -34,9 +34,9 @@
 ## 3. LLM Provider (Core Fix)
 
 - [x] ~~Primary provider `opencode`~~ → FAILED with `401 Authentication failed`
-- [x] Fixed: provider changed to **`opencode-go`** (zen/go tier,
-      `https://opencode.ai/zen/go/v1`) in `.agenthood/config.json`
-- [x] API key is for the **zen/go tier** (not standard zen)
+- [x] Fixed: provider changed to **`opencode`** (zen tier,
+      `https://opencode.ai/zen/v1`) in `.agenthood/config.json`
+- [x] API key is for the **zen tier**
 - [x] `npx agenthood run the-architect "Plan an atlaslink integration"`
       → produced a real plan (provider verified working)
 
