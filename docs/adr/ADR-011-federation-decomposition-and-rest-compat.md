@@ -41,9 +41,15 @@ block M5 behind a full UI rewrite.
    handlers — the handlers move, the business logic does not get rewritten.
    Extraction is staged per subgraph (schema-compatible first, physically
    extracted when its branch lands), composed by an edge router.
-   Router vendor (Apollo Router vs Cosmo vs Yoga gateway) is deferred to a
-   time-boxed spike; selection criteria: open source, Federation v2 spec
-   compliant, single static binary, no license gate on core features.
+   **Router vendor: Cosmo Router** — selected by a time-boxed spike
+   (2026-10-02, results on #290) against the criteria below: pure
+   Apache-2.0 with no license gate on any step, fully local composition
+   (`npx wgc router compose`, no token — the closest fit to hermetic
+   offline CI), native Windows binary, health endpoint + JSON structured
+   logs (requires `dev_mode: false`), best cross-subgraph latency in the
+   smoke test (7.44 ms avg). Apollo Router ranked 2nd (best DX, but ELv2
+   is not open source and gates CI on license acceptance), Hive Router 3rd
+   (no Windows binary — forces Docker on local dev).
 3. **REST compat window:** existing REST routes persist as a thin BFF shim
    that translates to graph operations. The shim is the last thing standing
    between the monolith and its removal, with explicit deprecation criteria:

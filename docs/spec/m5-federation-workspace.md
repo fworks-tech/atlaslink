@@ -82,8 +82,8 @@ train, it merges back into `session` before extraction rather than after.
 
 ## Open Questions
 
-- Router vendor: Apollo Router vs Cosmo vs Yoga gateway — time-boxed spike
-  under #290; criteria recorded in ADR-011.
+- Router vendor: **decided — Cosmo Router** (spike 2026-10-02, results on
+  #290; recorded in ADR-011). Gotcha: `dev_mode: false` for JSON logs.
 - Production volume for git workspaces on Render: size, snapshot/backup
   story — decided with the operator runbook before #296 merges.
 - Whether `task` and `insights` compose into fewer subgraphs if extraction

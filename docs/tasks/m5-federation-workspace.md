@@ -7,9 +7,8 @@ branches target their parent; each PR links its issue. Stage order mirrors
 ## Stage 1 — Foundations (decisions before code)
 - [ ] docs(adr): ADR-011 federation decomposition + REST compat window (#290)
 - [ ] docs(adr): ADR-012 git-backed workspace (#291)
-- [ ] spike(composition): time-boxed router vendor spike (Apollo Router vs
-  Cosmo vs Yoga), record selection under #290 — must run offline-composed
-  schemas in CI without a live network
+- [x] spike(composition): router vendor spike (Apollo vs Cosmo vs Hive)
+  → **Cosmo Router** selected, results recorded on #290 (2026-10-02)
 
 ## Stage 2 — Workspace model (issues #292)
 - [ ] feat(projects): bind a git workspace to a project row (path reference,
