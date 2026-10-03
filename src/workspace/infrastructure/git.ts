@@ -133,8 +133,8 @@ export async function commitAll(repo: string, opts: { message: string; sessionId
  * @param commit - `HEAD` or a plain hex sha (validated, see `safeRev`)
  * @param path - repository-relative path (validated, see `safeRepoPath`)
  * @returns the blob content verbatim, or `null` when the path is absent at
- * that commit (also `null` on other git failures — callers on new read
- * surfaces should distinguish infra errors, see #296)
+ * that commit (callers on new read surfaces run `ensureWorkspace` first, so
+ * infra faults throw there instead of surfacing here)
  * @throws {Error} when `commit` or `path` fail validation before git runs
  */
 export async function readAt(repo: string, commit: string, path: string): Promise<string | null> {

@@ -96,8 +96,6 @@ test('unsafe refs, paths, and workspace ids are rejected before git runs', async
   const dir = tmpDataDir()
   const srv = await startServer(dir)
   try {
-    const sessionId = await createSession(srv.port, 'proj-1')
-
     const escapePath = await gql(srv.port, `query { file(projectId: "proj-1", path: "../../etc/passwd") }`)
     assert.equal(escapePath.errors?.[0].extensions?.code, '400')
     assert.match(escapePath.errors![0].message, /unsafe repo path/)
@@ -115,7 +113,6 @@ test('unsafe refs, paths, and workspace ids are rejected before git runs', async
 
     const badTenant = await gql(srv.port, `query { files(projectId: "proj-1") }`, undefined, { 'x-tenant-id': '!!!' })
     assert.equal(badTenant.errors?.[0].extensions?.code, '400')
-    assert.ok(sessionId)
   } finally {
     await srv.close()
     cleanup(dir)
@@ -218,6 +215,14 @@ test('tenants get isolated workspaces for the same project id', async () => {
       intruder
     )
     assert.equal(intruderRead.data!.file, null)
+
+    const forged = await gql(
+      srv.port,
+      'mutation ($p: ID!, $m: String!, $s: ID!) { commitFiles(projectId: $p, message: $m, sessionId: $s) }',
+      { p: projectId, m: 'forge', s: sessionId },
+      intruder
+    )
+    assert.equal(forged.errors?.[0].extensions?.code, '404', "tenant b cannot attribute a commit to tenant a's session")
   } finally {
     await srv.close()
     cleanup(dir)
