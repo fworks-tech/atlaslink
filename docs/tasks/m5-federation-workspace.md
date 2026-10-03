@@ -38,6 +38,14 @@ branches target their parent; each PR links its issue. Stage order mirrors
 - [ ] docs(bff): deprecation checklist — every shimmed route listed with its
   removal criterion
 
+## Router runtime (ADR-011 — alongside stages 4–5)
+- [ ] feat(router): Cosmo Router edge — unified graph entry, configurable
+  routing URLs, operator health gate, cross-subgraph smoke; must land
+  before stage 5's E2E (#320)
+- [ ] feat(router): split subgraphs into independent deployables —
+  per-process health gates and failure isolation (#321) — post-shim
+  follow-up, required for M5 acceptance
+
 ## Stage 5 — Dashboard migration (issue #298, last)
 - [ ] feat(dashboard): move data layer from REST to the graph
 - [ ] test(dashboard): E2E smoke against the router; assert zero legacy REST
