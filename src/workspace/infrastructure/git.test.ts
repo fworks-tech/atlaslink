@@ -4,8 +4,9 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import * as workspace from './git'
-import { ensureWorkspace, commitAll, readAt, diff, withWorkspaceLock } from './git'
+import { ensureWorkspace, commitAll, readAt, diff } from './git'
+import { withWorkspaceLock } from './lock'
+import { withTimeout } from '../../test/withTimeout'
 
 function tempWorkspace(): string {
   return mkdtempSync(join(tmpdir(), 'atlaslink-workspace-'))
@@ -14,24 +15,6 @@ function tempWorkspace(): string {
 function sh(repo: string, args: string[]): string {
   return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim()
 }
-
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: NodeJS.Timeout | undefined
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms)
-      }),
-    ])
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-test('git module exposes only the safe workspace surface', () => {
-  assert.deepEqual(Object.keys(workspace).sort(), ['commitAll', 'diff', 'ensureWorkspace', 'readAt', 'withWorkspaceLock'])
-})
 
 test('ensureWorkspace is idempotent and leaves exactly one baseline commit', async () => {
   const repo = tempWorkspace()
@@ -131,22 +114,6 @@ test('diff shows the change between pinned commits', async () => {
     writeFileSync(join(repo, 'spec.md'), 'v2')
     const sha2 = await commitAll(repo, { message: 'v2', sessionId: 'ses-1' })
     assert.match(await diff(repo, sha1, sha2), /\+v2/)
-  } finally {
-    rmSync(repo, { recursive: true, force: true })
-  }
-})
-
-test('withWorkspaceLock serializes writers per repo', async () => {
-  const repo = tempWorkspace()
-  try {
-    const order: string[] = []
-    const step = (name: string) => async () => {
-      order.push(`${name}:start`)
-      await new Promise((resolve) => setTimeout(resolve, 30))
-      order.push(`${name}:end`)
-    }
-    await Promise.all([withTimeout(withWorkspaceLock(repo, step('a')), 5000), withTimeout(withWorkspaceLock(repo, step('b')), 5000)])
-    assert.deepEqual(order, ['a:start', 'a:end', 'b:start', 'b:end'])
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
