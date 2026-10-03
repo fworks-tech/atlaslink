@@ -1,0 +1,40 @@
+# GraphQL codegen (#324) — schema.graphql is the source of the TypeScript
+# types the resolvers are checked against. Run `npm run codegen` after every
+# schema edit and commit the output (typecheck stays hermetic).
+generates:
+  src/subgraphs/session/graphql.ts:
+    schema: src/subgraphs/session/schema.graphql
+    plugins:
+      - typescript
+      - typescript-resolvers
+    config:
+      federation: 2
+      contextType: ./resolvers#SessionContext
+      enumsAsTypes: true
+  src/subgraphs/task/graphql.ts:
+    schema: src/subgraphs/task/schema.graphql
+    plugins:
+      - typescript
+      - typescript-resolvers
+    config:
+      federation: 2
+      contextType: ./resolvers#TaskContext
+      enumsAsTypes: true
+  src/subgraphs/insights/graphql.ts:
+    schema: src/subgraphs/insights/schema.graphql
+    plugins:
+      - typescript
+      - typescript-resolvers
+    config:
+      federation: 2
+      contextType: ./resolvers#InsightsSubgraphDeps
+      enumsAsTypes: true
+  src/subgraphs/files/graphql.ts:
+    schema: src/subgraphs/files/schema.graphql
+    plugins:
+      - typescript
+      - typescript-resolvers
+    config:
+      federation: 2
+      contextType: ./resolvers#FilesContext
+      enumsAsTypes: true

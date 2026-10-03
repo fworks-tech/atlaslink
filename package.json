@@ -15,7 +15,8 @@
     "compose": "npx --yes wgc@0.132.2 router compose -i src/subgraphs/compose.yaml -o router-config.json",
     "router": "tsx src/router/start.ts",
     "router:smoke": "tsx src/router/smoke.ts",
-    "semantic-release": "semantic-release"
+    "semantic-release": "semantic-release",
+    "codegen": "graphql-codegen --config codegen.yml"
   },
   "keywords": [
     "agenthood",
@@ -42,6 +43,9 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@graphql-codegen/cli": "^7.4.3",
+    "@graphql-codegen/typescript": "^6.1.0",
+    "@graphql-codegen/typescript-resolvers": "^6.1.0",
     "@semantic-release/changelog": "^7.0.0",
     "@semantic-release/git": "^11.0.1",
     "@types/better-sqlite3": "^9.6.0",

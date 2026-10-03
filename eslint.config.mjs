@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
   {
-    ignores: ['node_modules/**', 'dist/**', 'coverage/**', '.next/**', 'dashboard/**', 'data/**']
+    ignores: ['node_modules/**', 'dist/**', 'coverage/**', '.next/**', 'dashboard/**', 'data/**', 'src/subgraphs/**/graphql.ts']
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
