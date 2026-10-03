@@ -27,6 +27,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Federation composition
+        run: npm run compose
+
       - name: Test
         run: npm test
 

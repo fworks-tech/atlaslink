@@ -1,0 +1,7 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@shareable"])
+
+# Seed stub — real report queries land with #295 (insights extraction).
+type Query {
+  insightsHealth: Boolean!
+}
