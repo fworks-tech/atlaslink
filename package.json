@@ -13,6 +13,8 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "compose": "npx --yes wgc@0.132.2 router compose -i src/subgraphs/compose.yaml -o router-config.json",
+    "router": "tsx src/router/start.ts",
+    "router:smoke": "tsx src/router/smoke.ts",
     "semantic-release": "semantic-release"
   },
   "keywords": [
