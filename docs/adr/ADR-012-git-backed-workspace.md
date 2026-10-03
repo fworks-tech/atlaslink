@@ -32,8 +32,12 @@ A hybrid model — **git owns content, the database owns metadata**:
    disk (a volume in production). The server drives it by shelling out to
    the system `git` CLI — no native bindings, no library lock-in; git is
    the platform feature.
-2. **Metadata** lives in the existing store: file references, the session
-   attribution of each write, and workspace bindings on the project row.
+2. **Metadata** lives in the existing store: file references and the session
+   attribution of each write. The workspace *binding* itself is derived, not
+   stored: `<root>/<tenant>/<project>` is a pure function of ids
+   (`workspacePathFor`), so there is no column to backfill for existing
+   projects; a per-row path only appears if a workspace must ever move off
+   the default root.
 3. **Attribution:** every agent-driven write batch is one commit whose
    message carries a `session: <id>` trailer and, when applicable, the plan
    step it belongs to. The audit trail is then two-sided and joinable:

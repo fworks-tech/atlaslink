@@ -10,13 +10,16 @@ branches target their parent; each PR links its issue. Stage order mirrors
 - [x] spike(composition): router vendor spike (Apollo vs Cosmo vs Hive)
   → **Cosmo Router** selected, results recorded on #290 (2026-10-02)
 
-## Stage 2 — Workspace model (issues #292)
-- [ ] feat(projects): bind a git workspace to a project row (path reference,
-  metadata columns/migration)
-- [ ] feat(files): git helper — commit with `session:` trailer, pinned read,
-  diff, per-workspace write lock (private to the future files subgraph)
-- [ ] test(files): temp-dir unit tests — attribution, lock serialization,
-  pinned reads, revert-only policy
+## Stage 2 — Workspace model (issues #292) — DONE
+- [x] feat(workspace): resolve workspace path from tenant and project id —
+  derived binding, tenant-isolated, traversal-safe (no migration; per-row
+  path deferred per ADR-012 amend)
+- [x] feat(workspace): git helper — lazy `ensureWorkspace`, `commitAll` with
+  `session:` trailer, pinned `readAt`, `diff`, reentrant per-workspace lock
+  (module is private to the future files subgraph)
+- [x] test(workspace): temp-dir tests — attribution, pinned reads, lock
+  serialization + reentrancy (deadlock guard), unsafe ref/path rejection,
+  exported-surface contract (revert-only policy)
 
 ## Stage 3 — Subgraph extraction (issues #293–#296, one stacked branch each)
 - [ ] feat(graph): scaffold — shared schema/registry conventions + CI
