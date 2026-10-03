@@ -1,7 +1,73 @@
 extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@shareable"])
 
-# Seed stub — real report queries land with #295 (insights extraction).
 type Query {
-  insightsHealth: Boolean!
+  insights: InsightsReport!
+}
+
+type InsightsReport {
+  generatedAt: String!
+  count: Int!
+  errorCount: Int!
+  total: UsageGroup!
+  byMember: [MemberUsage!]!
+  byModel: [ModelUsage!]!
+  topCost: [CostCenter!]!
+  topContext: [ContextPressure!]!
+  highestOutputRatio: [OutputRatio!]!
+  contextUtil: ContextUtil
+  costTrend: CostTrend
+}
+
+type TokenBuckets {
+  input: Int!
+  output: Int!
+  total: Int!
+}
+
+type UsageGroup {
+  runs: Int!
+  errors: Int!
+  token: TokenBuckets!
+  cost: Float!
+  durationMs: Int!
+}
+
+type MemberUsage {
+  member: String!
+  usage: UsageGroup!
+}
+
+type ModelUsage {
+  model: String!
+  usage: UsageGroup!
+}
+
+type CostCenter {
+  member: String!
+  cost: Float!
+  token: TokenBuckets!
+}
+
+type ContextPressure {
+  member: String!
+  maxInputTokens: Int!
+  avgInputTokens: Int!
+}
+
+type OutputRatio {
+  member: String!
+  ratio: Float!
+}
+
+type ContextUtil {
+  p50: Float!
+  p90: Float!
+  p99: Float!
+}
+
+type CostTrend {
+  first: Float!
+  second: Float!
+  changePct: Float
 }

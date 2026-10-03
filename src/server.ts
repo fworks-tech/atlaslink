@@ -27,6 +27,7 @@ import { registerProjectRoutes } from './api/projects'
 import { registerRoomRoutes } from './api/room'
 import { registerSessionSubgraph } from './subgraphs/session/resolvers'
 import { registerTaskSubgraph } from './subgraphs/task/resolvers'
+import { registerInsightsSubgraph } from './subgraphs/insights/resolvers'
 import { registerTokenGate, registerAuthGate } from './api/auth'
 import { registerAuthRoutes, registerAuthKeyRoutes } from './api/authRoutes'
 import { registerSecurityHeaders } from './api/securityHeaders'
@@ -135,6 +136,8 @@ export async function createAppServer(params: {
   sse: SseHandler
   backend?: SessionBackend
   providers?: ProviderChoice[]
+  /** Trace store the insights subgraph folds (default: project-cwd `.agenthood/traces`). */
+  insightsTracesPath?: string
   authStore?: AuthStore | null
   /** Forwarded to the ungated auth routes (inbox seeding on register). */
   authDeps?: Parameters<typeof registerAuthRoutes>[2]
@@ -301,6 +304,9 @@ export async function createAppServer(params: {
 
     // --- M5 task subgraph (#294): task CRUD + diagram over the same handlers ---
     registerTaskSubgraph(api, { backend, registry, queue, sse, providers: params.providers ?? [] })
+
+    // --- M5 insights subgraph (#295): read-only fold over the trace store ---
+    registerInsightsSubgraph(api, { tracesPath: params.insightsTracesPath })
   }, { prefix: '/v1' })
 
   app.setNotFoundHandler((_request, reply) => {

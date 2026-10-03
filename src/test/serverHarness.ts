@@ -43,6 +43,8 @@ export interface HarnessOptions {
   rateLimit?: { max: number; timeWindow: string }
   /** Session-creation pick list (tests inject their own roster). */
   providers?: { name: string; model: string; models: string[]; configured: boolean }[]
+  /** Trace store the insights subgraph folds (tests point it at a temp file). */
+  insightsTracesPath?: string
 }
 
 export async function startServer(dir: string, opts: HarnessOptions = {}): Promise<ServerHarness> {
@@ -72,6 +74,7 @@ export async function startServer(dir: string, opts: HarnessOptions = {}): Promi
       backend,
       ...(opts.rateLimit ? { rateLimit: opts.rateLimit } : {}),
       ...(opts.providers ? { providers: opts.providers } : {}),
+      ...(opts.insightsTracesPath ? { insightsTracesPath: opts.insightsTracesPath } : {}),
     })
     httpServer = app.server
     await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
