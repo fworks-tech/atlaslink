@@ -7,6 +7,7 @@ test('workspace module exposes only the safe surface', () => {
     'commitAll',
     'diff',
     'ensureWorkspace',
+    'listAt',
     'readAt',
     'withWorkspaceLock',
     'workspacePathFor',

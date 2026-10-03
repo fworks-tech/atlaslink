@@ -110,6 +110,10 @@ train, it merges back into `session` before extraction rather than after.
 - `npm run compose` pins `wgc@0.132.2` via npx (no CLI dependency in the
   lockfile) and writes the router execution config to `router-config.json`
   (gitignored; mounted by the router runtime stage).
+- Files subgraph (#296): request-derived repo paths MUST come from
+  `workspacePathFor` (tenant + project resolved server-side, never from raw
+  input); `commitFiles` requires a `sessionId` that exists in the calling
+  tenant's session store — every commit stays attributable.
 - Routing: all subgraphs are served from the gated monolith Fastify scope at
   `POST /v1/graphql/<name>` (ADR-011: handlers move, business logic does not
   get rewritten); `routing_url` entries assume the default dev port 3000.

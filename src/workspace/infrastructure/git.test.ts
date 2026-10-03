@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { ensureWorkspace, commitAll, readAt, diff } from './git'
+import { ensureWorkspace, commitAll, readAt, listAt, diff } from './git'
 import { withWorkspaceLock } from './lock'
 import { withTimeout } from '../../test/withTimeout'
 
@@ -122,6 +122,25 @@ test('diff shows the change between pinned commits', async () => {
     writeFileSync(join(repo, 'spec.md'), 'v2')
     const sha2 = await commitAll(repo, { message: 'v2', sessionId: 'ses-1' })
     assert.match(await diff(repo, sha1, sha2), /\+v2/)
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('listAt enumerates tracked files at a pinned commit and refuses unsafe refs', async () => {
+  const repo = tempWorkspace()
+  try {
+    await ensureWorkspace(repo)
+    assert.deepEqual(await listAt(repo, 'HEAD'), [])
+
+    writeFileSync(join(repo, 'spec.md'), 'v1')
+    writeFileSync(join(repo, 'notes.txt'), 'n')
+    const sha = await commitAll(repo, { message: 'add files', sessionId: 'ses-1' })
+    assert.deepEqual(await listAt(repo, 'HEAD'), ['notes.txt', 'spec.md'])
+    assert.deepEqual(await listAt(repo, sha), ['notes.txt', 'spec.md'])
+
+    await assert.rejects(listAt(repo, 'HEAD~1'), /unsafe commit ref/)
+    await assert.rejects(listAt(repo, '--all'), /unsafe commit ref/)
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

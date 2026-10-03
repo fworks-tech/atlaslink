@@ -8,7 +8,7 @@ Every layer imports inward only; nothing here imports from `src/api`,
 domain/           pure rules, no I/O
   path.ts           workspacePathFor — derived binding (ADR-012), tenant-isolated
 infrastructure/   storage side effects
-  git.ts            system git adapter: ensure / commitAll / readAt / diff
+  git.ts            system git adapter: ensure / commitAll / readAt / listAt / diff
   lock.ts           per-workspace write mutex (reentrant, process-local)
 index.ts          pinned public surface — consumers import ONLY from here
 ```
