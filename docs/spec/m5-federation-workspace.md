@@ -110,8 +110,8 @@ train, it merges back into `session` before extraction rather than after.
 - `npm run compose` pins `wgc@0.132.2` via npx (no CLI dependency in the
   lockfile) and writes the router execution config to `router-config.json`
   (gitignored; mounted by the router runtime stage).
-- Routing: all subgraphs are served from the monolith Fastify instance at
-  `POST /graphql/<name>` (ADR-011: handlers move, business logic does not
+- Routing: all subgraphs are served from the gated monolith Fastify scope at
+  `POST /v1/graphql/<name>` (ADR-011: handlers move, business logic does not
   get rewritten); `routing_url` entries assume the default dev port 3000.
 
 ## References
