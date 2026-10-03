@@ -1,0 +1,18 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@shareable", "@external", "@requires", "@provides"])
+
+type Query {
+  task(id: ID!): Task
+  tasks: [Task!]!
+}
+
+type Task @key(fields: "id") {
+  id: ID!
+  title: String!
+  done: Boolean!
+  session: Session
+}
+
+type Session @key(fields: "id") {
+  id: ID!
+}

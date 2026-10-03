@@ -22,9 +22,9 @@ branches target their parent; each PR links its issue. Stage order mirrors
   exported-surface contract (revert-only policy)
 
 ## Stage 3 — Subgraph extraction (issues #293–#296, one stacked branch each)
-- [ ] feat(graph): scaffold — shared schema/registry conventions + CI
-  composition check (parent branch for the four below)
-- [ ] feat(session): session subgraph — lifecycle/events/actions/room over
+- [x] feat(graph): scaffold — shared schema/registry conventions + CI
+  composition check (parent branch for the four below; folded into #293)
+- [x] feat(session): session subgraph — lifecycle/events/actions/room over
   existing handlers + composition check (#293)
 - [ ] feat(task): task subgraph — CRUD, validation, diagram projection (#294)
 - [ ] feat(insights): insights subgraph — read-only over events/traces (#295);

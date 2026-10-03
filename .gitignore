@@ -167,3 +167,4 @@ dashboard/.env.local
 !.agenthood/config.json
 .env*
 !deploy/oracle/.env.example
+router-config.json

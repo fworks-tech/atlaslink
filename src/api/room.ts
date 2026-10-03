@@ -45,7 +45,7 @@ export const MAX_ROOM_BACKLOG_EVENTS = 200
 export const MAX_ROOM_SNAPSHOT_TURNS = 50
 export const MAX_ROOM_INGRESS_PER_MINUTE = 60
 
-interface RoomMember {
+export interface RoomMember {
   id: string
   name: string
   joinedAt: string
@@ -73,7 +73,7 @@ function firstQuery(value: unknown): string | undefined {
   return undefined
 }
 
-export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): void {
+export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rosterOf: (sessionId: string) => RoomMember[] } {
   const rooms = new Map<string, Map<string, RoomClient>>()
   // Registration-time capture: the upgrade check runs after harnesses (and
   // any env-scoping caller) restore the env, so ambient reads would miss it.
@@ -322,6 +322,8 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): void {
       })()
     }
   )
+
+  return { rosterOf }
 }
 
 /** Live + replay filter: this session's envelopes, plus its run events via correlation. */

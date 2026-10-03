@@ -89,8 +89,30 @@ train, it merges back into `session` before extraction rather than after.
 - Whether `task` and `insights` compose into fewer subgraphs if extraction
   shows no independent scaling need — re-evaluate at #295, cheap to merge
   now, expensive to split later.
-- Namespace/prefix strategy for subgraph schemas (`Session` vs bare type
-  collisions) — decided during the #293 scaffold.
+- Namespace/prefix strategy for subgraph schemas — **decided at the #293
+  scaffold**: no type prefixing; `Session`/`Task` are federation entities
+  with `@key(fields: "id")` and exactly one owning subgraph (`session`,
+  `task`); cross-subgraph references go through the entity, never through
+  duplicated fields. Root fields are owned by one subgraph — `Query` fields
+  never collide because each subgraph names its own namespace in
+  composition (verified by the CI compose check).
+
+## Subgraph Conventions (scaffold, #293)
+
+- Layout: `src/subgraphs/<name>/schema.graphql` + `resolvers.ts`; exactly
+  the directories that `compose.yaml` lists (enforced by
+  `src/subgraphs/subgraphs.test.ts`).
+- Schemas are Federation v2.3 (`@link` …/federation/v2.3, import `@key`,
+  `@shareable`); entities have a single owner; the compose check in CI is
+  the contract gate.
+- `src/subgraphs/compose.yaml` lists subgraphs as a **YAML list** — wgc
+  0.132.x crashes on map-style entries (`config.subgraphs.entries`).
+- `npm run compose` pins `wgc@0.132.2` via npx (no CLI dependency in the
+  lockfile) and writes the router execution config to `router-config.json`
+  (gitignored; mounted by the router runtime stage).
+- Routing: all subgraphs are served from the gated monolith Fastify scope at
+  `POST /v1/graphql/<name>` (ADR-011: handlers move, business logic does not
+  get rewritten); `routing_url` entries assume the default dev port 3000.
 
 ## References
 

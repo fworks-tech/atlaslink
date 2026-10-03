@@ -1,0 +1,90 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@shareable"])
+
+type Query {
+  session(id: ID!): Session
+  sessions(projectId: ID, status: SessionStatus, limit: Int = 50, offset: Int = 0): SessionPage!
+  sessionEvents(sessionId: ID!, limit: Int = 200): [Envelope!]!
+  roomMembers(sessionId: ID!): [RoomMember!]!
+}
+
+type Mutation {
+  createSession(member: String!, prompt: String!, projectId: ID): Session!
+  cancelSession(id: ID!): Session!
+  appendMessage(sessionId: ID!, content: String!): Session!
+  askFollowup(sessionId: ID!, question: String!): Session!
+  steerSession(sessionId: ID!, content: String!): Session!
+  replyToParked(sessionId: ID!, reply: String!): Session!
+}
+
+enum SessionStatus {
+  queued
+  running
+  awaiting_input
+  succeeded
+  failed
+  cancelled
+}
+
+type SessionPage {
+  sessions: [Session!]!
+  total: Int!
+}
+
+type InteractionTurn {
+  role: String!
+  member: String
+  at: String!
+  content: String!
+}
+
+type NextStep {
+  awaitingInput: Boolean!
+  prompt: String
+  member: String
+}
+
+type AskHumanQuestion {
+  question: String!
+  context: String
+}
+
+type Envelope {
+  eventId: Int!
+  type: String!
+  at: String
+  sessionId: String
+  correlationId: String
+  member: String
+  prompt: String
+  message: String
+  error: String
+}
+
+type RoomMember {
+  id: String!
+  name: String!
+  joinedAt: String!
+}
+
+type Session @key(fields: "id") {
+  id: ID!
+  correlationId: String!
+  status: SessionStatus!
+  version: Int!
+  projectId: ID
+  tenantId: String
+  createdAt: String
+  startedAt: String
+  finishedAt: String
+  member: String!
+  prompt: String!
+  output: String
+  error: String
+  durationMs: Int
+  interaction: [InteractionTurn!]!
+  nextStep: NextStep
+  question: AskHumanQuestion
+  resumeOf: ID
+  replyCount: Int!
+}
