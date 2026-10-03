@@ -25,6 +25,20 @@ test('loadDaemonConfig uses documented defaults', async () => {
   }
 })
 
+test('loadDaemonConfig resolves ATLASLINK_DATA_DIR for isolated runs', async () => {
+  const previous = process.env.ATLASLINK_DATA_DIR
+  const isolated = mkdtempSync(join(tmpdir(), 'atlaslink-data-'))
+  process.env.ATLASLINK_DATA_DIR = isolated
+  try {
+    const config = await loadDaemonConfig()
+    assert.equal(config.dataDir, isolated)
+  } finally {
+    if (previous === undefined) delete process.env.ATLASLINK_DATA_DIR
+    else process.env.ATLASLINK_DATA_DIR = previous
+    rmSync(isolated, { recursive: true, force: true })
+  }
+})
+
 test('loadDaemonConfig honours env overrides and parses the agenthood provider chain', async () => {
   const previous = { HOST: process.env.ATLASLINK_HOST, PORT: process.env.ATLASLINK_PORT }
   process.env.ATLASLINK_HOST = '0.0.0.0'
