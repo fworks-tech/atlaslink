@@ -114,6 +114,11 @@ test('sessionEvents returns only this session envelopes, bounded by limit', asyn
     const bounded = await gql(srv.port, `query { sessionEvents(sessionId: "${id}", limit: 1) { type } }`)
     assert.deepEqual(bounded.data!.sessionEvents, [{ type: 'run.finished' }])
 
+    const none = await gql(srv.port, `query { sessionEvents(sessionId: "${id}", limit: 0) { type } }`)
+    assert.deepEqual(none.data!.sessionEvents, [])
+    const negative = await gql(srv.port, `query { sessionEvents(sessionId: "${id}", limit: -3) { type } }`)
+    assert.deepEqual(negative.data!.sessionEvents, [])
+
     const unknown = await gql(srv.port, 'query { sessionEvents(sessionId: "ses-none") { type } }')
     assert.equal(unknown.errors?.[0].extensions?.code, '404')
   } finally {

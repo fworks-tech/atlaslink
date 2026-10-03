@@ -131,10 +131,14 @@ const resolvers = {
       const c = take(ctx)
       const aggregate = await c.backend.get(args.sessionId)
       if (!aggregate) throw new GraphQLError('unknown session', { extensions: { code: '404' } })
+      // slice(-0) would be slice(0): an explicit zero means none, and the
+      // cap keeps one query from replaying an unbounded log into memory
+      const limit = Math.min(Math.max(args.limit, 0), 1000)
+      if (limit === 0) return []
       return c.eventLog
         .replay(-1)
         .filter(({ envelope }) => roomFilter(envelope, args.sessionId, aggregate.correlationId))
-        .slice(-args.limit)
+        .slice(-limit)
         .map(mapEnvelope)
     },
     roomMembers: async (_: unknown, args: { sessionId: string }, ctx: SessionContext) => {
