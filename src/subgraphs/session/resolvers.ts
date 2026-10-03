@@ -15,9 +15,11 @@ import { appendChatMessage, askFollowup, replyToParked, steerSession } from '../
 import { cancelSessionAction, createSessionAction } from '../../api/sessionLifecycle'
 import { roomFilter, type RoomMember } from '../../api/room'
 import { registerSubgraph } from '../executor'
+import type { Resolvers, Session as GraphSession, Envelope as GraphEnvelope } from './graphql'
 
 const typeDefs = parse(readFileSync(join(import.meta.dirname, 'schema.graphql'), 'utf8'))
 
+/** Server wiring the session subgraph needs — stores, queue, SSE, roster. */
 export interface SessionSubgraphDeps {
   backend: SessionBackend
   registry: TaskRegistry
@@ -27,7 +29,8 @@ export interface SessionSubgraphDeps {
   rosterOf: (sessionId: string) => RoomMember[]
 }
 
-interface SessionContext {
+/** Per-request resolver context: validated tenant, scoped backend, ingress deps and event log. */
+export interface SessionContext {
   tenantId: string
   backend: SessionBackend
   tenantError: string | null
@@ -36,6 +39,14 @@ interface SessionContext {
   rosterOf: (sessionId: string) => RoomMember[]
 }
 
+/**
+ * Builds the per-request context by resolving the tenant from headers and
+ * pairing it with the scoped backend, ingress wiring and roster lookup.
+ *
+ * @param request - inbound graph request carrying optional tenant headers
+ * @param deps - server wiring injected at registration
+ * @returns the context every session resolver receives
+ */
 function makeContext(request: FastifyRequest, deps: SessionSubgraphDeps): SessionContext {
   const tenantCtx = tenantBackendForRequest(request, deps.backend)
   return {
@@ -54,7 +65,14 @@ function take(ctx: SessionContext): SessionContext {
   return ctx
 }
 
-function mapSession(session: AggregateSession): Record<string, unknown> {
+/**
+ * Projects the domain session aggregate onto the GraphQL `Session` shape —
+ * the generated type checks every field against schema.graphql.
+ *
+ * @param session - domain aggregate from the session backend
+ * @returns the graph-shaped session
+ */
+function mapSession(session: AggregateSession): GraphSession {
   return {
     id: session.sessionId,
     correlationId: session.correlationId,
@@ -84,17 +102,33 @@ function mapSession(session: AggregateSession): Record<string, unknown> {
   }
 }
 
-function unwrap(result: ActionResult | FollowupResult | ReplyResult | SteerResult): Record<string, unknown> {
+/**
+ * Converts an action result into its session shape or throws the mapped
+ * graph error with the REST-equivalent status code in extensions.
+ *
+ * @param result - outcome of a session action (create, cancel, steer, ...)
+ * @returns the mapped session
+ * @throws {GraphQLError} with the numeric status code when the action failed
+ */
+function unwrap(result: ActionResult | FollowupResult | ReplyResult | SteerResult): GraphSession {
   if (result.code === 201) return mapSession(result.session)
   throw new GraphQLError(result.error, { extensions: { code: String(result.code) } })
 }
 
-function mapEnvelope(stored: StoredEnvelope): Record<string, unknown> {
+/**
+ * Projects a stored event envelope onto the GraphQL `Envelope` shape,
+ * reading only the string fields the schema exposes.
+ *
+ * @param stored - envelope as replayed from the event log
+ * @returns the graph-shaped envelope
+ */
+function mapEnvelope(stored: StoredEnvelope): GraphEnvelope {
   const env = stored.envelope as Record<string, unknown>
   const str = (key: string): string | null => (typeof env[key] === 'string' ? (env[key] as string) : null)
   return {
     eventId: stored.eventId,
-    type: env.type,
+    // stored envelopes are loose JSON; the schema demands a type string
+    type: env.type as string,
     at: str('at'),
     sessionId: str('sessionId'),
     correlationId: str('correlationId'),
@@ -105,18 +139,15 @@ function mapEnvelope(stored: StoredEnvelope): Record<string, unknown> {
   }
 }
 
-const resolvers = {
+/** Schema-derived resolver map — types generated from schema.graphql (#324). */
+const resolvers: Resolvers = {
   Query: {
-    session: async (_: unknown, args: { id: string }, ctx: SessionContext) => {
+    session: async (_parent, args, ctx) => {
       const c = take(ctx)
       const aggregate = await c.backend.get(args.id)
       return aggregate ? mapSession(aggregate) : null
     },
-    sessions: async (
-      _: unknown,
-      args: { projectId?: string | null; status?: string | null; limit: number; offset: number },
-      ctx: SessionContext
-    ) => {
+    sessions: async (_parent, args, ctx) => {
       const c = take(ctx)
       const { sessions, total } = await c.backend.list({
         ...(args.projectId != null ? { projectId: args.projectId } : {}),
@@ -127,7 +158,7 @@ const resolvers = {
       })
       return { sessions: sessions.map(mapSession), total }
     },
-    sessionEvents: async (_: unknown, args: { sessionId: string; limit: number }, ctx: SessionContext) => {
+    sessionEvents: async (_parent, args, ctx) => {
       const c = take(ctx)
       const aggregate = await c.backend.get(args.sessionId)
       if (!aggregate) throw new GraphQLError('unknown session', { extensions: { code: '404' } })
@@ -141,7 +172,7 @@ const resolvers = {
         .slice(-limit)
         .map(mapEnvelope)
     },
-    roomMembers: async (_: unknown, args: { sessionId: string }, ctx: SessionContext) => {
+    roomMembers: async (_parent, args, ctx) => {
       const c = take(ctx)
       const aggregate = await c.backend.get(args.sessionId)
       if (!aggregate || aggregate.tenantId !== c.tenantId) {
@@ -151,11 +182,7 @@ const resolvers = {
     },
   },
   Mutation: {
-    createSession: async (
-      _: unknown,
-      args: { member: string; prompt: string; projectId?: string | null },
-      ctx: SessionContext
-    ) => {
+    createSession: async (_parent, args, ctx) => {
       const c = take(ctx)
       const result = await createSessionAction(c.ingress, {
         member: args.member,
@@ -165,7 +192,7 @@ const resolvers = {
       })
       return unwrap(result)
     },
-    cancelSession: async (_: unknown, args: { id: string }, ctx: SessionContext) => {
+    cancelSession: async (_parent, args, ctx) => {
       const c = take(ctx)
       const result = await cancelSessionAction(
         { backend: c.ingress.backend, registry: c.ingress.registry, broadcaster: c.ingress.broadcaster },
@@ -174,27 +201,34 @@ const resolvers = {
       if (result.code !== 202) throw new GraphQLError(result.error, { extensions: { code: String(result.code) } })
       return mapSession(result.session)
     },
-    appendMessage: async (_: unknown, args: { sessionId: string; content: string }, ctx: SessionContext) =>
+    appendMessage: async (_parent, args, ctx) =>
       unwrap(await appendChatMessage(take(ctx).ingress, args.sessionId, args.content)),
-    askFollowup: async (_: unknown, args: { sessionId: string; question: string }, ctx: SessionContext) => {
+    askFollowup: async (_parent, args, ctx) => {
       const c = take(ctx)
       return unwrap(await askFollowup(c.ingress, { sessionId: args.sessionId, tenantId: c.tenantId, content: args.question }))
     },
-    steerSession: async (_: unknown, args: { sessionId: string; content: string }, ctx: SessionContext) =>
+    steerSession: async (_parent, args, ctx) =>
       unwrap(await steerSession(take(ctx).ingress, args.sessionId, args.content)),
-    replyToParked: async (_: unknown, args: { sessionId: string; reply: string }, ctx: SessionContext) => {
+    replyToParked: async (_parent, args, ctx) => {
       const c = take(ctx)
       return unwrap(await replyToParked(c.ingress, args.sessionId, c.tenantId, args.reply))
     },
   },
   Session: {
-    __resolveReference: async (ref: { id: string }, ctx: SessionContext) => {
+    __resolveReference: async (ref, ctx) => {
       const aggregate = await take(ctx).backend.get(ref.id)
       return aggregate ? mapSession(aggregate) : null
     },
   },
 }
 
+/**
+ * Mounts the session subgraph on `/v1/graphql/session` behind the shared
+ * executor envelope (HTTP 200 with a GraphQL body).
+ *
+ * @param app - Fastify instance that owns the `/v1` scope
+ * @param deps - stores, queue, SSE and roster wiring from the server
+ */
 export function registerSessionSubgraph(app: FastifyInstance, deps: SessionSubgraphDeps): void {
   const schema = buildSubgraphSchema([{ typeDefs, resolvers }])
   registerSubgraph(app, 'session', schema, (request) => makeContext(request, deps))
