@@ -4,18 +4,18 @@ federation_version: =2.10.0
 # `config.subgraphs.entries()` and crashes on map-style entries (0.132.x).
 subgraphs:
   - name: session
-    routing_url: http://127.0.0.1:3000/graphql/session
+    routing_url: http://127.0.0.1:3000/v1/graphql/session
     schema:
       file: ./session/schema.graphql
   - name: task
-    routing_url: http://127.0.0.1:3000/graphql/task
+    routing_url: http://127.0.0.1:3000/v1/graphql/task
     schema:
       file: ./task/schema.graphql
   - name: insights
-    routing_url: http://127.0.0.1:3000/graphql/insights
+    routing_url: http://127.0.0.1:3000/v1/graphql/insights
     schema:
       file: ./insights/schema.graphql
   - name: files
-    routing_url: http://127.0.0.1:3000/graphql/files
+    routing_url: http://127.0.0.1:3000/v1/graphql/files
     schema:
       file: ./files/schema.graphql

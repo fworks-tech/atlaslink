@@ -25,6 +25,7 @@ import { registerTaskRoutes } from './api/tasks'
 import { registerCostRoutes } from './api/cost'
 import { registerProjectRoutes } from './api/projects'
 import { registerRoomRoutes } from './api/room'
+import { registerSessionSubgraph } from './subgraphs/session/resolvers'
 import { registerTokenGate, registerAuthGate } from './api/auth'
 import { registerAuthRoutes, registerAuthKeyRoutes } from './api/authRoutes'
 import { registerSecurityHeaders } from './api/securityHeaders'
@@ -292,7 +293,10 @@ export async function createAppServer(params: {
     registerCostRoutes(api, { backend })
 
     // --- M5 room channel (spec §5): WS per-session room, same gate ---
-    registerRoomRoutes(api, { backend, registry, queue, broadcaster: sse.broadcaster, log })
+    const { rosterOf } = registerRoomRoutes(api, { backend, registry, queue, broadcaster: sse.broadcaster, log })
+
+    // --- M5 session subgraph (#293): graph surface over the same handlers ---
+    registerSessionSubgraph(api, { backend, registry, queue, sse, eventLog: log, rosterOf })
   }, { prefix: '/v1' })
 
   app.setNotFoundHandler((_request, reply) => {
