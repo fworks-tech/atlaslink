@@ -28,6 +28,7 @@ import { registerRoomRoutes } from './api/room'
 import { registerSessionSubgraph } from './subgraphs/session/resolvers'
 import { registerTaskSubgraph } from './subgraphs/task/resolvers'
 import { registerInsightsSubgraph } from './subgraphs/insights/resolvers'
+import { registerFilesSubgraph } from './subgraphs/files/resolvers'
 import { registerTokenGate, registerAuthGate } from './api/auth'
 import { registerAuthRoutes, registerAuthKeyRoutes } from './api/authRoutes'
 import { registerSecurityHeaders } from './api/securityHeaders'
@@ -307,6 +308,9 @@ export async function createAppServer(params: {
 
     // --- M5 insights subgraph (#295): read-only fold over the trace store ---
     registerInsightsSubgraph(api, { tracesPath: params.insightsTracesPath })
+
+    // --- M5 files subgraph (#296): git workspace list/read/diff/commit ---
+    registerFilesSubgraph(api, { backend, workspaceRoot: resolve(log.dataDir, 'workspaces') })
   }, { prefix: '/v1' })
 
   app.setNotFoundHandler((_request, reply) => {

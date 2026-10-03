@@ -1,7 +1,12 @@
 extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@shareable"])
 
-# Seed stub — list/read/diff/commit land with #296 (files subgraph).
 type Query {
-  filesHealth: Boolean!
+  files(projectId: ID!, commit: String = "HEAD"): [String!]!
+  file(projectId: ID!, path: String!, commit: String = "HEAD"): String
+  fileDiff(projectId: ID!, from: String!, to: String!): String!
+}
+
+type Mutation {
+  commitFiles(projectId: ID!, message: String!, sessionId: ID!): String!
 }
