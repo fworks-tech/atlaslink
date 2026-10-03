@@ -9,6 +9,13 @@ const HELD = new AsyncLocalStorage<Set<string>>()
  * path and tracked in async context, so a locked helper nested inside an
  * outer locked batch does not deadlock on its own lock.
  * ponytail: per-process lock — cross-process lock if a second writer process ever exists
+ *
+ * @param repo - absolute path identifying the resource to serialize
+ * (usually a workspace root; any stable path works as a key)
+ * @param fn - critical section to run once the key is held
+ * @returns whatever `fn` resolves to
+ * @throws whatever `fn` rejects with — the lock releases on both paths and
+ * never poisons the queue for the next waiter
  */
 export async function withWorkspaceLock<T>(repo: string, fn: () => Promise<T>): Promise<T> {
   const key = resolve(repo)

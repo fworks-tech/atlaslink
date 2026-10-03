@@ -8,10 +8,18 @@ import { ensureWorkspace, commitAll, readAt, diff } from './git'
 import { withWorkspaceLock } from './lock'
 import { withTimeout } from '../../test/withTimeout'
 
+/** Creates an isolated temporary directory standing in for a workspace root. */
 function tempWorkspace(): string {
   return mkdtempSync(join(tmpdir(), 'atlaslink-workspace-'))
 }
 
+/**
+ * Runs a read-only git command in the test repo for assertions.
+ *
+ * @param repo - repository under test
+ * @param args - git arguments, e.g. `['rev-list', '--count', 'HEAD']`
+ * @returns trimmed stdout
+ */
 function sh(repo: string, args: string[]): string {
   return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim()
 }

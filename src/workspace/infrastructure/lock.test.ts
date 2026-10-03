@@ -6,6 +6,14 @@ import { withTimeout } from '../../test/withTimeout'
 const KEY_A = '/tmp/atlaslink-lock-a'
 const KEY_B = '/tmp/atlaslink-lock-b'
 
+/**
+ * Builds a lock-step callback that records `name:start`, pauses, then
+ * records `name:end` — interleaving of these markers proves serialization.
+ *
+ * @param order - shared marker array the callback appends to
+ * @param name - unique marker prefix for this writer
+ * @returns an async callback suitable for {@link withWorkspaceLock}
+ */
 const step = (order: string[], name: string) => async () => {
   order.push(`${name}:start`)
   await new Promise((resolve) => setTimeout(resolve, 30))
