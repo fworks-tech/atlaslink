@@ -27,7 +27,7 @@ branches target their parent; each PR links its issue. Stage order mirrors
 - [x] feat(session): session subgraph — lifecycle/events/actions/room over
   existing handlers + composition check (#293)
 - [x] feat(task): task subgraph — CRUD, validation, diagram projection (#294)
-- [ ] feat(insights): insights subgraph — read-only over events/traces (#295);
+- [x] feat(insights): insights subgraph — read-only over events/traces (#295);
   merge back into `session` instead if it never deploys alone
 - [ ] feat(files): files subgraph — list/read/diff/commit over the git
   workspace, session-attributed (#296)
@@ -43,6 +43,11 @@ branches target their parent; each PR links its issue. Stage order mirrors
 - [ ] test(dashboard): E2E smoke against the router; assert zero legacy REST
   calls
 - [ ] chore(bff): mark shim deprecated with removal issue linked
+
+## Documentation
+- [ ] docs(federation): explore and document the benefits (and counterpoints)
+  of GraphQL Federation for this codebase — ADR/spec section, linked from
+  ADR-011 (#317)
 
 ## Rules
 - No stage starts before its dependency stage merges to `main`.

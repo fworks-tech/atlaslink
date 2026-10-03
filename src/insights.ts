@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { buildInsightsReport } from './bridge/insights'
-import type { TraceEnvelope } from 'agenthood/dist/core/types.js'
+import { buildInsightsReport, readTraceEnvelopes } from './bridge/insights'
 
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
@@ -53,19 +52,8 @@ async function main(): Promise<void> {
     process.exitCode = 1
     return
   }
-  const envelopes: TraceEnvelope[] = readFileSync(tracesPath, 'utf8')
-    .split(/\r?\n/)
-    .map((line) => {
-      if (line.trim() === '') return null
-      try {
-        return JSON.parse(line) as TraceEnvelope
-      } catch {
-        return null
-      }
-    })
-    .filter((e): e is TraceEnvelope => e !== null)
 
-  print(buildInsightsReport(envelopes))
+  print(buildInsightsReport(readTraceEnvelopes(tracesPath)))
 }
 
 main().catch((err) => {

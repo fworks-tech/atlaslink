@@ -1,4 +1,25 @@
+import { existsSync, readFileSync } from 'node:fs'
 import type { TraceEnvelope } from 'agenthood/dist/core/types.js'
+
+/**
+ * Read the NDJSON trace store tolerantly — unparsable lines are dropped,
+ * a missing file reads as an empty window. Shared by the insights CLI and
+ * the insights subgraph so both fold the same data.
+ */
+export function readTraceEnvelopes(tracesPath: string): TraceEnvelope[] {
+  if (!existsSync(tracesPath)) return []
+  return readFileSync(tracesPath, 'utf8')
+    .split(/\r?\n/)
+    .map((line) => {
+      if (line.trim() === '') return null
+      try {
+        return JSON.parse(line) as TraceEnvelope
+      } catch {
+        return null
+      }
+    })
+    .filter((e): e is TraceEnvelope => e !== null)
+}
 
 export interface TokenBuckets {
   input: number
