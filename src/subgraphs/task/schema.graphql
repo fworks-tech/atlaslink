@@ -1,18 +1,117 @@
 extend schema
-  @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@shareable", "@external", "@requires", "@provides"])
+  @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key"])
+
+scalar JSON
 
 type Query {
   task(id: ID!): Task
+  tasks(
+    projectId: ID
+    status: TaskStatus
+    since: String
+    limit: Int = 50
+    offset: Int = 0
+  ): TaskPage!
+}
+
+type Mutation {
+  createTask(member: String!, prompt: String!, projectId: ID!, tweaks: TaskTweaks): Task!
+  saveDiagram(sessionId: ID!, diagram: DiagramInput!): DiagramSave!
+}
+
+input TaskTweaks {
+  provider: String
+  member: JSON
+  team: JSON
+}
+
+enum TaskStatus {
+  queued
+  running
+  awaiting_input
+  succeeded
+  failed
+  cancelled
+}
+
+type TaskPage {
   tasks: [Task!]!
+  total: Int!
+  limit: Int!
+  offset: Int!
 }
 
 type Task @key(fields: "id") {
   id: ID!
-  title: String!
-  done: Boolean!
+  status: TaskStatus!
+  projectId: ID
+  member: String!
+  prompt: String!
+  tweaks: JSON
+  createdAt: String
+  finishedAt: String
+  error: String
+  replyCount: Int!
   session: Session
 }
 
 type Session @key(fields: "id") {
   id: ID!
+}
+
+enum DiagramMode {
+  chain
+  fanout
+  full
+}
+
+input DiagramPositionInput {
+  x: Float!
+  y: Float!
+}
+
+input DiagramNodeInput {
+  id: ID!
+  type: String!
+  position: DiagramPositionInput!
+}
+
+input DiagramEdgeInput {
+  id: ID!
+  source: ID!
+  target: ID!
+}
+
+input DiagramInput {
+  nodes: [DiagramNodeInput!]!
+  edges: [DiagramEdgeInput!]!
+  mode: DiagramMode!
+}
+
+type DiagramPosition {
+  x: Float!
+  y: Float!
+}
+
+type DiagramNode {
+  id: ID!
+  type: String!
+  position: DiagramPosition!
+}
+
+type DiagramEdge {
+  id: ID!
+  source: ID!
+  target: ID!
+}
+
+type Diagram {
+  nodes: [DiagramNode!]!
+  edges: [DiagramEdge!]!
+  mode: DiagramMode!
+}
+
+type DiagramSave {
+  diagram: Diagram!
+  persisted: Boolean!
 }

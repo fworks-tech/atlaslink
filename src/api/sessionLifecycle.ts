@@ -4,6 +4,7 @@ import { VersionConflictError } from '../session/types'
 import type { IngressDeps, ActionResult } from './sessionActions'
 import { isTerminal } from './sessionActions'
 import { checkpointIdFor } from '../session/checkpointStore'
+import type { ProviderChoice } from '../config'
 import { log } from '../log'
 
 export interface CreateSessionArgs {
@@ -13,6 +14,32 @@ export interface CreateSessionArgs {
   projectId?: string
   provider?: string
   tweaks?: Record<string, unknown>
+}
+
+export interface CreateTweaks {
+  provider?: string
+  member?: Record<string, unknown>
+}
+
+/**
+ * Create-edge pick-list checks shared by POST /tasks and task.createTask —
+ * a stale provider list must 400 at creation instead of stalling a queued
+ * session at run time. Returns the error message, or null when the edge
+ * passes.
+ */
+export function validateCreateEdge(providers: ProviderChoice[], tweaks?: CreateTweaks): string | null {
+  if (
+    providers.length > 0 &&
+    tweaks?.provider !== undefined &&
+    (tweaks.provider.length === 0 || !providers.some((p) => p.name === tweaks.provider))
+  ) {
+    return `unknown provider, choose from ${providers.map((p) => p.name).join(', ')}`
+  }
+  const model = tweaks?.member?.model
+  if (model !== undefined && (typeof model !== 'string' || model.trim().length === 0 || model.length > 200)) {
+    return 'tweaks.member.model must be a non-empty string up to 200 chars'
+  }
+  return null
 }
 
 export type CancelResult =

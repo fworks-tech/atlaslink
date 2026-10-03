@@ -26,6 +26,7 @@ import { registerCostRoutes } from './api/cost'
 import { registerProjectRoutes } from './api/projects'
 import { registerRoomRoutes } from './api/room'
 import { registerSessionSubgraph } from './subgraphs/session/resolvers'
+import { registerTaskSubgraph } from './subgraphs/task/resolvers'
 import { registerTokenGate, registerAuthGate } from './api/auth'
 import { registerAuthRoutes, registerAuthKeyRoutes } from './api/authRoutes'
 import { registerSecurityHeaders } from './api/securityHeaders'
@@ -297,6 +298,9 @@ export async function createAppServer(params: {
 
     // --- M5 session subgraph (#293): graph surface over the same handlers ---
     registerSessionSubgraph(api, { backend, registry, queue, sse, eventLog: log, rosterOf })
+
+    // --- M5 task subgraph (#294): task CRUD + diagram over the same handlers ---
+    registerTaskSubgraph(api, { backend, registry, queue, sse, providers: params.providers ?? [] })
   }, { prefix: '/v1' })
 
   app.setNotFoundHandler((_request, reply) => {
