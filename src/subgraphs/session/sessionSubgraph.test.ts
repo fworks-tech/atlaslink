@@ -7,19 +7,31 @@ interface GraphResult {
   errors?: { message: string; extensions?: { code?: string } }[]
 }
 
-async function gql(port: number, query: string, variables?: Record<string, unknown>): Promise<GraphResult> {
-  const res = await jsonRequest(port, 'POST', '/v1/graphql/session', { query, variables })
+async function gql(
+  port: number,
+  query: string,
+  variables?: Record<string, unknown>,
+  headers?: Record<string, string>
+): Promise<GraphResult> {
+  const res = await jsonRequest(port, 'POST', '/v1/graphql/session', { query, variables }, headers)
   assert.equal(res.status, 200, `graph endpoint must answer 200: ${res.body}`)
   return JSON.parse(res.body) as GraphResult
 }
 
-async function createSession(port: number, member: string, prompt: string, projectId?: string): Promise<string> {
+async function createSession(
+  port: number,
+  member: string,
+  prompt: string,
+  projectId?: string,
+  headers?: Record<string, string>
+): Promise<string> {
   const result = await gql(
     port,
     `mutation Create($member: String!, $prompt: String!, $projectId: ID) {
       createSession(member: $member, prompt: $prompt, projectId: $projectId) { id status }
     }`,
-    { member, prompt, projectId }
+    { member, prompt, projectId },
+    headers
   )
   assert.equal(result.errors, undefined, JSON.stringify(result.errors))
   const created = result.data!.createSession as { id: string; status: string }
@@ -134,6 +146,41 @@ test('the endpoint 400s a missing or non-string query', async () => {
     const res = await jsonRequest(srv.port, 'POST', '/v1/graphql/session', {})
     assert.equal(res.status, 400)
     assert.match(res.body, /query must be a non-empty string/)
+  } finally {
+    await srv.close()
+    cleanup(dir)
+  }
+})
+
+test('tenant isolation on the graph: scoped reads, no existence oracle, invalid tenant is 400', async () => {
+  const dir = tmpDataDir()
+  const srv = await startServer(dir)
+  try {
+    const owner = { 'x-tenant-id': 'tenant-a' }
+    const intruder = { 'x-tenant-id': 'tenant-b' }
+    const id = await createSession(srv.port, 'the-builder', 'tenant scoped', undefined, owner)
+
+    const found = await gql(srv.port, `query { session(id: "${id}") { id } }`, undefined, owner)
+    assert.equal((found.data!.session as { id: string } | null)?.id, id)
+
+    const hidden = await gql(srv.port, `query { session(id: "${id}") { id } }`, undefined, intruder)
+    assert.equal(hidden.data!.session, null)
+
+    const listed = await gql(srv.port, 'query { sessions { total } }', undefined, intruder)
+    assert.equal((listed.data!.sessions as { total: number }).total, 0)
+
+    const events = await gql(srv.port, `query { sessionEvents(sessionId: "${id}") { type } }`, undefined, intruder)
+    assert.equal(events.errors?.[0].extensions?.code, '404')
+
+    const room = await gql(srv.port, `query { roomMembers(sessionId: "${id}") { id } }`, undefined, intruder)
+    assert.equal(room.errors?.[0].extensions?.code, '404')
+
+    const cancel = await gql(srv.port, `mutation { cancelSession(id: "${id}") { status } }`, undefined, intruder)
+    assert.equal(cancel.errors?.[0].extensions?.code, '404')
+
+    const invalid = await gql(srv.port, `query { session(id: "${id}") { id } }`, undefined, { 'x-tenant-id': '!!!' })
+    assert.equal(invalid.errors?.[0].extensions?.code, '400')
+    assert.equal(invalid.errors?.[0].message, 'invalid tenant id')
   } finally {
     await srv.close()
     cleanup(dir)
