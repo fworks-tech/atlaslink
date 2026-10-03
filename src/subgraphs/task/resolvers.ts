@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { GraphQLError, parse, type ValueNode } from 'graphql'
+import { GraphQLError, GraphQLScalarType, parse, type ValueNode } from 'graphql'
 import { buildSubgraphSchema } from '@apollo/subgraph'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { SessionBackend, SessionFilter } from '../../session/sessionBackend'
@@ -12,9 +12,11 @@ import type { SseHandler } from '../../bridge/sseEndpoint'
 import { tenantBackendForRequest } from '../../api/tenant'
 import { createSessionAction, validateCreateEdge } from '../../api/sessionLifecycle'
 import { registerSubgraph } from '../executor'
+import type { Resolvers, Task as GraphTask } from './graphql'
 
 const typeDefs = parse(readFileSync(join(import.meta.dirname, 'schema.graphql'), 'utf8'))
 
+/** Server wiring the task subgraph needs — stores, queue, SSE, provider chain. */
 export interface TaskSubgraphDeps {
   backend: SessionBackend
   registry: TaskRegistry
@@ -23,13 +25,22 @@ export interface TaskSubgraphDeps {
   providers: ProviderChoice[]
 }
 
-interface TaskContext {
+/** Per-request resolver context: validated tenant, scoped backend, subgraph deps. */
+export interface TaskContext {
   tenantId: string
   backend: SessionBackend
   tenantError: string | null
   deps: TaskSubgraphDeps
 }
 
+/**
+ * Builds the per-request context by resolving the tenant from headers and
+ * pairing it with the scoped backend plus subgraph deps.
+ *
+ * @param request - inbound graph request carrying optional tenant headers
+ * @param deps - server wiring injected at registration
+ * @returns the context every task resolver receives
+ */
 function makeContext(request: FastifyRequest, deps: TaskSubgraphDeps): TaskContext {
   const tenantCtx = tenantBackendForRequest(request, deps.backend)
   return {
@@ -46,7 +57,15 @@ function take(ctx: TaskContext): TaskContext {
   return ctx
 }
 
-function taskFromAggregate(a: AggregateSession): Record<string, unknown> {
+/**
+ * Projects the domain session aggregate onto the GraphQL `Task` shape — the
+ * generated type checks every field against schema.graphql; a task's
+ * `session` back-reference stays a key-only stub for the entity hop.
+ *
+ * @param a - domain aggregate from the session backend
+ * @returns the graph-shaped task
+ */
+function taskFromAggregate(a: AggregateSession): GraphTask {
   return {
     id: a.sessionId,
     status: a.status,
@@ -62,6 +81,14 @@ function taskFromAggregate(a: AggregateSession): Record<string, unknown> {
   }
 }
 
+/**
+ * Turns a GraphQL AST literal into the plain value the JSON scalar holds,
+ * rejecting variable references that carry no literal data.
+ *
+ * @param node - AST value node from a literal argument
+ * @returns the decoded JavaScript value
+ * @throws {GraphQLError} for variables or any other non-literal node
+ */
 function literalValue(node: ValueNode): unknown {
   switch (node.kind) {
     case 'StringValue':
@@ -88,23 +115,24 @@ function validateTaskInput(projectId: string, prompt: string): void {
   if (prompt.length > 10000) throw new GraphQLError('prompt must be at most 10000 characters', { extensions: { code: '400' } })
 }
 
-const resolvers = {
-  JSON: {
-    serialize: (value: unknown): unknown => value,
-    parseValue: (value: unknown): unknown => value,
-    parseLiteral: literalValue,
-  },
+/** The JSON scalar as a real instance — the generated `Resolvers` type demands one. */
+const jsonScalar = new GraphQLScalarType({
+  name: 'JSON',
+  serialize: (value: unknown): unknown => value,
+  parseValue: (value: unknown): unknown => value,
+  parseLiteral: literalValue,
+})
+
+/** Schema-derived resolver map — types generated from schema.graphql (#324). */
+const resolvers: Resolvers = {
+  JSON: jsonScalar,
   Query: {
-    task: async (_: unknown, args: { id: string }, ctx: TaskContext) => {
+    task: async (_parent, args, ctx) => {
       const c = take(ctx)
       const aggregate = await c.backend.get(args.id)
       return aggregate ? taskFromAggregate(aggregate) : null
     },
-    tasks: async (
-      _: unknown,
-      args: { projectId?: string | null; status?: string | null; since?: string | null; limit: number; offset: number },
-      ctx: TaskContext
-    ) => {
+    tasks: async (_parent, args, ctx) => {
       const c = take(ctx)
       if (args.since != null && Number.isNaN(Date.parse(args.since))) {
         throw new GraphQLError('since must be an ISO-8601 date-time', { extensions: { code: '400' } })
@@ -128,23 +156,15 @@ const resolvers = {
     },
   },
   Mutation: {
-    createTask: async (
-      _: unknown,
-      args: {
-        member: string
-        prompt: string
-        projectId: string
-        tweaks?: { provider?: string | null; member?: Record<string, unknown> | null; team?: Record<string, unknown> | null } | null
-      },
-      ctx: TaskContext
-    ) => {
+    createTask: async (_parent, args, ctx) => {
       const c = take(ctx)
       validateTaskInput(args.projectId, args.prompt)
       type BuiltTweaks = { provider?: string; member?: Record<string, unknown>; team?: unknown }
       const tweaks: BuiltTweaks | undefined = args.tweaks
         ? {
             ...(args.tweaks.provider != null ? { provider: args.tweaks.provider } : {}),
-            ...(args.tweaks.member != null ? { member: args.tweaks.member } : {}),
+            // the JSON scalar types member as unknown; the domain edge expects an object
+            ...(args.tweaks.member != null ? { member: args.tweaks.member as Record<string, unknown> } : {}),
             ...(args.tweaks.team != null ? { team: args.tweaks.team } : {}),
           }
         : undefined
@@ -164,11 +184,7 @@ const resolvers = {
       if (result.code !== 201) throw new GraphQLError(result.error, { extensions: { code: String(result.code) } })
       return taskFromAggregate(result.session)
     },
-    saveDiagram: async (
-      _: unknown,
-      args: { sessionId: string; diagram: { nodes: unknown[]; edges: unknown[]; mode: string } },
-      ctx: TaskContext
-    ) => {
+    saveDiagram: async (_parent, args, ctx) => {
       const c = take(ctx)
       const aggregate = await c.backend.get(args.sessionId)
       if (!aggregate) throw new GraphQLError('unknown session', { extensions: { code: '404' } })
@@ -178,13 +194,20 @@ const resolvers = {
     },
   },
   Task: {
-    __resolveReference: async (ref: { id: string }, ctx: TaskContext) => {
+    __resolveReference: async (ref, ctx) => {
       const aggregate = await take(ctx).backend.get(ref.id)
       return aggregate ? taskFromAggregate(aggregate) : null
     },
   },
 }
 
+/**
+ * Mounts the task subgraph on `/v1/graphql/task` behind the shared
+ * executor envelope (HTTP 200 with a GraphQL body).
+ *
+ * @param app - Fastify instance that owns the `/v1` scope
+ * @param deps - stores, queue, SSE and provider wiring from the server
+ */
 export function registerTaskSubgraph(app: FastifyInstance, deps: TaskSubgraphDeps): void {
   const schema = buildSubgraphSchema([{ typeDefs, resolvers }])
   registerSubgraph(app, 'task', schema, (request) => makeContext(request, deps))
