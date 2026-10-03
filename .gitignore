@@ -168,3 +168,7 @@ dashboard/.env.local
 .env*
 !deploy/oracle/.env.example
 router-config.json
+
+# Cosmo Router local runtime (#320)
+tools/router/
+router.overrides.yaml

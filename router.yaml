@@ -1,0 +1,11 @@
+# Cosmo Router runtime config (#320) — consumed by `npm run router`.
+#
+# `dev_mode: false` keeps JSON structured logs on (the spike gotcha on #290:
+# dev_mode true silently disables them). Routing URLs come from the composed
+# execution config; per-environment overrides are written to
+# router.overrides.yaml by src/router/start.ts (see docs/runbooks/router.md).
+dev_mode: false
+listen_addr: localhost:3002
+execution_config:
+  file:
+    path: router-config.json

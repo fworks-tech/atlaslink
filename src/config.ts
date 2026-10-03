@@ -55,7 +55,7 @@ export async function loadDaemonConfig(): Promise<DaemonConfig> {
 
   const host = process.env.ATLASLINK_HOST ?? DEFAULT_HOST
   const port = Number(process.env.ATLASLINK_PORT ?? DEFAULT_PORT)
-  const dataDir = resolve(process.cwd(), 'data')
+  const dataDir = resolve(process.cwd(), process.env.ATLASLINK_DATA_DIR ?? 'data')
   const corsOrigins = (
     process.env.ATLASLINK_CORS_ORIGINS ??
     'http://localhost:3001,https://atlas.flabs.tech'
