@@ -110,6 +110,10 @@ train, it merges back into `session` before extraction rather than after.
 - `npm run compose` pins `wgc@0.132.2` via npx (no CLI dependency in the
   lockfile) and writes the router execution config to `router-config.json`
   (gitignored; mounted by the router runtime stage).
+- Codegen (#324): `npm run codegen` regenerates `src/subgraphs/<name>/graphql.ts`
+  from each `schema.graphql`, and every resolver map is typed with the
+  generated `Resolvers`. Schema edits ship with the regenerated output —
+  the files are committed (hermetic typecheck) and eslint ignores them.
 - Files subgraph (#296): request-derived repo paths MUST come from
   `workspacePathFor` (tenant + project resolved server-side, never from raw
   input); `commitFiles` requires a `sessionId` that exists in the calling
