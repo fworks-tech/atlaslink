@@ -148,6 +148,22 @@ export async function readAt(repo: string, commit: string, path: string): Promis
 }
 
 /**
+ * Lists every tracked file at a pinned commit — the read twin of {@link readAt}
+ * for the files subgraph's list surface. Paths come back verbatim (newline-
+ * separated; git cannot store newlines in names).
+ *
+ * @param repo - absolute workspace path
+ * @param commit - `HEAD` or a plain hex sha (validated, see `safeRev`)
+ * @returns repository-relative paths at that commit, empty for an empty tree
+ * @throws {Error} when `commit` fails validation before git runs, or git fails
+ */
+export async function listAt(repo: string, commit: string): Promise<string[]> {
+  safeRev(commit)
+  const out = await git(repo, ['ls-tree', '-r', '--name-only', commit], { raw: true })
+  return out.split('\n').filter((line) => line.length > 0)
+}
+
+/**
  * Produces the text diff between two revisions — the review artifact a
  * human or harness reads to judge what a session changed.
  *
