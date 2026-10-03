@@ -44,6 +44,11 @@ branches target their parent; each PR links its issue. Stage order mirrors
   calls
 - [ ] chore(bff): mark shim deprecated with removal issue linked
 
+## Documentation
+- [ ] docs(federation): explore and document the benefits (and counterpoints)
+  of GraphQL Federation for this codebase — ADR/spec section, linked from
+  ADR-011 (#317)
+
 ## Rules
 - No stage starts before its dependency stage merges to `main`.
 - `npm test`, `npm run lint`, `npm run typecheck` green on every branch.

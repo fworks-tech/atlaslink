@@ -113,6 +113,10 @@ train, it merges back into `session` before extraction rather than after.
 - Routing: all subgraphs are served from the gated monolith Fastify scope at
   `POST /v1/graphql/<name>` (ADR-011: handlers move, business logic does not
   get rewritten); `routing_url` entries assume the default dev port 3000.
+- `insights` folds the process-global trace store (`.agenthood/traces`) —
+  aggregates only (member/model/cost/tokens), never session content. It is
+  not tenant-partitioned because trace envelopes carry no tenant id; tenancy
+  arrives if traces gain one.
 
 ## References
 
