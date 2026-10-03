@@ -70,6 +70,11 @@ test('createTask round-trips with tweaks and lists under one project', async () 
     const page = listed.data!.tasks as { total: number; tasks: { id: string }[]; limit: number; offset: number }
     assert.deepEqual(page, { total: 1, tasks: [{ id }], limit: 50, offset: 0 })
 
+    const byStatus = await gql(srv.port, 'query { tasks(status: queued) { total } }')
+    assert.equal((byStatus.data!.tasks as { total: number }).total, 1)
+    const wrongStatus = await gql(srv.port, 'query { tasks(status: failed) { total } }')
+    assert.equal((wrongStatus.data!.tasks as { total: number }).total, 0)
+
     const missing = await gql(srv.port, 'query { task(id: "ses-none") { id } }')
     assert.equal(missing.data!.task, null)
   } finally {
