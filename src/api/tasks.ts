@@ -1,16 +1,13 @@
-import { randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import type { SessionBackend, SessionFilter } from '../session/sessionBackend'
-import type { Session as AggregateSession, SessionEvent } from '../session/types'
-import { VersionConflictError } from '../session/types'
+import type { Session as AggregateSession } from '../session/types'
 import type { SessionQueue } from '../bridge/SessionQueue'
 import type { SseHandler } from '../bridge/sseEndpoint'
 import type { TaskRegistry } from '../tasks/taskRegistry'
 import { availableProviders, type ProviderChoice } from '../config'
 import { tenantBackendForRequest } from './tenant'
-import { appendChatMessage, askFollowup, isTerminal, replyToParked, steerSession } from './sessionActions'
-import { checkpointIdFor } from '../session/checkpointStore'
-import { log } from '../log'
+import { appendChatMessage, askFollowup, replyToParked, steerSession } from './sessionActions'
+import { cancelSessionAction, createSessionAction } from './sessionLifecycle'
 
 export interface TaskDeps {
   backend: SessionBackend
@@ -75,7 +72,6 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       const tenantCtx = tenantBackendForRequest(request, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
       const tenantId = tenantCtx.tenantId!
-      const backend = tenantCtx.backend
       const { member, prompt, projectId, tweaks } = request.body
       // fast-fail on a pick list mismatch: the UI reads a snapshot, so an
       // unknown provider (stale list, typo, provider removed) must 400 at
@@ -93,32 +89,19 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       if (tweakModel !== undefined && (typeof tweakModel !== 'string' || tweakModel.trim().length === 0 || tweakModel.length > 200)) {
         return reply.code(400).send({ ok: false, error: 'tweaks.member.model must be a non-empty string up to 200 chars' })
       }
-      const sessionId = `ses-${randomUUID()}`
-      const correlationId = `cor-${randomUUID()}`
-      const event: SessionEvent = {
-        type: 'session.created',
-        sessionId,
-        correlationId,
-        at: new Date().toISOString(),
-        member,
-        prompt,
-        tenantId,
-        projectId,
-        ...(tweaks !== undefined ? { tweaks } : {}),
-      }
-      // the aggregate is committed first; the queue then runs by the same ids
-      await backend.append(event)
-      const created = deps.registry.create({
-        member,
-        prompt,
-        provider: tweaks?.provider,
-        id: sessionId,
-        correlationId,
-      })
-      deps.queue.declareSession(created)
-      log.info('task created', { sessionId, correlationId, member, projectId, tenantId })
-      const aggregate = await backend.get(sessionId)
-      return reply.code(201).send({ ok: true, session: sessionToWire(aggregate!) })
+      const result = await createSessionAction(
+        { backend: tenantCtx.backend, registry: deps.registry, queue: deps.queue, broadcaster: deps.sse.broadcaster },
+        {
+          member,
+          prompt,
+          projectId,
+          tenantId,
+          ...(tweaks?.provider !== undefined ? { provider: tweaks.provider } : {}),
+          ...(tweaks !== undefined ? { tweaks } : {}),
+        }
+      )
+      if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
+      return reply.code(201).send({ ok: true, session: sessionToWire(result.session) })
     }
   )
 
@@ -178,70 +161,19 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
   app.post<{ Params: { sessionId: string } }>('/tasks/:sessionId/cancel', async (request, reply) => {
     const tenantCtx = tenantBackendForRequest(request, deps.backend)
     if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
-    const backend = tenantCtx.backend
-    const sessionId = request.params.sessionId
-
-    // Re-evaluate against a fresh aggregate until the state is stable: a
-    // VersionConflictError means the lifecycle moved between our read and
-    // write (the queue started the run) — resolve rather than 500.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const current = await backend.get(sessionId)
-      if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
-      if (isTerminal(current.status)) {
-        return reply.code(409).send({ ok: false, error: 'session already terminated' })
-      }
-      if (current.status === 'running') {
-        // M3 best-effort contract (spec §3): acknowledge now, cancel lands with the runtime.
-        // M5: the abort is real — runSession races the in-flight call against
-        // the session controller and finalizes CANCELLED + mirrors it, so the
-        // 202 only means "finalization is async", not "maybe".
-        try {
-          deps.registry.abort(sessionId)
-        } catch {
-          // no live run tracked — the ack below still holds; a concurrent
-          // finalize owns the outcome
-        }
-        return reply.code(202).send({ ok: true, status: 'running', cancel: 'best-effort', session: sessionToWire(current) })
-      }
-      try {
-        await backend.readModifyWrite(sessionId, current.version, () => [
-          { type: 'session.cancelled', correlationId: current.correlationId, at: new Date().toISOString() },
-        ])
-        // dequeue from execution so the pump never runs a cancelled session
-        try {
-          deps.registry.cancel(sessionId)
-        } catch {
-          // the registry entry may already be gone or terminal — the store commit is the truth
-        }
-        const after = await backend.get(sessionId)
-        if (!after) return reply.code(404).send({ ok: false, error: 'unknown session' })
-        // a parked original holds a checkpoint row — the run it belonged to
-        // is gone, so drop the row; a missing row is a no-op
-        try {
-          await backend.deleteCheckpoint(checkpointIdFor(current.correlationId))
-        } catch {
-          // prune is hygiene; the store commit above is the truth
-        }
-        // the store commit is truth, but live subscribers (dashboard thread,
-        // queue watchers) only move on SSE — fan out like every other route
-        try {
-          deps.sse.broadcaster.emit({
-            eventId: after.version,
-            type: 'session.cancelled',
-            sessionId,
-            correlationId: current.correlationId,
-            at: new Date().toISOString(),
-          })
-        } catch {
-          // best-effort; store is truth
-        }
-        return reply.code(202).send({ ok: true, status: 'cancelled', session: sessionToWire(after) })
-      } catch (err) {
-        if (err instanceof VersionConflictError) continue
-        throw err
-      }
+    const result = await cancelSessionAction(
+      { backend: tenantCtx.backend, registry: deps.registry, broadcaster: deps.sse.broadcaster },
+      request.params.sessionId
+    )
+    if (result.code !== 202) {
+      return reply.code(result.code).send({ ok: false, error: result.error })
     }
-    return reply.code(409).send({ ok: false, error: 'session state changed' })
+    return reply.code(202).send({
+      ok: true,
+      status: result.status,
+      ...(result.cancel !== undefined ? { cancel: result.cancel } : {}),
+      session: sessionToWire(result.session),
+    })
   })
 
   // Full DAG: Atlas asks follow-up in the latest card → user replies → diagram grows
