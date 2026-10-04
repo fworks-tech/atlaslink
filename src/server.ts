@@ -8,6 +8,7 @@ import { validateConfig, MissingApiKeyError } from './daemon/contextFactory'
 import { TaskRegistry, msg } from './tasks/taskRegistry'
 import { log as logger } from './log'
 import { runSession } from './daemon/runTask'
+import { finalizeWorkspace } from './daemon/sessionWrites'
 import { EventLogStore } from './bridge/EventLogStore'
 import { EventBroadcaster } from './bridge/EventBroadcaster'
 import { SessionQueue } from './bridge/SessionQueue'
@@ -438,6 +439,17 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
         }
         await memberMirror
          const final = registry.get(sessionId)!
+        // pin the workspace to this run before the terminal mirror flips, so
+        // every status — including failed — stays traceable to a commit (#301)
+        await finalizeWorkspace({
+          workspaceRoot: resolve(log.dataDir, 'workspaces'),
+          tenantId: costSeed?.tenantId ?? DEFAULT_TENANT_ID,
+          projectId: costSeed?.projectId,
+          sessionId,
+          status: final.status,
+          member: final.task.member,
+          output: final.output,
+        }).catch((err) => logger.warn('workspace finalize failed', { sessionId, error: msg(err) }))
         if (final.status === 'succeeded') {
           await mirror({ type: 'session.succeeded', correlationId: final.correlationId, at: at(), output: final.output, durationMs: final.durationMs })
           await dropCheckpoint(final.correlationId)
