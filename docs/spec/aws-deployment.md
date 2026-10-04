@@ -30,7 +30,8 @@ Vercel dashboard ──BFF──▶ https://staging.atlas.flabs.tech (Caddy :443
 
 | Piece | Where it lives | Notes |
 |---|---|---|
-| `Dockerfile` `router` stage | new | Cosmo binary + `router.yaml` + `deploy/aws/router.overrides.yaml` + composed `router-config.json` baked at build (`npm run compose` equivalent, hermetic) |
+| `Dockerfile` `router` stage | new | Cosmo binary + `router.yaml` + `deploy/aws/router.overrides.yaml` + composed `router-config.json` baked at build (`npm run compose` equivalent, hermetic); `runtime` stays the last stage so `build: .` keeps meaning the daemon (Render parity) |
+| `Dockerfile` `runtime` stage | changed | installs `git` — the files subgraph shells out to it and every container image (Render included) has been missing it |
 | `docker-compose.aws.yml` | new | overrides Caddy mount, adds `router` service (`build.target: router`); base file untouched (Render keeps working) |
 | `deploy/aws/Caddyfile` | new | staging host; `/graphql*` and `/health/ready*` → router, rest → daemon; api host block commented for #329 |
 | `deploy/aws/router.overrides.yaml` | new | `listen_addr: 0.0.0.0:3002`, subgraph URLs → `http://backend:3000/v1/graphql/<name>` |
@@ -60,6 +61,9 @@ Vercel dashboard ──BFF──▶ https://staging.atlas.flabs.tech (Caddy :443
 - [ ] `docker compose -f docker-compose.yml -f docker-compose.aws.yml config` validates
 - [ ] Router image builds (`--target router`) and boots with
       `/health/ready` → `OK` on local verification
+- [ ] Local federated probe: tokenless query → `401`, same query with
+      `Authorization: Bearer` → data across at least two subgraphs in one
+      request (the router propagates the caller's credential)
 - [ ] Caddy config passes `caddy validate`
 - [ ] Staging URL serves: daemon `/health` build marker, one federated query
       on `/graphql` (entity hop), one session run committing to the workspace,

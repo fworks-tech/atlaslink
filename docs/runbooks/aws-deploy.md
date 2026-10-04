@@ -32,7 +32,28 @@ Vercel dashboard ──BFF──▶ Caddy (:80/:443, EC2)
 | Network | default VPC |
 | Security group | new: `atlaslink` — inbound **22** (your IP only), **80**, **443** |
 | Storage | 8 GB gp3 (free: 30 GB) |
-| IAM role | create `atlaslink-ec2` with **AmazonSSMManagedInstanceCore** (for §5) |
+| IAM role | create `atlaslink-ec2` with **AmazonSSMManagedInstanceCore** **plus** the inline policy below (the managed policy does not grant `GetParameter`) |
+
+Inline policy for `atlaslink-ec2` (first boot reads the secrets):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["ssm:GetParameter", "ssm:GetParameters"],
+      "Resource": "arn:aws:ssm:*:*:parameter/atlaslink/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["kms:Decrypt"],
+      "Resource": "*",
+      "Condition": { "StringEquals": { "kms:ViaService": "ssm.*.amazonaws.com" } }
+    }
+  ]
+}
+```
 
 ## 3. RDS Postgres (free tier)
 
@@ -103,8 +124,12 @@ curl -fsS https://staging.atlas.flabs.tech/health          # "providers": >= 1
 # router edge
 curl -fsS https://staging.atlas.flabs.tech/health/ready    # OK
 
-# federated graph: entity hop across subgraphs
+# federated graph — subgraphs are bearer-gated (ADR-008) and the router
+# propagates the caller's Authorization, so the token is required here
+TOKEN=$(aws ssm get-parameter --name /atlaslink/ATLASLINK_API_TOKEN \
+  --with-decryption --query Parameter.Value --output text)
 curl -fsS https://staging.atlas.flabs.tech/graphql \
+  -H "authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' \
   -d '{"query":"{ __typename }"}'
 ```
@@ -144,4 +169,5 @@ Oracle sibling per #329.
 | `/health` keeps returning old `"providers"` | Image build failed on the instance: `docker compose -f docker-compose.yml -f docker-compose.aws.yml build` and read the router stage output |
 | `/health/ready` not OK | Router can't reach subgraphs: `docker compose logs router` — `backend:3000` must resolve on the compose network |
 | Deploy workflow red at the poll step | SSH/deploy worked but the marker never matched — same log commands as above |
+| First deploy ever fails the 5-min poll | Let's Encrypt issuance on the fresh hostname can eat the budget — confirm `/health` manually after the cert lands, re-run the job |
 | Free tier nearing 12 months | Budget alarm in Cost Explorer; expected post-free cost is low single digits/month |
