@@ -1,0 +1,55 @@
+name: Deploy AWS
+
+# Same discipline as the Render deploy: only what passed CI on main reaches
+# the EC2 stack (#328). Skips silently while the AWS secrets are unconfigured
+# (fresh forks) — the Render hook keeps working in parallel until #329.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_DEPLOY_HOST: ${{ secrets.AWS_DEPLOY_HOST }}
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    steps:
+      - name: Check out repository
+        if: env.AWS_DEPLOY_HOST != ''
+        uses: actions/checkout@v4
+
+      - name: Deploy over SSH
+        if: env.AWS_DEPLOY_HOST != ''
+        env:
+          AWS_DEPLOY_KEY: ${{ secrets.AWS_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$AWS_DEPLOY_KEY" > ~/.ssh/aws_deploy_key
+          chmod 600 ~/.ssh/aws_deploy_key
+          ssh -i ~/.ssh/aws_deploy_key -o StrictHostKeyChecking=accept-new "ubuntu@$AWS_DEPLOY_HOST" \
+            'cd atlaslink && git pull --ff-only && docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build'
+          echo "Compose accepted the new build — waiting for it to serve."
+
+      - name: Wait for the service to come back with the new build
+        # Same build marker as the Render gate: "providers":N with N >= 1 means
+        # the current build is live — /health ok:true alone also passes a stale
+        # release, which must fail the workflow instead of the users finding it.
+        if: env.AWS_DEPLOY_HOST != ''
+        env:
+          AWS_STAGING_URL: ${{ vars.AWS_STAGING_URL || 'https://staging.atlas.flabs.tech' }}
+        run: |
+          for i in $(seq 1 30); do
+            sleep 10
+            if curl -fsS --max-time 10 "$AWS_STAGING_URL/health" | grep -Eq '"providers":[1-9]'; then
+              echo "Service is healthy on a current build after $((i * 10))s"
+              exit 0
+            fi
+            echo "attempt $i: not healthy on the new build yet"
+          done
+          echo "::error::service did not report the current build within 5 minutes — check EC2 (docker compose ps), Caddy, and the DNS record"
+          exit 1
