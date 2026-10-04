@@ -1,0 +1,18 @@
+# AWS deployment overlay (#328) — stacks on the base compose file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build
+#
+# Adds the Cosmo router (hermetic image, configs baked in the Dockerfile
+# router stage) and swaps the Caddy config for the AWS/staging routes.
+services:
+  caddy:
+    volumes:
+      - ./deploy/aws/Caddyfile:/etc/caddy/Caddyfile:ro
+
+  router:
+    build:
+      context: .
+      target: router
+    restart: unless-stopped
+    depends_on:
+      - backend
