@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, lstatSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
+import { dirname, join, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { withWorkspaceLock } from './lock'
 
@@ -50,8 +50,23 @@ export function isSafeRepoPath(path: string): boolean {
     Boolean(path) &&
     !path.startsWith('/') &&
     !path.includes('\\') &&
-    !segments.some((s) => s === '' || s === '.' || s === '..' || s === '.git')
+    !segments.some((s) => s === '' || s === '.' || s === '..' || s.toLowerCase() === '.git')
   )
+}
+
+/**
+ * Reports whether a path looks like credentials — refusing the write keeps
+ * secrets out of the workspace's immutable history, where ADR-012 forbids
+ * the destructive scrub that would otherwise be needed.
+ *
+ * @param path - candidate workspace-relative path
+ * @returns true for dotenv files, private keys, and ssh material
+ */
+function isSecretShapedPath(path: string): boolean {
+  const base = path.slice(path.lastIndexOf('/') + 1).toLowerCase()
+  if (base === '.env' || base.startsWith('.env.') || base.endsWith('.pem')) return true
+  if (/^id_(rsa|dsa|ecdsa|ed25519)/.test(base)) return true
+  return path.split('/').some((s) => s.toLowerCase() === '.ssh')
 }
 
 /**
@@ -107,11 +122,17 @@ async function hasHead(repo: string): Promise<boolean> {
  * @returns resolves once the repository exists with a readable HEAD
  * @throws whatever git reports if init or the baseline commit fails
  */
+/** Credential patterns seeded as the workspace's .gitignore — keeps secrets out of every commit path (#301 review). */
+const GITIGNORE_SEED = ['.env', '.env.*', '*.pem', 'id_rsa*', 'id_dsa*', 'id_ecdsa*', 'id_ed25519*', '.ssh/', ''].join('\n')
+
 export async function ensureWorkspace(repo: string): Promise<void> {
   await withWorkspaceLock(repo, async () => {
     mkdirSync(repo, { recursive: true })
     if (!existsSync(join(repo, '.git'))) await git(repo, ['init'])
+    const gitignore = join(repo, '.gitignore')
+    if (!existsSync(gitignore)) writeFileSync(gitignore, GITIGNORE_SEED, 'utf8')
     if (await hasHead(repo)) return
+    await git(repo, ['add', '.gitignore'])
     await git(repo, ['commit', '--allow-empty', '-m', 'chore: initialize workspace'], { identity: true })
   })
 }
@@ -162,17 +183,30 @@ export async function applySessionWrite(
   opts: { message: string; sessionId?: string }
 ): Promise<string> {
   if (writes.length === 0) throw new Error('applySessionWrite requires at least one write')
-  for (const write of writes) safeRepoPath(write.path)
+  for (const write of writes) {
+    safeRepoPath(write.path)
+    if (isSecretShapedPath(write.path)) {
+      throw new Error(`refusing credential-shaped path: ${JSON.stringify(write.path)}`)
+    }
+  }
   return await withWorkspaceLock(repo, async () => {
     await ensureWorkspace(repo)
+    const root = realpathSync(repo)
     for (const write of writes) {
       const target = join(repo, write.path)
+      const parent = dirname(target)
+      mkdirSync(parent, { recursive: true })
+      // mkdir traverses a symlinked directory component, so re-resolve the
+      // parent after creation and refuse anything that left the workspace
+      const resolvedParent = realpathSync(parent)
+      if (resolvedParent !== root && !resolvedParent.startsWith(root + sep)) {
+        throw new Error(`refusing to write outside the workspace: ${JSON.stringify(write.path)}`)
+      }
       // lstat, not existsSync: a broken symlink must still be detected
       const stat = lstatSync(target, { throwIfNoEntry: false })
       if (stat?.isSymbolicLink()) {
         throw new Error(`refusing to write through symlink: ${JSON.stringify(write.path)}`)
       }
-      mkdirSync(dirname(target), { recursive: true })
       writeFileSync(target, write.content, 'utf8')
     }
     return await commitAll(repo, opts)

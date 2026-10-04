@@ -131,13 +131,13 @@ test('listAt enumerates tracked files at a pinned commit and refuses unsafe refs
   const repo = tempWorkspace()
   try {
     await ensureWorkspace(repo)
-    assert.deepEqual(await listAt(repo, 'HEAD'), [])
+    assert.deepEqual(await listAt(repo, 'HEAD'), ['.gitignore'])
 
     writeFileSync(join(repo, 'spec.md'), 'v1')
     writeFileSync(join(repo, 'notes.txt'), 'n')
     const sha = await commitAll(repo, { message: 'add files', sessionId: 'ses-1' })
-    assert.deepEqual(await listAt(repo, 'HEAD'), ['notes.txt', 'spec.md'])
-    assert.deepEqual(await listAt(repo, sha), ['notes.txt', 'spec.md'])
+    assert.deepEqual(await listAt(repo, 'HEAD'), ['.gitignore', 'notes.txt', 'spec.md'])
+    assert.deepEqual(await listAt(repo, sha), ['.gitignore', 'notes.txt', 'spec.md'])
 
     await assert.rejects(listAt(repo, 'HEAD~1'), /unsafe commit ref/)
     await assert.rejects(listAt(repo, '--all'), /unsafe commit ref/)
@@ -235,6 +235,44 @@ test('applySessionWrite refuses .git paths and writes through symlinks', async (
     } finally {
       rmSync(outside, { recursive: true, force: true })
     }
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('applySessionWrite refuses symlinked parent directories and .GIT casing', async () => {
+  const repo = tempWorkspace()
+  const outside = tempWorkspace()
+  try {
+    await ensureWorkspace(repo)
+    symlinkSync(outside, join(repo, 'docs'), 'junction')
+    await assert.rejects(
+      applySessionWrite(repo, [{ path: 'docs/report.md', content: 'escape' }], { message: 'bad' }),
+      /outside the workspace/
+    )
+    assert.equal(existsSync(join(outside, 'report.md')), false)
+    assert.equal(isSafeRepoPath('.GIT/config'), false)
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
+  }
+})
+
+test('applySessionWrite refuses credential-shaped paths and .gitignore keeps secrets out of history', async () => {
+  const repo = tempWorkspace()
+  try {
+    await assert.rejects(
+      applySessionWrite(repo, [{ path: '.env', content: 'KEY=1' }], { message: 'bad' }),
+      /credential-shaped/
+    )
+    await assert.rejects(
+      applySessionWrite(repo, [{ path: 'keys/id_ed25519.pub', content: 'x' }], { message: 'bad' }),
+      /credential-shaped/
+    )
+    await ensureWorkspace(repo)
+    writeFileSync(join(repo, '.env'), 'KEY=1')
+    await commitAll(repo, { message: 'stray dirt', sessionId: 'ses-s' })
+    assert.deepEqual(await listAt(repo, 'HEAD'), ['.gitignore'])
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
