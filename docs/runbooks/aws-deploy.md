@@ -30,7 +30,8 @@ Vercel dashboard ──BFF──▶ Caddy (:80/:443, EC2)
 | Instance type | `t4g.micro` (free-tier eligible: 750h/mo) |
 | Key pair | create/download one (`atlaslink.pem`) |
 | Network | default VPC |
-| Security group | new: `atlaslink` — inbound **22** (your IP only), **80**, **443** |
+| Security group | new: `atlaslink` — inbound **22**, **80**, **443**. Port 22 must admit **both** you (manual ops) **and** the GitHub-hosted runner (deploy-aws egress IPs are dynamic — see github.com/meta for the current ranges). Practical minimum: your IP while bringing it up; if you enable the deploy workflow, either allow the runner ranges or 22/0.0.0.0/0 with key-only auth (accepted trade-off, documented here so it is a decision and not an accident) |
+| IMDSv2 | Metadata → HttpTokens **required** (instance profile authenticates the secret pulls) |
 | Storage | 8 GB gp3 (free: 30 GB) |
 | IAM role | create `atlaslink-ec2` with **AmazonSSMManagedInstanceCore** **plus** the inline policy below (the managed policy does not grant `GetParameter`) |
 
@@ -42,7 +43,7 @@ Inline policy for `atlaslink-ec2` (first boot reads the secrets):
   "Statement": [
     {
       "Effect": "Allow",
-      "Action": ["ssm:GetParameter", "ssm:GetParameters"],
+      "Action": ["ssm:GetParameter"],
       "Resource": "arn:aws:ssm:*:*:parameter/atlaslink/*"
     },
     {
@@ -148,6 +149,11 @@ Repo **Settings → Secrets and variables → Actions**:
 |---|---|
 | `AWS_DEPLOY_HOST` | `<EC2_PUBLIC_IP>` (or DNS) |
 | `AWS_DEPLOY_KEY` | full contents of `atlaslink.pem` |
+
+Pin the host key before trusting the first deploy: `ssh-keyscan <EC2_PUBLIC_IP>`
+from a trusted network and keep it (the workflow uses
+`accept-new`, which trusts on first contact — tightening that, restricting the
+deploy key, and a build-sha health marker are tracked in #329).
 
 Push to `main` → green CI → `deploy-aws.yml` pulls, rebuilds, and polls the
 staging health marker. Until these secrets exist the workflow skips silently
