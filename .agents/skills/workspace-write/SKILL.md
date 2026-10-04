@@ -40,10 +40,14 @@ verdict: ...
 Rules:
 
 - The opening fence must be exactly ` ```atlaslink:write path=<path> `.
-- The closing fence is ` ``` ` on its own line.
+- The closing fence is ` ``` ` on its own line (same backtick count as the opener).
 - Content between fences is verbatim — blank lines included.
 - Multiple fences in one answer are applied as one commit.
-- Unsafe paths (absolute, `..`, `\\`) are dropped, not partially applied.
+- Unsafe paths (absolute, `..`, `\\`, any `.git` segment) are dropped, not
+  partially applied — as are credential-shaped paths (`.env*`, `*.pem`,
+  `id_*`, anything under `.ssh/`); those never reach the workspace.
+- If your content itself contains triple-backtick fences, wrap your whole
+  fence opener/closer in four backticks so the parser keeps the nesting.
 
 ## Example
 
