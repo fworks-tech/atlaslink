@@ -171,4 +171,4 @@ router-config.json
 
 # Cosmo Router local runtime (#320)
 tools/router/
-router.overrides.yaml
+/router.overrides.yaml
