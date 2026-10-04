@@ -1,10 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { ensureWorkspace, commitAll, readAt, listAt, diff, applySessionWrite } from './git'
+import { ensureWorkspace, commitAll, readAt, listAt, diff, applySessionWrite, isSafeRepoPath } from './git'
 import { withWorkspaceLock } from './lock'
 import { withTimeout } from '../../test/withTimeout'
 
@@ -209,6 +209,32 @@ test('applySessionWrite rejects unsafe paths and empty write batches', async () 
     )
     await assert.rejects(applySessionWrite(repo, [], { message: 'empty' }), /at least one write/)
     assert.equal(existsSync(join(repo, '.git')), false)
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('applySessionWrite refuses .git paths and writes through symlinks', async () => {
+  const repo = tempWorkspace()
+  try {
+    await assert.rejects(
+      applySessionWrite(repo, [{ path: '.git/hooks/pre-commit', content: 'x' }], { message: 'bad' }),
+      /unsafe repo path/
+    )
+    assert.equal(isSafeRepoPath('.git/config'), false)
+    assert.equal(isSafeRepoPath('docs/.gitlab-ci.yml'), true)
+    await ensureWorkspace(repo)
+    const outside = tempWorkspace()
+    try {
+      symlinkSync(join(outside, 'target.md'), join(repo, 'link.md'))
+      await assert.rejects(
+        applySessionWrite(repo, [{ path: 'link.md', content: 'hijack' }], { message: 'bad' }),
+        /symlink/
+      )
+      assert.equal(existsSync(join(outside, 'target.md')), false)
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

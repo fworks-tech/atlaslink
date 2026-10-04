@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { withWorkspaceLock } from './lock'
@@ -41,11 +41,17 @@ async function git(repo: string, args: string[], opts: GitOptions = {}): Promise
  *
  * @param path - candidate path inside the workspace
  * @returns true when the path is non-empty, relative, and free of
- * `.`/`..`/empty segments or backslashes
+ * `.`/`..`/empty segments, backslashes, or `.git` segments (writing git
+ * metadata would let untrusted output register hooks)
  */
 export function isSafeRepoPath(path: string): boolean {
   const segments = path.split('/')
-  return Boolean(path) && !path.startsWith('/') && !path.includes('\\') && !segments.some((s) => s === '' || s === '.' || s === '..')
+  return (
+    Boolean(path) &&
+    !path.startsWith('/') &&
+    !path.includes('\\') &&
+    !segments.some((s) => s === '' || s === '.' || s === '..' || s === '.git')
+  )
 }
 
 /**
@@ -161,6 +167,11 @@ export async function applySessionWrite(
     await ensureWorkspace(repo)
     for (const write of writes) {
       const target = join(repo, write.path)
+      // lstat, not existsSync: a broken symlink must still be detected
+      const stat = lstatSync(target, { throwIfNoEntry: false })
+      if (stat?.isSymbolicLink()) {
+        throw new Error(`refusing to write through symlink: ${JSON.stringify(write.path)}`)
+      }
       mkdirSync(dirname(target), { recursive: true })
       writeFileSync(target, write.content, 'utf8')
     }
