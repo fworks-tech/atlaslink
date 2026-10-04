@@ -9,6 +9,7 @@ import { TaskRegistry, msg } from './tasks/taskRegistry'
 import { log as logger } from './log'
 import { runSession } from './daemon/runTask'
 import { finalizeWorkspace } from './daemon/sessionWrites'
+import { workspaceRootFor } from './workspace'
 import { EventLogStore } from './bridge/EventLogStore'
 import { EventBroadcaster } from './bridge/EventBroadcaster'
 import { SessionQueue } from './bridge/SessionQueue'
@@ -311,7 +312,7 @@ export async function createAppServer(params: {
     registerInsightsSubgraph(api, { tracesPath: params.insightsTracesPath })
 
     // --- M5 files subgraph (#296): git workspace list/read/diff/commit ---
-    registerFilesSubgraph(api, { backend, workspaceRoot: resolve(log.dataDir, 'workspaces') })
+    registerFilesSubgraph(api, { backend, workspaceRoot: workspaceRootFor(log.dataDir) })
   }, { prefix: '/v1' })
 
   app.setNotFoundHandler((_request, reply) => {
@@ -442,7 +443,7 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
         // pin the workspace to this run before the terminal mirror flips, so
         // every status — including failed — stays traceable to a commit (#301)
         await finalizeWorkspace({
-          workspaceRoot: resolve(log.dataDir, 'workspaces'),
+          workspaceRoot: workspaceRootFor(log.dataDir),
           tenantId: costSeed?.tenantId ?? DEFAULT_TENANT_ID,
           projectId: costSeed?.projectId,
           sessionId,

@@ -13,5 +13,6 @@ test('workspace module exposes only the safe surface', () => {
     'readAt',
     'withWorkspaceLock',
     'workspacePathFor',
+    'workspaceRootFor',
   ])
 })

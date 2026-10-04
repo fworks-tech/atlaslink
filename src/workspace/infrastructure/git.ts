@@ -55,18 +55,24 @@ export function isSafeRepoPath(path: string): boolean {
 }
 
 /**
- * Reports whether a path looks like credentials — refusing the write keeps
- * secrets out of the workspace's immutable history, where ADR-012 forbids
- * the destructive scrub that would otherwise be needed.
+ * Credential shapes the write path refuses and every commit path ignores —
+ * one block so the regex and the gitignore globs cannot drift apart.
+ * Refusing keeps secrets out of the workspace's immutable history, where
+ * ADR-012 forbids the destructive scrub a leak would otherwise need.
+ */
+const SECRET_GLOBS = ['.env', '.env.*', '*.pem', 'id_*', '.ssh/']
+const SECRET_BASE_RE = /^(\.env(\..*)?|.*\.pem|id_.*)$/
+
+/**
+ * Reports whether a path looks like credentials (see {@link SECRET_GLOBS}).
  *
  * @param path - candidate workspace-relative path
  * @returns true for dotenv files, private keys, and ssh material
  */
 function isSecretShapedPath(path: string): boolean {
-  const base = path.slice(path.lastIndexOf('/') + 1).toLowerCase()
-  if (base === '.env' || base.startsWith('.env.') || base.endsWith('.pem')) return true
-  if (/^id_(rsa|dsa|ecdsa|ed25519)/.test(base)) return true
-  return path.split('/').some((s) => s.toLowerCase() === '.ssh')
+  const segments = path.split('/')
+  const base = segments[segments.length - 1].toLowerCase()
+  return SECRET_BASE_RE.test(base) || segments.some((s) => s.toLowerCase() === '.ssh')
 }
 
 /**
@@ -123,7 +129,7 @@ async function hasHead(repo: string): Promise<boolean> {
  * @throws whatever git reports if init or the baseline commit fails
  */
 /** Credential patterns seeded as the workspace's .gitignore — keeps secrets out of every commit path (#301 review). */
-const GITIGNORE_SEED = ['.env', '.env.*', '*.pem', 'id_rsa*', 'id_dsa*', 'id_ecdsa*', 'id_ed25519*', '.ssh/', ''].join('\n')
+const GITIGNORE_SEED = [...SECRET_GLOBS, ''].join('\n')
 
 export async function ensureWorkspace(repo: string): Promise<void> {
   await withWorkspaceLock(repo, async () => {
