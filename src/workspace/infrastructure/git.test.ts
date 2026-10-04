@@ -1,10 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { ensureWorkspace, commitAll, readAt, listAt, diff } from './git'
+import { ensureWorkspace, commitAll, readAt, listAt, diff, applySessionWrite } from './git'
 import { withWorkspaceLock } from './lock'
 import { withTimeout } from '../../test/withTimeout'
 
@@ -160,6 +160,55 @@ test('ensure and commit nest inside an outer lock without deadlocking', async ()
     assert.equal(sh(repo, ['rev-parse', 'HEAD']), sha)
     assert.match(sh(repo, ['log', '-1', '--format=%B']), /session: ses-2/)
     assert.equal(sh(repo, ['rev-list', '--count', 'HEAD']), '2')
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('applySessionWrite writes files, commits once with the session trailer, and returns the sha', async () => {
+  const repo = tempWorkspace()
+  try {
+    const sha = await applySessionWrite(
+      repo,
+      [
+        { path: 'code-review.md', content: '# Review\n\nverdict' },
+        { path: 'nested/report.txt', content: 'second file' },
+      ],
+      { message: 'apply 2 file(s) from the-reviewer', sessionId: 'ses-w1' }
+    )
+    assert.equal(readFileSync(join(repo, 'code-review.md'), 'utf8'), '# Review\n\nverdict')
+    assert.equal(readFileSync(join(repo, 'nested/report.txt'), 'utf8'), 'second file')
+    assert.match(sh(repo, ['log', '-1', '--format=%B']), /session: ses-w1/)
+    assert.equal(sh(repo, ['rev-parse', 'HEAD']), sha)
+    assert.equal(sh(repo, ['rev-list', '--count', 'HEAD']), '2')
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('applySessionWrite updates an existing file in a single follow-up commit', async () => {
+  const repo = tempWorkspace()
+  try {
+    await applySessionWrite(repo, [{ path: 'plan.md', content: 'v1' }], { message: 'first', sessionId: 'ses-a' })
+    const sha = await applySessionWrite(repo, [{ path: 'plan.md', content: 'v2' }], { message: 'second', sessionId: 'ses-b' })
+    assert.equal(readFileSync(join(repo, 'plan.md'), 'utf8'), 'v2')
+    assert.match(sh(repo, ['log', '-1', '--format=%B']), /session: ses-b/)
+    assert.equal(sh(repo, ['rev-list', '--count', 'HEAD']), '3')
+    assert.equal(sh(repo, ['rev-parse', 'HEAD']), sha)
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('applySessionWrite rejects unsafe paths and empty write batches', async () => {
+  const repo = tempWorkspace()
+  try {
+    await assert.rejects(
+      applySessionWrite(repo, [{ path: '../escape.txt', content: 'x' }], { message: 'bad' }),
+      /unsafe repo path/
+    )
+    await assert.rejects(applySessionWrite(repo, [], { message: 'empty' }), /at least one write/)
+    assert.equal(existsSync(join(repo, '.git')), false)
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

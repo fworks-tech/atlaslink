@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { withWorkspaceLock } from './lock'
 
@@ -35,6 +35,20 @@ async function git(repo: string, args: string[], opts: GitOptions = {}): Promise
 }
 
 /**
+ * Reports whether a path is a safe repository-relative file path — the rule
+ * shared by read/revision validation and by the executor's parse of untrusted
+ * session output before any write reaches the workspace.
+ *
+ * @param path - candidate path inside the workspace
+ * @returns true when the path is non-empty, relative, and free of
+ * `.`/`..`/empty segments or backslashes
+ */
+export function isSafeRepoPath(path: string): boolean {
+  const segments = path.split('/')
+  return Boolean(path) && !path.startsWith('/') && !path.includes('\\') && !segments.some((s) => s === '' || s === '.' || s === '..')
+}
+
+/**
  * Validates a repository-relative path before it is interpolated into a
  * `git show <rev>:<path>` revision string.
  *
@@ -44,10 +58,7 @@ async function git(repo: string, args: string[], opts: GitOptions = {}): Promise
  * contains `.`/`..`/empty segments
  */
 function safeRepoPath(path: string): string {
-  const segments = path.split('/')
-  if (!path || path.startsWith('/') || path.includes('\\') || segments.some((s) => s === '' || s === '.' || s === '..')) {
-    throw new Error(`unsafe repo path: ${JSON.stringify(path)}`)
-  }
+  if (!isSafeRepoPath(path)) throw new Error(`unsafe repo path: ${JSON.stringify(path)}`)
   return path
 }
 
@@ -122,6 +133,38 @@ export async function commitAll(repo: string, opts: { message: string; sessionId
     const message = opts.sessionId ? `${opts.message}\n\nsession: ${opts.sessionId}` : opts.message
     await git(repo, ['commit', '-m', message], { identity: true })
     return await git(repo, ['rev-parse', 'HEAD'])
+  })
+}
+
+/**
+ * Applies a session's file writes as one locked batch: every file lands in
+ * the working tree and the whole batch becomes a single commit carrying the
+ * `session: <id>` attribution trailer, so git history and the session event
+ * log join on the same id (ADR-012). Reentrant over {@link commitAll}'s own
+ * lock acquisition.
+ *
+ * @param repo - absolute workspace path (derive via `workspacePathFor`)
+ * @param writes - files to create or overwrite; repository-relative paths
+ * @param opts - commit `message` and optional `sessionId` attribution trailer
+ * @returns the new commit sha; the current HEAD sha when nothing changed
+ * @throws {Error} when the batch is empty, a path fails `safeRepoPath`, or
+ * git fails (message/sessionId rules are {@link commitAll}'s)
+ */
+export async function applySessionWrite(
+  repo: string,
+  writes: { path: string; content: string }[],
+  opts: { message: string; sessionId?: string }
+): Promise<string> {
+  if (writes.length === 0) throw new Error('applySessionWrite requires at least one write')
+  for (const write of writes) safeRepoPath(write.path)
+  return await withWorkspaceLock(repo, async () => {
+    await ensureWorkspace(repo)
+    for (const write of writes) {
+      const target = join(repo, write.path)
+      mkdirSync(dirname(target), { recursive: true })
+      writeFileSync(target, write.content, 'utf8')
+    }
+    return await commitAll(repo, opts)
   })
 }
 
