@@ -5,8 +5,8 @@ import {
   workspacePathFor,
 } from '../workspace'
 
-/** Opening fence a session uses to hand one file to the executor (#301). */
-const FENCE_OPEN = '```atlaslink:write path='
+/** Fence opener a session uses to hand one file to the executor (#301). */
+const FENCE_OPEN = /^(`{3,})atlaslink:write path=(.*)$/
 
 /** One file the session asks the executor to persist in its workspace. */
 export interface WorkspaceWrite {
@@ -19,28 +19,40 @@ export interface WorkspaceWrite {
 /**
  * Extracts `atlaslink:write` fenced blocks from a session's output — the
  * channel members use to deliver files without touching disk themselves
- * (ADR-012: the executor is the writer, under the workspace lock). Fences
- * with unsafe paths or no closing fence are dropped, never partially applied.
+ * (ADR-012: the executor is the writer, under the workspace lock).
+ *
+ * CommonMark-consistent: the closer is the opener's backtick run alone, so
+ * content may embed deeper fences (wrap in four backticks when the file
+ * itself contains ```); CRLF output is tolerated; an unclosed fence is
+ * dropped and rescanned so later fences are never swallowed; fences with
+ * unsafe paths (absolute, `..`, `.git`, backslashes) are dropped whole.
  *
  * @param output - final session output (untrusted model text)
  * @returns every well-formed write, in document order; empty when none
  */
 export function parseWorkspaceWrites(output: string): WorkspaceWrite[] {
+  const lines = output.split(/\r?\n/)
   const writes: WorkspaceWrite[] = []
-  const lines = output.split('\n')
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].startsWith(FENCE_OPEN)) continue
-    const path = lines[i].slice(FENCE_OPEN.length).trim()
-    const content: string[] = []
-    let closed = false
-    for (i++; i < lines.length; i++) {
-      if (lines[i] === '```') {
-        closed = true
-        break
-      }
-      content.push(lines[i])
+  let i = 0
+  while (i < lines.length) {
+    const open = FENCE_OPEN.exec(lines[i])
+    if (!open) {
+      i++
+      continue
     }
+    const closer = '`'.repeat(open[1].length)
+    const path = open[2].trim()
+    const content: string[] = []
+    let j = i + 1
+    // stop at the closer or at another opener: a block that never closed must
+    // not swallow the fences after it (they rescan as fresh blocks below)
+    while (j < lines.length && lines[j] !== closer && !FENCE_OPEN.test(lines[j])) {
+      content.push(lines[j])
+      j++
+    }
+    const closed = j < lines.length && lines[j] === closer
     if (closed && isSafeRepoPath(path)) writes.push({ path, content: content.join('\n') })
+    i = closed ? j + 1 : i + 1
   }
   return writes
 }

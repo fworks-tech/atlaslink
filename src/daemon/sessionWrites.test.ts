@@ -138,3 +138,40 @@ test('finalizeWorkspace is a no-op without a project binding', async () => {
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('parseWorkspaceWrites rejects .git segments and accepts CRLF output', () => {
+  const output = [
+    '```atlaslink:write path=.git/hooks/pre-commit',
+    'malicious',
+    '```',
+    '```atlaslink:write path=ok.md',
+    'crlf body',
+    '```',
+  ].join('\r\n')
+  assert.deepEqual(parseWorkspaceWrites(output), [{ path: 'ok.md', content: 'crlf body' }])
+})
+
+test('parseWorkspaceWrites keeps later fences when an earlier block is unclosed', () => {
+  const output = [
+    '```atlaslink:write path=broken.md',
+    'no closing fence here',
+    '```atlaslink:write path=good.md',
+    'landed',
+    '```',
+  ].join('\n')
+  assert.deepEqual(parseWorkspaceWrites(output), [{ path: 'good.md', content: 'landed' }])
+})
+
+test('parseWorkspaceWrites supports deeper backticks so content may embed fences', () => {
+  const output = [
+    '````atlaslink:write path=review.md',
+    '# Review',
+    '```ts',
+    'const x = 1',
+    '```',
+    '````',
+  ].join('\n')
+  assert.deepEqual(parseWorkspaceWrites(output), [
+    { path: 'review.md', content: '# Review\n```ts\nconst x = 1\n```' },
+  ])
+})
