@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 const SEGMENT = /^[A-Za-z0-9._@+-]+$/
 
@@ -31,4 +31,16 @@ function safeSegment(value: string, label: string): string {
  */
 export function workspacePathFor(root: string, tenantId: string, projectId: string): string {
   return join(root, safeSegment(tenantId, 'tenant'), safeSegment(projectId, 'project'))
+}
+
+/**
+ * Derives the workspace root for a data directory — the single place that
+ * knows the `<dataDir>/workspaces` layout, shared by the files subgraph and
+ * the executor's per-run finalize (#301).
+ *
+ * @param dataDir - daemon data directory (sessions, events, …)
+ * @returns absolute path of the workspace root
+ */
+export function workspaceRootFor(dataDir: string): string {
+  return resolve(dataDir, 'workspaces')
 }

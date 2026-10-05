@@ -4,12 +4,15 @@ import * as workspace from './index'
 
 test('workspace module exposes only the safe surface', () => {
   assert.deepEqual(Object.keys(workspace).sort(), [
+    'applySessionWrite',
     'commitAll',
     'diff',
     'ensureWorkspace',
+    'isSafeRepoPath',
     'listAt',
     'readAt',
     'withWorkspaceLock',
     'workspacePathFor',
+    'workspaceRootFor',
   ])
 })

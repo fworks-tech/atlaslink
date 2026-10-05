@@ -53,7 +53,7 @@ test('files list, read, and commit round-trip with session attribution', async (
 
     const fresh = await gql(srv.port, `query { files(projectId: "${projectId}") }`)
     assert.equal(fresh.errors, undefined, JSON.stringify(fresh.errors))
-    assert.deepEqual(fresh.data!.files, [], 'a never-used workspace lists empty after lazy init')
+    assert.deepEqual(fresh.data!.files, ['.gitignore'], 'a never-used workspace lists only the seeded .gitignore after lazy init')
 
     writeFile(dir, projectId, 'docs/spec.md', 'v1')
     const committed = await gql(
@@ -67,7 +67,7 @@ test('files list, read, and commit round-trip with session attribution', async (
     assert.match(gitLog(repoAt(dir, projectId)), new RegExp(`session: ${sessionId}`))
 
     const listed = await gql(srv.port, `query { files(projectId: "${projectId}") }`)
-    assert.deepEqual(listed.data!.files, ['docs/spec.md'])
+    assert.deepEqual(listed.data!.files, ['.gitignore', 'docs/spec.md'])
 
     const read = await gql(srv.port, `query { file(projectId: "${projectId}", path: "docs/spec.md") }`)
     assert.equal(read.data!.file, 'v1')
@@ -202,11 +202,11 @@ test('tenants get isolated workspaces for the same project id', async () => {
     assert.equal(committed.errors, undefined, JSON.stringify(committed.errors))
 
     const ownerFiles = await gql(srv.port, `query { files(projectId: "${projectId}") }`, undefined, owner)
-    assert.deepEqual(ownerFiles.data!.files, ['secret.txt'])
+    assert.deepEqual(ownerFiles.data!.files, ['.gitignore', 'secret.txt'])
 
     const intruder = { 'x-tenant-id': 'tenant-b' }
     const intruderFiles = await gql(srv.port, `query { files(projectId: "${projectId}") }`, undefined, intruder)
-    assert.deepEqual(intruderFiles.data!.files, [], 'tenant b resolves its own derived path')
+    assert.deepEqual(intruderFiles.data!.files, ['.gitignore'], 'tenant b resolves its own derived path')
 
     const intruderRead = await gql(
       srv.port,

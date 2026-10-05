@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, lstatSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs'
+import { dirname, join, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { withWorkspaceLock } from './lock'
 
@@ -35,6 +35,47 @@ async function git(repo: string, args: string[], opts: GitOptions = {}): Promise
 }
 
 /**
+ * Reports whether a path is a safe repository-relative file path — the rule
+ * shared by read/revision validation and by the executor's parse of untrusted
+ * session output before any write reaches the workspace.
+ *
+ * @param path - candidate path inside the workspace
+ * @returns true when the path is non-empty, relative, and free of
+ * `.`/`..`/empty segments, backslashes, or `.git` segments (writing git
+ * metadata would let untrusted output register hooks)
+ */
+export function isSafeRepoPath(path: string): boolean {
+  const segments = path.split('/')
+  return (
+    Boolean(path) &&
+    !path.startsWith('/') &&
+    !path.includes('\\') &&
+    !segments.some((s) => s === '' || s === '.' || s === '..' || s.toLowerCase() === '.git')
+  )
+}
+
+/**
+ * Credential shapes the write path refuses and every commit path ignores —
+ * one block so the regex and the gitignore globs cannot drift apart.
+ * Refusing keeps secrets out of the workspace's immutable history, where
+ * ADR-012 forbids the destructive scrub a leak would otherwise need.
+ */
+const SECRET_GLOBS = ['.env', '.env.*', '*.pem', 'id_*', '.ssh/']
+const SECRET_BASE_RE = /^(\.env(\..*)?|.*\.pem|id_.*)$/
+
+/**
+ * Reports whether a path looks like credentials (see {@link SECRET_GLOBS}).
+ *
+ * @param path - candidate workspace-relative path
+ * @returns true for dotenv files, private keys, and ssh material
+ */
+function isSecretShapedPath(path: string): boolean {
+  const segments = path.split('/')
+  const base = segments[segments.length - 1].toLowerCase()
+  return SECRET_BASE_RE.test(base) || segments.some((s) => s.toLowerCase() === '.ssh')
+}
+
+/**
  * Validates a repository-relative path before it is interpolated into a
  * `git show <rev>:<path>` revision string.
  *
@@ -44,10 +85,7 @@ async function git(repo: string, args: string[], opts: GitOptions = {}): Promise
  * contains `.`/`..`/empty segments
  */
 function safeRepoPath(path: string): string {
-  const segments = path.split('/')
-  if (!path || path.startsWith('/') || path.includes('\\') || segments.some((s) => s === '' || s === '.' || s === '..')) {
-    throw new Error(`unsafe repo path: ${JSON.stringify(path)}`)
-  }
+  if (!isSafeRepoPath(path)) throw new Error(`unsafe repo path: ${JSON.stringify(path)}`)
   return path
 }
 
@@ -90,11 +128,17 @@ async function hasHead(repo: string): Promise<boolean> {
  * @returns resolves once the repository exists with a readable HEAD
  * @throws whatever git reports if init or the baseline commit fails
  */
+/** Credential patterns seeded as the workspace's .gitignore — keeps secrets out of every commit path (#301 review). */
+const GITIGNORE_SEED = [...SECRET_GLOBS, ''].join('\n')
+
 export async function ensureWorkspace(repo: string): Promise<void> {
   await withWorkspaceLock(repo, async () => {
     mkdirSync(repo, { recursive: true })
     if (!existsSync(join(repo, '.git'))) await git(repo, ['init'])
+    const gitignore = join(repo, '.gitignore')
+    if (!existsSync(gitignore)) writeFileSync(gitignore, GITIGNORE_SEED, 'utf8')
     if (await hasHead(repo)) return
+    await git(repo, ['add', '.gitignore'])
     await git(repo, ['commit', '--allow-empty', '-m', 'chore: initialize workspace'], { identity: true })
   })
 }
@@ -122,6 +166,56 @@ export async function commitAll(repo: string, opts: { message: string; sessionId
     const message = opts.sessionId ? `${opts.message}\n\nsession: ${opts.sessionId}` : opts.message
     await git(repo, ['commit', '-m', message], { identity: true })
     return await git(repo, ['rev-parse', 'HEAD'])
+  })
+}
+
+/**
+ * Applies a session's file writes as one locked batch: every file lands in
+ * the working tree and the whole batch becomes a single commit carrying the
+ * `session: <id>` attribution trailer, so git history and the session event
+ * log join on the same id (ADR-012). Reentrant over {@link commitAll}'s own
+ * lock acquisition.
+ *
+ * @param repo - absolute workspace path (derive via `workspacePathFor`)
+ * @param writes - files to create or overwrite; repository-relative paths
+ * @param opts - commit `message` and optional `sessionId` attribution trailer
+ * @returns the new commit sha; the current HEAD sha when nothing changed
+ * @throws {Error} when the batch is empty, a path fails `safeRepoPath`, or
+ * git fails (message/sessionId rules are {@link commitAll}'s)
+ */
+export async function applySessionWrite(
+  repo: string,
+  writes: { path: string; content: string }[],
+  opts: { message: string; sessionId?: string }
+): Promise<string> {
+  if (writes.length === 0) throw new Error('applySessionWrite requires at least one write')
+  for (const write of writes) {
+    safeRepoPath(write.path)
+    if (isSecretShapedPath(write.path)) {
+      throw new Error(`refusing credential-shaped path: ${JSON.stringify(write.path)}`)
+    }
+  }
+  return await withWorkspaceLock(repo, async () => {
+    await ensureWorkspace(repo)
+    const root = realpathSync(repo)
+    for (const write of writes) {
+      const target = join(repo, write.path)
+      const parent = dirname(target)
+      mkdirSync(parent, { recursive: true })
+      // mkdir traverses a symlinked directory component, so re-resolve the
+      // parent after creation and refuse anything that left the workspace
+      const resolvedParent = realpathSync(parent)
+      if (resolvedParent !== root && !resolvedParent.startsWith(root + sep)) {
+        throw new Error(`refusing to write outside the workspace: ${JSON.stringify(write.path)}`)
+      }
+      // lstat, not existsSync: a broken symlink must still be detected
+      const stat = lstatSync(target, { throwIfNoEntry: false })
+      if (stat?.isSymbolicLink()) {
+        throw new Error(`refusing to write through symlink: ${JSON.stringify(write.path)}`)
+      }
+      writeFileSync(target, write.content, 'utf8')
+    }
+    return await commitAll(repo, opts)
   })
 }
 
