@@ -48,8 +48,8 @@ GET /events (SSE) ──► dashboard: live DAG + WebSocket room (HITL ask_human
   on `pglite` in CI and managed Postgres in production.
 - **Deployment:** one runtime image; Render serves production today, AWS EC2 +
   RDS serves staging via the compose overlay (ADR-013), and both are driven by
-  the same post-CI deploy workflows. Tests are hermetic — 445 offline,
-  no LLM, no network.
+  the same post-CI deploy workflows. Tests are hermetic — offline, no LLM,
+  no network.
 
 ## What this is
 
@@ -194,7 +194,8 @@ Gated routes: `/auth/keys` (CRUD), `/auth/me`.
 
 ## GraphQL federation (ADR-011)
 
-The GraphQL surface is a composed graph served by a single Cosmo router process:
+The GraphQL surface is a composed graph served by a single Cosmo router process
+(in the compose stack):
 
 ```
 client ──► Caddy (TLS, routes) ──► cosmo router ──┬──► /v1/graphql/files
@@ -227,7 +228,7 @@ One image, two planes, both gated on green CI:
 - **Image** — multi-stage Dockerfile: a `router` stage bakes the pinned Cosmo
   router binary, its config, and the composed execution config (hermetic — no
   network at boot); the `runtime` stage ships the daemon (Node 22, `git` for
-  the files subgraph, non-root user) and is always the last stage so
+  the files subgraph) and is always the last stage so
   `render.yaml` builds the right target. `docker-compose.yml` pins
   `target: runtime` explicitly.
 - **Render (production today)** — `render.yaml` + `deploy-render.yml`: after CI
@@ -254,10 +255,10 @@ through that facade so the logged shape stays fixed. SSE streams never emit a
 ## Conventions that constrain every layer
 
 - **Hermetic tests:** `npm test` runs the full suite offline (no LLM, no key, no
-  network). `pglite` keeps the Postgres backend in-process; fixture-backed
-  resolvers keep GraphQL tests offline. CI builds the sibling `agenthood`
-  package (file dependency) and runs `typecheck` + tests; deploy workflows run
-  only after that CI is green.
+  network). `pglite` keeps the Postgres backend in-process; offline subgraph
+  resolver/composition tests keep GraphQL hermetic. CI builds the sibling
+  `agenthood` package (file dependency) and runs `typecheck` + tests; deploy
+  workflows run only after that CI is green.
 - **Read-only projection contract (ADR-002):** execution is never driven inline in
   the HTTP layer; all runs route through `SessionQueue`.
 - **Fail-closed surfaces:** 5xx never leak internals; agent-facing errors never
