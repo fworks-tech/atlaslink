@@ -1,0 +1,22 @@
+# AWS/docker overlay for the Cosmo Router (#328) — merged after router.yaml,
+# so these values win. Subgraph URLs point at the compose service name; the
+# daemon exposes every subgraph on /v1/graphql/<name> (ADR-011).
+listen_addr: 0.0.0.0:3002
+# Subgraphs are bearer-gated (ADR-008); the router forwards the caller's
+# credential so authenticated clients work through the federated edge and
+# tokenless requests keep failing with 401 instead of being rewritten.
+headers:
+  all:
+    request:
+      - op: propagate
+        named: Authorization
+overrides:
+  subgraphs:
+    session:
+      routing_url: http://backend:3000/v1/graphql/session
+    task:
+      routing_url: http://backend:3000/v1/graphql/task
+    insights:
+      routing_url: http://backend:3000/v1/graphql/insights
+    files:
+      routing_url: http://backend:3000/v1/graphql/files

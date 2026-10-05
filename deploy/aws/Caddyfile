@@ -1,0 +1,41 @@
+# Caddy gateway for the AWS deployment (#328).
+#
+# Staging first: `staging.atlas.flabs.tech` fronts the single EC2 stack while
+# production DNS still points at Render. At cutover (#329) the api block below
+# is uncommented and DNS flips.
+#
+# Routing: /graphql and /health/ready go to the Cosmo router (federated graph
+# edge); everything else reaches the daemon.
+
+:80 {
+	redir https://staging.atlas.flabs.tech{uri} permanent
+}
+
+staging.atlas.flabs.tech {
+	handle /graphql* {
+		reverse_proxy router:3002
+	}
+
+	handle /health/ready* {
+		reverse_proxy router:3002
+	}
+
+	handle {
+		reverse_proxy backend:3000
+	}
+}
+
+# Cutover (#329): uncomment once api.atlas.flabs.tech resolves here.
+# api.atlas.flabs.tech {
+# 	handle /graphql* {
+# 		reverse_proxy router:3002
+# 	}
+#
+# 	handle /health/ready* {
+# 		reverse_proxy router:3002
+# 	}
+#
+# 	handle {
+# 		reverse_proxy backend:3000
+# 	}
+# }
