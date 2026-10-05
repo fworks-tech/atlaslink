@@ -1,11 +1,55 @@
 # Atlaslink Architecture
 
-**Reading order:** start here for the whole system; then the per-layer notes in
-`src/bridge/`, `src/session/`, `src/daemon/`, `src/tasks/`; then the ADRs in
-[`docs/adr/`](../adr/) for each decision's rationale. Decisions that shaped this
-system: ADR-001 (NDJSON event log), ADR-002 (read-only projection contract),
-ADR-003 (Atlas holds the sky of sessions), ADR-004 (session aggregate durability),
-ADR-005 (structured logging), ADR-006 (Fastify + Postgres direction).
+**Reading order:** the 5-minute version below for the whole system in one pass;
+then the per-layer notes in `src/bridge/`, `src/session/`, `src/daemon/`,
+`src/tasks/`; then the ADRs in [`docs/adr/`](../adr/) for each decision's
+rationale. Start with ADR-001 (NDJSON event log), ADR-004 (session aggregate
+durability), ADR-006 (Fastify + Postgres), ADR-008 (auth and tenancy),
+ADR-011 (federation decomposition), ADR-013 (AWS deployment target).
+
+## The 5-minute version
+
+**What it is:** a product-oriented multi-agent orchestrator built on Agenthood
+(the agent-team runtime). You compose agents like a flowchart, they run, and
+every decision they make is an event you can watch live or replay later.
+
+**One session, end to end:**
+
+```
+POST /tasks ──► SessionQueue (serial FIFO) ──► agent run (Agenthood runtime)
+     │                  │  session.* lifecycle events
+     │                  ▼
+     │         EventLogStore + SessionBackend
+     │           ├─ Postgres session_events  (source of truth, per tenant)
+     │           ├─ sessions directory        (project-scoped projection)
+     │           └─ NDJSON log               (run provenance, ADR-001)
+     ▼
+GET /events (SSE) ──► dashboard: live DAG + WebSocket room (HITL ask_human)
+```
+
+- **Writes are event-sourced.** `session.*` events are the commit; `version` is
+  the optimistic CAS token; rehydration is deterministic (ADR-004). The HTTP
+  layer never executes agents inline — everything routes through
+  `SessionQueue` (ADR-002's projection contract).
+- **Reads are projections.** The `sessions` directory table keeps project
+  listings O(1); the SSE stream replays envelopes verbatim with
+  `Last-Event-ID` resume and gap detection — a stale resume surfaces
+  `bridge.gap`, never silence.
+- **Humans are in the loop.** Agents pause on `ask_human`, park the session,
+  and resume from your reply; the per-session WebSocket room lets several
+  people watch and steer together (ADR-007).
+- **The GraphQL surface federates over the same daemon.** Four subgraphs
+  (`files`, `sessions`, `tasks`, `insights`) compose via `wgc` into one
+  Cosmo router endpoint; subgraphs are bearer-gated (ADR-008) and the router
+  propagates `Authorization` through to them.
+- **Data model in one breath:** `session_events` (append-only, per-tenant),
+  `sessions` (directory projection), `projects`, `users`, `api_keys`
+  (SHA-256 hashes), `daily_cost_buckets`, `run_checkpoints` — same SQL runs
+  on `pglite` in CI and managed Postgres in production.
+- **Deployment:** one runtime image; Render serves production today, AWS EC2 +
+  RDS serves staging via the compose overlay (ADR-013), and both are driven by
+  the same post-CI deploy workflows. Tests are hermetic — 445 offline,
+  no LLM, no network.
 
 ## What this is
 
@@ -46,6 +90,9 @@ the same event-sourced sessions.
             │  Db seam (pglite in CI / pg in prod)          │
             └───────────────────────────────────────────────┘
 ```
+
+The federation and deployment sections below extend this picture with two more
+planes: the GraphQL router plane and the deploy plane.
 
 ## The shipped runtime (M1/M2)
 
@@ -145,6 +192,57 @@ Per-user authentication and tenant isolation (PR #185):
 Ungated routes: `/auth/register`, `/auth/login`.
 Gated routes: `/auth/keys` (CRUD), `/auth/me`.
 
+## GraphQL federation (ADR-011)
+
+The GraphQL surface is a composed graph served by a single Cosmo router process:
+
+```
+client ──► Caddy (TLS, routes) ──► cosmo router ──┬──► /v1/graphql/files
+                                                  ├──► /v1/graphql/sessions
+                                                  ├──► /v1/graphql/tasks
+                                                  └──► /v1/graphql/insights
+                                                       (all on the daemon :3000)
+```
+
+- **Composition** — `npm run compose` runs `wgc router compose` over
+  `src/subgraphs/compose.yaml` and emits the router's execution config; CI and
+  the router image stage build it hermetically (pinned `wgc@0.132.2`).
+- **Subgraphs** — `files`, `sessions`, `tasks`, `insights` are routes on the
+  same daemon; ADR-011 records the decomposition direction (independent
+  deployables tracked in #321) while keeping the REST surface as a compat
+  window (ADR-011, #297).
+- **Auth** — every subgraph is bearer-gated (ADR-008): an unauthenticated
+  GraphQL request gets `401` rendered as a GraphQL error envelope, never
+  partial data. The router forwards `Authorization` to subgraphs explicitly
+  (`headers.all.request: propagate` in the router overrides — it does not
+  forward it by default).
+- **Workspaces** — session files live in git-backed workspace repositories
+  (ADR-012), served through the `files` subgraph and the workspace HTTP
+  endpoints (session-scoped paths, secret-shaped content refused).
+
+## Deployment (ADR-013)
+
+One image, two planes, both gated on green CI:
+
+- **Image** — multi-stage Dockerfile: a `router` stage bakes the pinned Cosmo
+  router binary, its config, and the composed execution config (hermetic — no
+  network at boot); the `runtime` stage ships the daemon (Node 22, `git` for
+  the files subgraph, non-root user) and is always the last stage so
+  `render.yaml` builds the right target. `docker-compose.yml` pins
+  `target: runtime` explicitly.
+- **Render (production today)** — `render.yaml` + `deploy-render.yml`: after CI
+  passes on `main`, the workflow builds and rolls the service.
+- **AWS (staging, ADR-013)** — `docker-compose.aws.yml` overlays the router +
+  AWS Caddyfile (`staging.atlas.flabs.tech`) on the base compose file;
+  `deploy-aws.yml` runs after green CI, SSHes to the EC2 host and runs
+  `docker compose up -d --build`, then polls `/health` for the provider-count
+  marker. Secrets: `AWS_DEPLOY_HOST`, `AWS_DEPLOY_KEY`. Provisioning, DNS,
+  RDS, SSM parameters, and the cutover checklist live in
+  [`docs/runbooks/aws-deploy.md`](../runbooks/aws-deploy.md); the decision in
+  [`docs/adr/ADR-013-aws-deployment-target.md`](../adr/ADR-013-aws-deployment-target.md);
+  the spec in [`docs/spec/aws-deployment.md`](../spec/aws-deployment.md).
+  Retiring Render/Oracle after the soak is tracked in #329.
+
 ## Logging (ADR-005)
 
 One JSON object per line, level via `ATLASLINK_LOG_LEVEL`, `correlationId` threaded
@@ -156,8 +254,10 @@ through that facade so the logged shape stays fixed. SSE streams never emit a
 ## Conventions that constrain every layer
 
 - **Hermetic tests:** `npm test` runs the full suite offline (no LLM, no key, no
-  network). `pglite` keeps the Postgres backend in-process. CI builds the sibling
-  `agenthood` package (file dependency) and runs `typecheck` + tests.
+  network). `pglite` keeps the Postgres backend in-process; fixture-backed
+  resolvers keep GraphQL tests offline. CI builds the sibling `agenthood`
+  package (file dependency) and runs `typecheck` + tests; deploy workflows run
+  only after that CI is green.
 - **Read-only projection contract (ADR-002):** execution is never driven inline in
   the HTTP layer; all runs route through `SessionQueue`.
 - **Fail-closed surfaces:** 5xx never leak internals; agent-facing errors never
@@ -175,11 +275,11 @@ through that facade so the logged shape stays fixed. SSE streams never emit a
 | `feat/3-task-rest` | Task API + per-session SSE on Fastify, wired through the store | merged (#44) |
 | `feat/45-security-audit` | bearer gate over /runs + /events, rate limiting, auth-rejection logging, `execRawDdl` | merged (#46) |
 | auth ADR | accounts/tenancy at the data-access boundary | shipped (#185, ADR-008) |
-| infra ADR | serverless API / container daemon split, Terraform | pending |
 | `feat/projects-backend` | projects table, sessions directory, project CRUD, project-scoped SSE | merged (#58) `661c992` |
-| `feat/full-dag-builder` | FULL DAG: `POST /tasks/:id/reply` (`session.awaiting_input` ↔ `user_reply`), `graph full` (hex/diamond/stadium/terminal), Inspector/Thread, deep-links `/project/:p/session/:s` + `/s/:token` + `?q=<b64url>` | shipped (#63) |
-| `fix/issue-7-isolate-session-diagram` | Diagram isolates selected session (`ATLAS → SESSION → delegation chain`), empty composer stage when unselected, filter by `sessionId` | in progress (#7) |
-| M4 | live dashboard UI rendering society provenance | shipped — Projects (#58), Full DAG (#63), `force-dynamic` (#64); isolation polish #7 |
+| `feat/full-dag-builder` | FULL DAG: `POST /tasks/:id/reply`, `graph full`, Inspector/Thread, deep-links | merged (#63) |
+| ADR-011/012 | federation decomposition + git-backed workspace | recorded; split deployables #321, REST BFF #297 |
+| ADR-013 | AWS deployment target (EC2 + RDS + compose stack) | recorded, shipping (#330); decommission #329 |
 
-See [`docs/spec/m3-task-api.md`](../spec/m3-task-api.md) for the M3 plan and
-[`PROGRESS.md`](../../PROGRESS.md) for shipped state.
+See [`docs/spec/m3-task-api.md`](../spec/m3-task-api.md) for the M3 plan,
+[`docs/spec/m5-federation-workspace.md`](../spec/m5-federation-workspace.md) for
+federation + workspace, and [`PROGRESS.md`](../../PROGRESS.md) for shipped state.
