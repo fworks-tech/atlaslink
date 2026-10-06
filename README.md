@@ -36,7 +36,7 @@ Atlaslink is a product-oriented multi-agent orchestrator built on **[Agenthood](
 | Frontend | Next.js 16, React 19, Mantine 9, Tailwind CSS v4, React Flow 12, dagre layout |
 | Auth | JWT (HS256), API keys (SHA-256 hashed), scrypt passwords |
 | Testing | Node built-in test runner (backend), Vitest (dashboard), c8 coverage |
-| CI/CD | GitHub Actions, auto-deploy to Render, semantic-release |
+| CI/CD | GitHub Actions, auto-deploy to Render + AWS staging (ADR-013), semantic-release |
 
 ## Quick start
 
