@@ -164,6 +164,7 @@ dashboard/.env.local
 .agenthood/residual.json
 .agenthood/society-graph.json
 .agenthood/preferences.json
+.agenthood/costs.jsonl
 !.agenthood/config.json
 .env*
 !deploy/oracle/.env.example
