@@ -173,3 +173,6 @@ router-config.json
 # Cosmo Router local runtime (#320)
 tools/router/
 /router.overrides.yaml
+
+# Local interview story cards (#350)
+STORYCARDS.md
