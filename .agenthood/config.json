@@ -33,7 +33,7 @@
   "providers": [
     {
       "name": "opencode-go",
-      "model": "deepseek-v4-flash"
+      "model": "deepseek-v4.1-flash"
     }
   ]
 }
