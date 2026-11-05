@@ -14,7 +14,6 @@ const VAGUE_SUBJECTS = [
 
 export default {
   extends: ['@commitlint/config-conventional'],
-  ignores: [(message: string) => /dependabot\[bot\]/.test(message)],
   plugins: [
     {
       rules: {
