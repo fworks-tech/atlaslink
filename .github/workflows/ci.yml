@@ -32,6 +32,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Skills match the installed agenthood package
+        run: node scripts/sync-skills.mjs --check
+
       - name: Lint
         run: npm run lint
 

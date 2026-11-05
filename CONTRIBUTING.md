@@ -75,6 +75,16 @@ npx agenthood run the-reviewer "review the open PR"
 
 Use them when you want a second pair of eyes or help with standards — but the human is always the final reviewer.
 
+### Member skills
+
+`AGENTS.md` describes the convention layer; the member skills themselves live in `.agenthood/skills/` and are committed. They are a byte-for-byte copy of the `agenthood` package's skills, checked in CI (`node scripts/sync-skills.mjs --check`) and by the `pre-commit` hook.
+
+After bumping `agenthood`, re-sync and commit the result:
+
+```bash
+npm run sync-skills
+```
+
 ## Tests
 
 The project uses Node's built-in test runner with `tsx` for TypeScript support. Run the full suite before submitting a PR:
