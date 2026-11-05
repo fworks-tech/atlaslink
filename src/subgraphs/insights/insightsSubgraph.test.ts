@@ -1,12 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { cleanup, jsonRequest, startServer, tmpDataDir } from '../../test/serverHarness'
 
 interface GraphResult {
-  data?: Record<string, unknown>
-  errors?: { message: string; extensions?: { code?: string } }[]
+  data?: Record<string, unknown> | null
+  errors?: { message: string; path?: (string | number)[]; extensions?: { code?: string } }[]
 }
 
 async function gql(port: number, query: string): Promise<GraphResult> {
@@ -155,6 +155,23 @@ test('a zero first-half cost trend surfaces changePct as null, not a crash', asy
     assert.equal(trend.first, 0)
     assert.equal(trend.second, 5)
     assert.equal(trend.changePct, null, 'Infinity from a zero first half must serialize as null')
+  } finally {
+    await srv.close()
+    cleanup(dir)
+  }
+})
+
+test('a report-wide failure nulls data: the report root is non-null', async () => {
+  const dir = tmpDataDir()
+  // a directory at the trace path makes the read throw (EISDIR)
+  const traces = join(dir, 'traces.ndjson')
+  mkdirSync(traces)
+  const srv = await startServer(dir, { insightsTracesPath: traces })
+  try {
+    const result = await gql(srv.port, 'query { insights { count } }')
+    assert.equal(result.data, null, 'InsightsReport! is non-null, so its error propagates')
+    assert.equal(result.errors?.length, 1)
+    assert.deepEqual(result.errors?.[0].path, ['insights'])
   } finally {
     await srv.close()
     cleanup(dir)

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { cleanup, jsonRequest, startServer, tmpDataDir } from '../../test/serverHarness'
 
 interface GraphResult {
-  data?: Record<string, unknown>
-  errors?: { message: string; extensions?: { code?: string } }[]
+  data?: Record<string, unknown> | null
+  errors?: { message: string; path?: (string | number)[]; extensions?: { code?: string } }[]
 }
 
 async function gql(
@@ -181,6 +181,32 @@ test('tenant isolation on the graph: scoped reads, no existence oracle, invalid 
     const invalid = await gql(srv.port, `query { session(id: "${id}") { id } }`, undefined, { 'x-tenant-id': '!!!' })
     assert.equal(invalid.errors?.[0].extensions?.code, '400')
     assert.equal(invalid.errors?.[0].message, 'invalid tenant id')
+  } finally {
+    await srv.close()
+    cleanup(dir)
+  }
+})
+
+test('partial failure: a non-null root nulls data, a nullable root keeps it', async () => {
+  const dir = tmpDataDir()
+  const srv = await startServer(dir)
+  try {
+    const id = await createSession(srv.port, 'the-builder', 'partial')
+
+    // nullable root: the error surfaces at its own path and the data envelope survives
+    const nullable = await gql(srv.port, `query { session(id: "${id}") { id } }`, undefined, { 'x-tenant-id': '!!!' })
+    assert.deepEqual(nullable.data, { session: null })
+    assert.equal(nullable.errors?.[0].extensions?.code, '400')
+    assert.deepEqual(nullable.errors?.[0].path, ['session'])
+
+    // non-null root: the failure propagates to the whole data envelope
+    const nonNull = await gql(
+      srv.port,
+      `query { session(id: "${id}") { id } sessionEvents(sessionId: "ses-none") { type } }`
+    )
+    assert.equal(nonNull.data, null)
+    assert.equal(nonNull.errors?.[0].extensions?.code, '404')
+    assert.deepEqual(nonNull.errors?.[0].path, ['sessionEvents'])
   } finally {
     await srv.close()
     cleanup(dir)

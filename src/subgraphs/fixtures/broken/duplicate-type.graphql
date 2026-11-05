@@ -1,0 +1,16 @@
+# Broken composition fixture: two definitions of the same type.
+# assert: buildSubgraphSchema rejects it (duplicate type).
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key"])
+
+type Query {
+  session(id: ID!): Session
+}
+
+type Session @key(fields: "id") {
+  id: ID!
+}
+
+type Session {
+  member: String!
+}
