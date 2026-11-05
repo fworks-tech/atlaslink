@@ -4,6 +4,12 @@ WORKDIR /app
 
 # --- dependencies ---
 FROM base AS deps
+# better-sqlite3 13 ships binding.gyp and prebuilds, but `npm ci` from the
+# lockfile still runs its install script through node-gyp; the slim image has
+# no compiler, so the build would fail before anything is copied out.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 # postinstall runs scripts/git-hooks.mjs; without it `npm ci` exits non-zero
 COPY scripts/git-hooks.mjs ./scripts/
