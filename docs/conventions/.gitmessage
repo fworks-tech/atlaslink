@@ -1,0 +1,16 @@
+# <type>(<scope>): <subject>
+#
+# Types: feat | fix | docs | test | refactor | ci | chore | revert
+# Scope: module | layer | area  (e.g. daemon, subgraphs, dashboard, ci)
+# Subject: imperative, lowercase, <=150 chars, no trailing period
+#
+# Body (optional — explain WHY, not what):
+#
+#
+# Footer:
+# Closes #ISSUE
+#
+# ---------------------------------------------------------------------------
+# Conventional Commits: https://www.conventionalcommits.org/
+# Checked by .githooks/commit-msg and the CI "Lint PR title" step.
+# ---------------------------------------------------------------------------

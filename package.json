@@ -12,6 +12,7 @@
     "test:coverage": "c8 --reporter=text --reporter=lcov node --import tsx --test \"src/**/*.test.ts\"",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/git-hooks.mjs",
     "compose": "npx --yes wgc@0.132.2 router compose -i src/subgraphs/compose.yaml -o router-config.json",
     "router": "tsx src/router/start.ts",
     "router:smoke": "tsx src/router/smoke.ts",
@@ -42,6 +43,8 @@
     "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
     "@eslint/js": "^10.0.1",
     "@graphql-codegen/cli": "^7.4.3",
     "@graphql-codegen/typescript": "^6.1.0",
@@ -55,6 +58,7 @@
     "c8": "^12.0.0",
     "conventional-changelog-conventionalcommits": "8.0.0",
     "eslint": "^10.11.0",
+    "jiti": "^2.7.0",
     "semantic-release": "^25.0.9",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",

@@ -1,0 +1,6 @@
+#!/bin/sh
+# A SKILL.md edit must come with a re-lock, otherwise the drift gate in CI is
+# the first place anyone notices. No-op until agenthood.lock exists.
+[ -f agenthood.lock ] || exit 0
+[ -x node_modules/.bin/agenthood ] || exit 0
+exec node_modules/.bin/agenthood verify --lock-only

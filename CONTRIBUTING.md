@@ -9,7 +9,7 @@ Be respectful and constructive. This is a small, product-oriented project and we
 ## Getting started
 
 1. **Fork** the repository (or ask for write access) and clone it.
-2. Install the prerequisites and run the setup — see the [README](README.md#getting-started).
+2. Install the prerequisites and run the setup — see the [README](README.md#quick-start). `npm install` also wires the git hooks (`.githooks/`) and the commit template (`docs/conventions/.gitmessage`).
 3. Pick an issue from the [issues page](https://github.com/fworks-tech/atlaslink/issues) or open a new one describing what you want to do.
 
 ## Branch conventions
@@ -51,6 +51,8 @@ type(scope)!: subject
 | `refactor`| Code change that neither fixes nor adds a feature |
 | `ci`      | CI configuration and scripts          |
 | `chore`   | Maintenance, dependencies, tooling    |
+
+The rules live in [`docs/conventions/commitlint.config.ts`](docs/conventions/commitlint.config.ts): allowed types, no vague subjects (`wip`, `update`, `misc`…), header ≤ 150 chars, no trailing period. The `.githooks/commit-msg` hook checks every local commit and CI checks the PR title, so a malformed message cannot reach `main`.
 
 ## Pull request workflow
 
