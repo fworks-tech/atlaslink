@@ -83,7 +83,6 @@ test('GET /events with Last-Event-ID replays events after that id', async () => 
     broadcaster.emit(runEnv(1, { type: 'reasoning', step: 1, content: 'a' }))
     broadcaster.emit(runEnv(2, { type: 'tool.called', step: 1, name: 'read_file' }))
 
-    const sse = new SseHandler(log, broadcaster)
     const srv = await startServer(dir)
     const body = await collectStream(`http://127.0.0.1:${srv.port}/v1/events`, { 'Last-Event-ID': '1' }, 1200)
     assert.ok(body.includes('id: 2'))
@@ -102,7 +101,6 @@ test('GET /events with no Last-Event-ID is live-tail only (no replay)', async ()
     broadcaster.emit(runEnv(0, { type: 'run.started' }))
     broadcaster.emit(runEnv(1, { type: 'run.started' }))
 
-    const sse = new SseHandler(log, broadcaster)
     const srv = await startServer(dir)
     const body = await collectStream(`http://127.0.0.1:${srv.port}/v1/events`, {}, 1000)
     assert.ok(!body.includes('id: 0'))
@@ -120,7 +118,6 @@ test('GET /events with a stale Last-Event-ID emits bridge.gap, never silence', a
     log.append(runEnv(4, { type: 'run.started' }))
     assert.equal(log.oldestId, 3)
 
-    const sse = new SseHandler(log, new EventBroadcaster(log))
     const srv = await startServer(dir)
     const body = await collectStream(`http://127.0.0.1:${srv.port}/v1/events`, { 'Last-Event-ID': '0' }, 1000)
     assert.ok(body.includes('event: bridge.gap'))
@@ -247,9 +244,9 @@ test('createAppServer builds the HTTP layer on Fastify (ADR-006 Decision 1)', as
   try {
     const log = await EventLogStore.open(dir)
     const broadcaster = new EventBroadcaster(log)
-    const sse = new SseHandler(log, broadcaster)
     const registry = new TaskRegistry()
     const queue = new SessionQueue({ broadcaster, registry, runner: async () => {} })
+    const sse = new SseHandler(log, broadcaster)
     const { app, server } = await createAppServer({ log, registry, queue, sse })
     assert.ok(app.version.startsWith('5.'), `expected Fastify 5, got ${app.version}`)
     assert.equal(typeof app.inject, 'function')

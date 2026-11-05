@@ -10,7 +10,7 @@
     "insights": "tsx src/insights.ts",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "test:coverage": "c8 --reporter=text --reporter=lcov node --import tsx --test \"src/**/*.test.ts\"",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src --ext .ts --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "postinstall": "node scripts/git-hooks.mjs",
     "sync-skills": "node scripts/sync-skills.mjs",

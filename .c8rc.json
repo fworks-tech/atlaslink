@@ -3,9 +3,9 @@
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts", "src/test/**"],
   "reporter": ["text", "lcov"],
-  "check-coverage": false,
-  "lines": 60,
-  "statements": 60,
-  "functions": 60,
-  "branches": 50
+  "check-coverage": true,
+  "lines": 76,
+  "statements": 76,
+  "functions": 90,
+  "branches": 84
 }

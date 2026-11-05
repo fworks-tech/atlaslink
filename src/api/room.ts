@@ -240,7 +240,7 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
           if (ingressAt.length >= MAX_ROOM_INGRESS_PER_MINUTE) return true
           ingressAt.push(now)
           return false
-        };
+        }
 
         socket.on('message', (data: RawData) => {
           void (async () => {
