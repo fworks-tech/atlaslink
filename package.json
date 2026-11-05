@@ -13,6 +13,7 @@
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "postinstall": "node scripts/git-hooks.mjs",
+    "sync-skills": "node scripts/sync-skills.mjs",
     "compose": "npx --yes wgc@0.132.2 router compose -i src/subgraphs/compose.yaml -o router-config.json",
     "router": "tsx src/router/start.ts",
     "router:smoke": "tsx src/router/smoke.ts",

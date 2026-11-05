@@ -161,7 +161,6 @@ dashboard/.env.local
 .agenthood/traces/
 .agenthood/checkpoints/
 .agenthood/trajectories/
-.agenthood/skills/
 .agenthood/residual.json
 .agenthood/society-graph.json
 .agenthood/preferences.json
