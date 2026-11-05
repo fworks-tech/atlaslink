@@ -8,8 +8,8 @@ import { workspacePathFor } from '../../workspace'
 import { DEFAULT_TENANT_ID } from '../../session/tenant'
 
 interface GraphResult {
-  data?: Record<string, unknown>
-  errors?: { message: string; extensions?: { code?: string } }[]
+  data?: Record<string, unknown> | null
+  errors?: { message: string; path?: (string | number)[]; extensions?: { code?: string } }[]
 }
 
 async function gql(
@@ -113,6 +113,27 @@ test('unsafe refs, paths, and workspace ids are rejected before git runs', async
 
     const badTenant = await gql(srv.port, `query { files(projectId: "proj-1") }`, undefined, { 'x-tenant-id': '!!!' })
     assert.equal(badTenant.errors?.[0].extensions?.code, '400')
+  } finally {
+    await srv.close()
+    cleanup(dir)
+  }
+})
+
+test('partial failure: one bad file arg leaves the sibling field intact', async () => {
+  const dir = tmpDataDir()
+  const srv = await startServer(dir)
+  try {
+    // warm the workspace once so the two root fields do not race lazy init
+    const warm = await gql(srv.port, 'query { files(projectId: "proj-1") }')
+    assert.equal(warm.errors, undefined, JSON.stringify(warm.errors))
+
+    const result = await gql(srv.port, `query {
+      leaked: file(projectId: "proj-1", path: "spec.md", commit: "--all")
+      files(projectId: "proj-1")
+    }`)
+    assert.deepEqual(result.data, { leaked: null, files: ['.gitignore'] })
+    assert.equal(result.errors?.[0].extensions?.code, '400')
+    assert.deepEqual(result.errors?.[0].path, ['leaked'])
   } finally {
     await srv.close()
     cleanup(dir)

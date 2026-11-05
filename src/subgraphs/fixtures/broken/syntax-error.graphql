@@ -1,0 +1,13 @@
+# Broken composition fixture: SDL that does not even parse.
+# assert: buildSubgraphSchema rejects it (syntax error).
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key"])
+
+type Query {
+  session(id: ID!): Session
+}
+
+type Session @key(fields: "id") {
+  id: ID!
+  member:
+}

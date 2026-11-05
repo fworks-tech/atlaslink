@@ -8,8 +8,8 @@ const PROVIDERS = [
 ]
 
 interface GraphResult {
-  data?: Record<string, unknown>
-  errors?: { message: string; extensions?: { code?: string } }[]
+  data?: Record<string, unknown> | null
+  errors?: { message: string; path?: (string | number)[]; extensions?: { code?: string } }[]
 }
 
 async function gql(
@@ -164,6 +164,29 @@ test('saveDiagram echoes without persisting and 404s unknown sessions', async ()
       saveDiagram(sessionId: "${id}", diagram: { nodes: [], edges: [], mode: spiral }) { persisted }
     }`)
     assert.ok((badMode.errors ?? []).length > 0, 'invalid mode must be rejected')
+  } finally {
+    await srv.close()
+    cleanup(dir)
+  }
+})
+
+test('partial failure: a non-null root nulls data, a nullable root keeps it', async () => {
+  const dir = tmpDataDir()
+  const srv = await startServer(dir, { providers: PROVIDERS })
+  try {
+    const id = await createTask(srv.port, 'the-builder', 'partial', 'proj-1')
+
+    // nullable root: the error surfaces at its own path and the data envelope survives
+    const nullable = await gql(srv.port, `query { task(id: "${id}") { id } }`, undefined, { 'x-tenant-id': '!!!' })
+    assert.deepEqual(nullable.data, { task: null })
+    assert.equal(nullable.errors?.[0].extensions?.code, '400')
+    assert.deepEqual(nullable.errors?.[0].path, ['task'])
+
+    // non-null root: the failure propagates to the whole data envelope
+    const nonNull = await gql(srv.port, `query { task(id: "${id}") { id } tasks(limit: 0) { total } }`)
+    assert.equal(nonNull.data, null)
+    assert.equal(nonNull.errors?.[0].extensions?.code, '400')
+    assert.deepEqual(nonNull.errors?.[0].path, ['tasks'])
   } finally {
     await srv.close()
     cleanup(dir)

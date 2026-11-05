@@ -1,0 +1,13 @@
+# Broken composition fixture: an undeclared directive cannot be composed.
+# assert: buildSubgraphSchema rejects it (unknown directive).
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key"])
+
+type Query {
+  session(id: ID!): Session
+}
+
+type Session @key(fields: "id") {
+  id: ID!
+  member: String! @bogus
+}
