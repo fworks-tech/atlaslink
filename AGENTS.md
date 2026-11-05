@@ -40,7 +40,7 @@ to understand the Society's standards before taking any action in a repository.
 
 ## The Members
 
-Load skills from `skills/` to activate specialized agents:
+Load skills from `.agenthood/skills/` to activate specialized agents:
 
 - `the-scribe` — commit messages, PR descriptions, changelogs
 - `the-architect` — spec-driven development, planning, ADRs
@@ -69,14 +69,13 @@ Members can also be executed as real LLM agents via the TypeScript runtime.
 This is optional and additive — the prompt-driven workflow above continues to work unchanged.
 
 ```bash
-# Build the runtime once (the agenthood package is a sibling file dependency
-# at ../agenthood and must be built before first run)
-#   cd ../agenthood && npm run build && cd -
+# The runtime ships as the published `agenthood` npm package (^3.75.0) — no
+# sibling build step. `npm install` also wires .githooks/ and the commit template.
 
 # Set the LLM provider key in your environment (do NOT commit it)
-# Set OPENCODE_API_KEY for the opencode-go provider (primary)
-# or GROQ_API_KEY for the Groq fallback (free at console.groq.com)
-# or use Ollama for fully offline execution — no key required
+# OPENCODE_API_KEY configures the opencode-go provider (the configured primary)
+# Add another entry to `providers` in .agenthood/config.json for failover,
+# e.g. Groq (GROQ_API_KEY, free at console.groq.com) or Ollama (no key required)
 
 # List available members
 npx agenthood list

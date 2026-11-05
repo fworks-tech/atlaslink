@@ -49,7 +49,7 @@ test('loadDaemonConfig honours env overrides and parses the agenthood provider c
     assert.equal(config.port, 8080)
     const providers = config.agenthood.providers ?? []
     assert.ok(providers.length >= 1)
-    assert.equal(providers[0].name, 'opencode')
+    assert.equal(providers[0].name, 'opencode-go')
   } finally {
     if (previous.HOST !== undefined) process.env.ATLASLINK_HOST = previous.HOST
     else delete process.env.ATLASLINK_HOST

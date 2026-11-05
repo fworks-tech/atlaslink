@@ -1,0 +1,5 @@
+#!/bin/sh
+# Same rules CI applies to the PR title. Skips silently when deps are absent
+# (fresh clone, Docker) instead of blocking a commit with a missing-binary error.
+[ -x node_modules/.bin/commitlint ] || exit 0
+exec node_modules/.bin/commitlint --config docs/conventions/commitlint.config.ts --edit "$1"

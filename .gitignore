@@ -160,13 +160,13 @@ dashboard/.env.local
 .agenthood/metrics/
 .agenthood/traces/
 .agenthood/checkpoints/
+.agenthood/trajectories/
 .agenthood/skills/
 .agenthood/residual.json
 .agenthood/society-graph.json
 .agenthood/preferences.json
 .agenthood/costs.jsonl
 !.agenthood/config.json
-.env*
 !deploy/oracle/.env.example
 router-config.json
 

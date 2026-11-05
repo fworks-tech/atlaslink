@@ -22,7 +22,7 @@ Atlaslink is a product-oriented multi-agent orchestrator built on **[Agenthood](
 - **Real-time event bridge** — every agent decision and action streams to the browser over Server-Sent Events with `Last-Event-ID` resume, gap detection, and 15-second pings.
 - **Human-in-the-loop collaboration** — agents ask single questions via `ask_human`, park the session, and resume from your reply. A per-session WebSocket room lets multiple people observe and steer together.
 - **Task & project APIs** — create, list, cancel, reply to, and steer sessions over a bearer-gated HTTP surface. Projects group sessions; the event feed is addressable per session or per project.
-- **Event-sourced sessions** — every state change is appended to a durable, rotating NDJSON log. Sessions survive deploys and cold starts when backed by Postgres.
+- **Event-sourced sessions** — every state change is appended to a durable event store: embedded SQLite by default, Postgres in production. Sessions survive deploys and cold starts.
 - **Auth & tenancy** — JWT sessions (7-day expiry), SHA-256-hashed API keys, tenant isolation, fail-closed non-loopback binding, and per-user rate limiting.
 
 ## Tech stack
@@ -32,7 +32,7 @@ Atlaslink is a product-oriented multi-agent orchestrator built on **[Agenthood](
 | Runtime | Node.js >= 22.14, TypeScript 5.9, tsx |
 | HTTP server | Fastify 5, `@fastify/cors`, `@fastify/rate-limit`, `@fastify/websocket` |
 | Database | Postgres (production) via `pg`, pglite (CI/tests) — same SQL on both |
-| Event store | NDJSON append-only log (10 MB × 3 rotation) |
+| Event store | SQLite (default) or Postgres, append-only sessions (ADR-010) |
 | Frontend | Next.js 16, React 19, Mantine 9, Tailwind CSS v4, React Flow 12, dagre layout |
 | Auth | JWT (HS256), API keys (SHA-256 hashed), scrypt passwords |
 | Testing | Node built-in test runner (backend), Vitest (dashboard), c8 coverage |
@@ -41,26 +41,24 @@ Atlaslink is a product-oriented multi-agent orchestrator built on **[Agenthood](
 ## Quick start
 
 ```bash
-# 1. Clone and build the Agenthood core machine (sibling repo)
-git clone https://github.com/fworks-tech/agenthood.git ../agenthood
-cd ../agenthood && npm run build && cd -
-
-# 2. Install and configure Atlaslink
+# 1. Install and configure Atlaslink (runs the git-hook wiring on install)
 npm install
-cp .env.example .env   # then set OPENCODE_API_KEY (or GROQ_API_KEY for free tier)
+cp .env.example .env   # then set OPENCODE_API_KEY (zen/go tier)
 
-# 3. Run the daemon and dashboard together
+# 2. Run the daemon and dashboard together
 npm start                 # backend on :3000
 npm --prefix dashboard run dev   # dashboard on :3001 → http://127.0.0.1:3001
 ```
 
 Visit <http://127.0.0.1:3001> and create your first session. Or skip local setup and open the hosted dashboard at **[atlas.flabs.tech](https://atlas.flabs.tech)**.
 
-> **No LLM key?** The runtime falls back through its configured providers (Groq via `GROQ_API_KEY`, free at [console.groq.com](https://console.groq.com)), or to Ollama for fully offline execution — no key required.
+> **No LLM key?** `OPENCODE_API_KEY` is the only configured provider
+> (`.agenthood/config.json`). Add another provider entry there — Ollama needs no
+> key and runs fully offline.
 
 ## API reference
 
-All routes are prefixed with `/v1`. Auth is via `Authorization: Bearer <token>`.
+All API routes are prefixed with `/v1`; `GET /health` is the only unprefixed route. Auth is via `Authorization: Bearer <token>`.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -95,7 +93,7 @@ curl -X POST http://127.0.0.1:3000/v1/tasks \
   -d '{"member":"the-scribe","prompt":"draft a commit message"}'
 
 # Stream events
-curl -N http://127.0.0.1:3000/events \
+curl -N http://127.0.0.1:3000/v1/events \
   -H "Authorization: Bearer $ATLASLINK_API_TOKEN"
 ```
 
@@ -136,9 +134,9 @@ docker run -p 3000:3000 --env-file .env atlaslink
 
 The dashboard at [atlas.flabs.tech](https://atlas.flabs.tech) is a Next.js app with a BFF proxy (`/api/*` → backend). Set `ATLASLINK_API_URL` and `ATLASLINK_API_TOKEN` as build-time env vars.
 
-### Oracle Cloud Always Free
+### Oracle Cloud Always Free (legacy)
 
-A zero-cost option: VM + Caddy + Docker Compose. See [`docs/tasks/deploy-oracle-free-tier.md`](docs/tasks/deploy-oracle-free-tier.md).
+A zero-cost option kept for reference: VM + Caddy + Docker Compose. Being retired after the AWS cutover — see [#329](https://github.com/fworks-tech/atlaslink/issues/329). See [`docs/tasks/deploy-oracle-free-tier.md`](docs/tasks/deploy-oracle-free-tier.md).
 
 ## Roadmap
 
@@ -179,7 +177,7 @@ npm --prefix dashboard run typecheck
 
 ## Contributing
 
-We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit (Conventional Commits), and pull-request workflow. The repository enforces these standards via **Agenthood** — see [AGENTS.md](AGENTS.md).
+We welcome contributions. See [CONTRIBUTING.md](CONTRIBUTING.md) for the branch, commit (Conventional Commits), and pull-request workflow. Commit messages and PR titles are checked locally by the hooks in [`.githooks/`](.githooks) and in CI by commitlint; the Society conventions live in [AGENTS.md](AGENTS.md).
 
 ## License
 

@@ -21,6 +21,14 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      - name: Lint PR title
+        if: github.event_name == 'pull_request'
+        env:
+          # Passed via env, never interpolated into the script: the title is
+          # attacker-controlled on fork PRs.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | npx --no-install commitlint --config docs/conventions/commitlint.config.ts
+
       - name: Typecheck
         run: npm run typecheck
 

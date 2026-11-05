@@ -5,6 +5,8 @@ WORKDIR /app
 # --- dependencies ---
 FROM base AS deps
 COPY package.json package-lock.json ./
+# postinstall runs scripts/git-hooks.mjs; without it `npm ci` exits non-zero
+COPY scripts/git-hooks.mjs ./scripts/
 RUN npm ci
 
 # --- router (deploy #328): Cosmo Router with hermetic, baked-in configs ---

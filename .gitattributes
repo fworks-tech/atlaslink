@@ -1,0 +1,2 @@
+# Git runs hooks through sh; a CRLF shebang breaks them on every platform.
+.githooks/* text eol=lf

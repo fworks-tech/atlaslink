@@ -207,7 +207,8 @@ client ──► Caddy (TLS, routes) ──► cosmo router ──┬──► /
 
 - **Composition** — `npm run compose` runs `wgc router compose` over
   `src/subgraphs/compose.yaml` and emits the router's execution config; CI and
-  the router image stage build it hermetically (pinned `wgc@0.132.2`).
+  the router image stage run the same pinned `wgc@0.132.2` via `npx` (fetched
+  from the registry, not vendored).
 - **Subgraphs** — `files`, `sessions`, `tasks`, `insights` are routes on the
   same daemon; ADR-011 records the decomposition direction (independent
   deployables tracked in #321) while keeping the REST surface as a compat
@@ -256,8 +257,8 @@ through that facade so the logged shape stays fixed. SSE streams never emit a
 
 - **Hermetic tests:** `npm test` runs the full suite offline (no LLM, no key, no
   network). `pglite` keeps the Postgres backend in-process; offline subgraph
-  resolver/composition tests keep GraphQL hermetic. CI builds the sibling
-  `agenthood` package (file dependency) and runs `typecheck` + tests; deploy
+  resolver/composition tests keep GraphQL hermetic. CI installs the published
+  `agenthood` package with `npm ci` and runs `typecheck` + tests; deploy
   workflows run only after that CI is green.
 - **Read-only projection contract (ADR-002):** execution is never driven inline in
   the HTTP layer; all runs route through `SessionQueue`.
@@ -265,7 +266,7 @@ through that facade so the logged shape stays fixed. SSE streams never emit a
   enumerate internals.
 - **Decision records:** every significant decision has an ADR in
   [`docs/adr/`](../adr/); the branch roadmap lives in
-  [`docs/tasks/m3-task-api.md`](../tasks/m3-task-api.md).
+  [`docs/tasks/m5-federation-workspace.md`](../tasks/m5-federation-workspace.md).
 
 ## Roadmap
 

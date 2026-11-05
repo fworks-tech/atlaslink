@@ -1,7 +1,7 @@
 # Atlaslink — Session Progress Checklist
 
 > Status snapshot of the atlaslink project.
-> Updated: 2026-09-03 (`7dbbf32`)
+> Updated: 2026-11-05 (`0a06af5`)
 
 ## Legend
 
@@ -15,7 +15,7 @@
 
 - [x] Repo cloned at `C:\Github\atlaslink` (branch: `main`, initial commit)
 - [x] `package.json` + `package-lock.json` initialized
-- [x] `agenthood` installed as local file dependency (`file:../agenthood`)
+- [x] `agenthood` installed from npm (`^3.75.0`; it was a `file:../agenthood` dependency until #286)
 - [x] `.env` created with `OPENCODE_API_KEY` (gitignored — not committed)
 - [x] `AGENTS.md` present
 - [x] `.agenthood/config.json` scaffolded
@@ -37,6 +37,9 @@
 - [x] Fixed: provider changed to **`opencode-go`** (zen/go tier,
       `https://opencode.ai/zen/go/v1`) in `.agenthood/config.json`
 - [x] API key is for the **zen/go tier** (not standard zen)
+- [x] Re-aligned on 2026-11-05: `providers[0]` is `opencode-go` again after a
+      temporary revert to `opencode`; Groq/Ollama stay documented as optional
+      failover entries, not defaults (no key is required for either)
 - [x] `npx agenthood run the-architect "Plan an atlaslink integration"`
       → produced a real plan (provider verified working)
 
@@ -93,7 +96,8 @@
       data-access boundary (gates account-facing routes; ADR-006 Decision 7)
 - [ ] Infra ADR — Docker packaging, Terraform, GitLab CI; stateless API deployable
       serverless while the streaming daemon stays a containerized service
-- [ ] Test tooling — Jest (unit), Playwright (M4 E2E), K6 (API load)
+- [x] Test tooling — Node built-in test runner (backend), Vitest (dashboard),
+      c8 coverage (the earlier Jest/Playwright/K6 plan was dropped)
 
 ## 6. Related Work in Agenthood
 
@@ -102,7 +106,7 @@
 
 ---
 
-## Recommended Next Steps (M1–M4 roadmap per ADR-002/ADR-003)
+## Recommended Next Steps (M1–M5 roadmap per ADR-002/ADR-003)
 
 ### M1 — Daemon Core
 1. [x] TypeScript conversion of daemon core — all source in `src/**/*.ts`,
@@ -183,4 +187,12 @@ cursor restore, verbatim fan-out broadcaster, serial FIFO session worker emittin
 18. [x] HMAC-SHA256 request signing — webhook payload integrity.
         (`src/api/signing.ts`)
 19. [x] Auth API spec — `docs/spec/auth-api.md`
-20. [x] Full test coverage — 281 backend + 178 dashboard tests passing.
+20. [x] Full test coverage — 455 backend + 380 dashboard tests passing.
+
+### M5 — Federation & Workspace (#321, shipped)
+21. [x] GraphQL subgraphs (`session`, `task`, `files`, `insights`) served by the
+        daemon under `/v1/graphql/*`, composed with `wgc`; federation entity and
+        composition coverage in `src/subgraphs/entities.test.ts` (#355)
+22. [x] Git-backed workspace writes with session-attributed commits (#327)
+23. [x] Router plane: Cosmo router config, local smoke test, AWS staging
+        (ADR-013, #322/#323/#330)
