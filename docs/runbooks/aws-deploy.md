@@ -98,6 +98,12 @@ aws ssm put-parameter --name /atlaslink/ATLASLINK_DATABASE_URL --type SecureStri
 ```bash
 ssh -i atlaslink.pem ubuntu@<EC2_PUBLIC_IP>
 
+# 2 GB swap: t4g.micro has 1 GB and the first compose build runs npm ci plus
+# the better-sqlite3 node-gyp compile inside the image, which OOMs without it
+sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile \
+  && sudo mkswap /swapfile && sudo swapon /swapfile \
+  && echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
 # Docker (Ubuntu 24.04 ships without it)
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker ubuntu && newgrp docker
@@ -171,6 +177,7 @@ Oracle sibling per #329.
 | Symptom | Cause / fix |
 |---|---|
 | `docker compose` fails on `.env` | §6 didn't run, or SSM parameters are missing (`aws ssm get-parameter …` as the `ubuntu` user) |
+| Build dies with `Killed` / exit 137 | Swap is missing (§6) — `npm ci` plus the `better-sqlite3` compile needs more than the 1 GB t4g.micro offers; `free -m` should show the swapfile |
 | Cert not issued | DNS not resolving yet, or port 443 SG closed — Caddy retries once DNS is right |
 | `/health` keeps returning old `"providers"` | Image build failed on the instance: `docker compose -f docker-compose.yml -f docker-compose.aws.yml build` and read the router stage output |
 | `/health/ready` not OK | Router can't reach subgraphs: `docker compose logs router` — `backend:3000` must resolve on the compose network |
