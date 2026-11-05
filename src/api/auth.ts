@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto'
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { log } from '../log'
 import { hashApiKey } from '../session/authStore'
 import { verifyJwt } from '../session/jwt'
