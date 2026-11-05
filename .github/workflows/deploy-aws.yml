@@ -26,7 +26,7 @@ jobs:
     steps:
       - name: Check out repository
         if: env.AWS_DEPLOY_HOST != ''
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Deploy over SSH
         if: env.AWS_DEPLOY_HOST != ''
