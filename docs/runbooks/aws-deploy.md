@@ -115,7 +115,8 @@ git clone https://github.com/fworks-tech/atlaslink.git && cd atlaslink
   echo "ATLASLINK_HOST=0.0.0.0"
   echo "ATLASLINK_PORT=3000"
   for p in OPENCODE_API_KEY GROQ_API_KEY ATLASLINK_API_TOKEN ATLASLINK_JWT_SECRET ATLASLINK_DATABASE_URL; do
-    echo "$p=$(aws ssm get-parameter --name /atlaslink/$p --with-decryption --query Parameter.Value --output text)"
+    val=$(aws ssm get-parameter --name /atlaslink/$p --with-decryption --query Parameter.Value --output text 2>/dev/null) || continue
+    [ -n "$val" ] && echo "$p=$val"
   done
 } > .env && chmod 600 .env
 
