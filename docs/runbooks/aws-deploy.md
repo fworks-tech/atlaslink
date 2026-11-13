@@ -72,6 +72,26 @@ Inline policy for `atlaslink-ec2` (first boot reads the secrets):
 Wait for *Available*. Note the endpoint:
 `atlaslink.xxxxx.us-east-1.rds.amazonaws.com`.
 
+Staging uses the CLI equivalent (the master password is generated once and
+lives only inside the SSM `ATLASLINK_DATABASE_URL`):
+
+```bash
+aws rds create-db-subnet-group --db-subnet-group-name atlaslink-db-subnets \
+  --db-subnet-group-description "Atlaslink default VPC subnets" \
+  --subnet-ids <subnet-a> <subnet-b>
+# create atlaslink-db SG, then allow 5432 from the atlaslink EC2 SG
+aws rds create-db-instance --db-instance-identifier atlaslink \
+  --db-instance-class db.t3.micro --engine postgres --engine-version 16.15 \
+  --master-username atlas --master-user-password "$DB_PASS" --db-name atlaslink \
+  --allocated-storage 20 --storage-type gp2 --no-publicly-accessible \
+  --vpc-security-group-ids <db-sg> --db-subnet-group-name atlaslink-db-subnets \
+  --backup-retention-period 1 --no-multi-az --no-auto-minor-version-upgrade \
+  --storage-encrypted
+```
+
+The AWS **Free plan** caps automated backup retention at 1 day; raising it
+requires upgrading the account plan. #125 tracks the backup/restore drill.
+
 ## 4. DNS (staging)
 
 In Vercel DNS for `flabs.tech`:
@@ -79,6 +99,11 @@ In Vercel DNS for `flabs.tech`:
 ```
 staging  A  <EC2_PUBLIC_IP>
 ```
+
+The record must be an **A record to the Elastic IP**, not a Vercel domain
+assignment. If `staging` resolves to `64.29.17.x` / `216.198.79.x`, the ACME
+challenge lands on Vercel and fails; remove the staging domain from the Vercel
+project before adding the record.
 
 Caddy provisions the Let's Encrypt certificate on first request to the host.
 
@@ -107,6 +132,11 @@ sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile \
 # Docker (Ubuntu 24.04 ships without it)
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker ubuntu && newgrp docker
+
+# AWS CLI v2: the .env loop reads SSM through the instance role
+curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-aarch64.zip -o /tmp/awscliv2.zip
+sudo apt-get install -y unzip
+sudo unzip -q -o /tmp/awscliv2.zip -d /tmp && sudo /tmp/aws/install
 
 git clone https://github.com/fworks-tech/atlaslink.git && cd atlaslink
 
@@ -154,8 +184,13 @@ Repo **Settings → Secrets and variables → Actions**:
 
 | Name | Value |
 |---|---|
-| `AWS_DEPLOY_HOST` | `<EC2_PUBLIC_IP>` (or DNS) |
+| `AWS_DEPLOY_HOST` | Elastic IP (or DNS once it is proven) |
 | `AWS_DEPLOY_KEY` | full contents of `atlaslink.pem` |
+
+Use the Elastic IP for the host until DNS is proven; a stale hostname or key
+turns the deploy into a failed SSH, not a deploy. Re-set both secrets after any
+key rotation. On the canonical repo an empty `AWS_DEPLOY_HOST` fails the
+workflow instead of reporting a green no-op.
 
 Pin the host key before trusting the first deploy: `ssh-keyscan <EC2_PUBLIC_IP>`
 from a trusted network and keep it (the workflow uses
@@ -180,6 +215,10 @@ Oracle sibling per #329.
 | `docker compose` fails on `.env` | §6 didn't run, or SSM parameters are missing (`aws ssm get-parameter …` as the `ubuntu` user) |
 | Build dies with `Killed` / exit 137 | Swap is missing (§6) — `npm ci` plus the `better-sqlite3` compile needs more than the 1 GB t4g.micro offers; `free -m` should show the swapfile |
 | Cert not issued | DNS not resolving yet, or port 443 SG closed — Caddy retries once DNS is right |
+| Caddy log shows `acme-staging-v02` | The Caddyfile must pin `acme_ca https://acme-v02.api.letsencrypt.org/directory`; reload Caddy |
+| ACME challenge 404 from `64.29.17.x` / `216.198.79.x` | `staging` still points at Vercel; set the A record to the Elastic IP |
+| Deploy workflow green but nothing deployed | `AWS_DEPLOY_HOST` was empty; the guard now fails instead of skipping |
+| Cert still missing after DNS propagates | `docker compose -f docker-compose.yml -f docker-compose.aws.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile` |
 | `/health` keeps returning old `"providers"` | Image build failed on the instance: `docker compose -f docker-compose.yml -f docker-compose.aws.yml build` and read the router stage output |
 | `/health/ready` not OK | Router can't reach subgraphs: `docker compose logs router` — `backend:3000` must resolve on the compose network |
 | Deploy workflow red at the poll step | SSH/deploy worked but the marker never matched — same log commands as above |

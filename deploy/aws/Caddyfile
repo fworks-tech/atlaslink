@@ -6,11 +6,13 @@
 #
 # Routing: /graphql and /health/ready go to the Cosmo router (federated graph
 # edge); everything else reaches the daemon.
-
-:80 {
-	redir https://staging.atlas.flabs.tech{uri} permanent
+{
+	# Pin the production ACME directory: the staging CA issues certs browsers reject.
+	acme_ca https://acme-v02.api.letsencrypt.org/directory
 }
 
+# Caddy's automatic HTTPS owns :80 for redirects and ACME challenges; a
+# catch-all block here would shadow the challenge path.
 staging.atlas.flabs.tech {
 	handle /graphql* {
 		reverse_proxy router:3002

@@ -8,6 +8,7 @@ on:
     workflows: ["CI"]
     types:
       - completed
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -20,10 +21,17 @@ jobs:
     env:
       AWS_DEPLOY_HOST: ${{ secrets.AWS_DEPLOY_HOST }}
     if: |
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main'
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
     steps:
+      - name: Refuse a silent no-op on the canonical repository
+        if: github.repository == 'fworks-tech/atlaslink' && env.AWS_DEPLOY_HOST == ''
+        run: |
+          echo "::error::AWS_DEPLOY_HOST is not configured — refusing a green no-op deploy"
+          exit 1
+
       - name: Check out repository
         if: env.AWS_DEPLOY_HOST != ''
         uses: actions/checkout@v5
@@ -36,8 +44,10 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$AWS_DEPLOY_KEY" > ~/.ssh/aws_deploy_key
           chmod 600 ~/.ssh/aws_deploy_key
+          # The Caddyfile is bind-mounted: compose does not recreate Caddy when
+          # only the file changes, so reload it after the stack is up.
           ssh -i ~/.ssh/aws_deploy_key -o StrictHostKeyChecking=accept-new "ubuntu@$AWS_DEPLOY_HOST" \
-            'cd atlaslink && git pull --ff-only && docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build'
+            'cd atlaslink && git pull --ff-only && docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build && sleep 3 && docker compose -f docker-compose.yml -f docker-compose.aws.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile'
           echo "Compose accepted the new build — waiting for it to serve."
 
       - name: Wait for the service to come back with the new build
