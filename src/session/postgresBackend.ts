@@ -524,6 +524,8 @@ export class PostgresBackend implements SessionBackend {
   }
 
   async listDailyCost(filter: DailyCostFilter): Promise<CostUsageRow[]> {
+    // Same untyped-parameter issue as the list filters: RDS cannot infer $2/$3.
+    const textCast = this.#db.dialect === 'postgres' ? '::text' : ''
     const { rows } = await this.#db.query<{
       day: string
       agent: string
@@ -534,8 +536,8 @@ export class PostgresBackend implements SessionBackend {
     }>(
       `SELECT day, agent, model, prompt_tokens, completion_tokens, step_cost FROM daily_cost_buckets
        WHERE tenant_id = $1
-         AND ($2 IS NULL OR day >= $2)
-         AND ($3 IS NULL OR day <= $3)
+         AND ($2${textCast} IS NULL OR day >= $2${textCast})
+         AND ($3${textCast} IS NULL OR day <= $3${textCast})
        ORDER BY day ASC`,
       [this.#tenantId, filter.since ?? null, filter.until ?? null]
     )
@@ -598,5 +600,10 @@ function rankedMatchClause(dialect: Db['dialect']): string {
 }
 
 function normalizeFilter(filter: SessionFilter): { status: string | null; since: string | null } {
-  return { status: filter.status ?? null, since: filter.since ?? null }
+  return {
+    status: filter.status ?? null,
+    // The ranked CTE compares created_at as text: canonical UTC keeps that
+    // text order equal to time order for any accepted offset.
+    since: filter.since ? new Date(filter.since).toISOString() : null,
+  }
 }

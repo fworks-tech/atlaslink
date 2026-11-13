@@ -154,12 +154,22 @@ test('PostgresBackend: ranked listing works on the Postgres dialect', async () =
   const adapter = new PgliteDb(db)
   await runMigrations(adapter)
   const backend = new PostgresBackend(adapter)
-  await backend.append({ ...created })
+  await backend.append({ ...created, projectId: 'proj-1' })
   await backend.append({ ...running })
 
   const list = await backend.list({ limit: 50, offset: 0 })
   assert.equal(list.total, 1)
   assert.equal(list.sessions[0]?.status, 'running')
+
+  const byProject = await backend.list({ projectId: 'proj-1', status: 'running', limit: 50, offset: 0 })
+  assert.equal(byProject.total, 1)
+  assert.equal(byProject.sessions[0]?.sessionId, 'ses-1')
+
+  // 00:30+02:00 is 22:30Z (before the fixtures); 00:30-02:00 is 02:30Z (after).
+  assert.equal((await backend.list({ since: '2026-01-01T00:30:00+02:00', limit: 50, offset: 0 })).total, 1)
+  assert.equal((await backend.list({ since: '2026-01-01T00:30:00-02:00', limit: 50, offset: 0 })).total, 0)
+
+  assert.deepEqual(await backend.listDailyCost({}), [])
   await db.close()
 })
 
