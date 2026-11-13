@@ -305,20 +305,23 @@ export class PostgresBackend implements SessionBackend {
   private async listByProject(filter: SessionFilter): Promise<SessionList> {
     const projectId = filter.projectId!
     const { status, since } = normalizeFilter(filter)
+    // RDS needs the casts to infer null filter types; SQLite rejects `::`.
+    const textCast = this.#db.dialect === 'postgres' ? '::text' : ''
+    const tsCast = this.#db.dialect === 'postgres' ? '::timestamptz' : ''
 
     const [countRes, pageRes] = await Promise.all([
       this.db.query<{ total: number }>(
         `SELECT count(*) AS total FROM sessions
          WHERE tenant_id = $1 AND project_id = $2
-           AND ($3 IS NULL OR status = $3)
-           AND ($4 IS NULL OR created_at >= $4)`,
+           AND ($3${textCast} IS NULL OR status = $3${textCast})
+           AND ($4${tsCast} IS NULL OR created_at >= $4${tsCast})`,
         [this.#tenantId, projectId, status, since]
       ),
       this.db.query<SessionDirectoryRow>(
         `SELECT session_id, project_id, title, status, created_at FROM sessions
          WHERE tenant_id = $1 AND project_id = $2
-           AND ($3 IS NULL OR status = $3)
-           AND ($4 IS NULL OR created_at >= $4)
+           AND ($3${textCast} IS NULL OR status = $3${textCast})
+           AND ($4${tsCast} IS NULL OR created_at >= $4${tsCast})
          ORDER BY created_at DESC
          LIMIT $5 OFFSET $6`,
         [this.#tenantId, projectId, status, since, filter.limit, filter.offset]
@@ -337,11 +340,11 @@ export class PostgresBackend implements SessionBackend {
 
     const [countRes, pageRes] = await Promise.all([
       this.db.query<{ total: number }>(
-        `${rankedSessionCte(this.#db.dialect)} SELECT count(*) AS total FROM ranked${rankedMatchClause()}`,
+        `${rankedSessionCte(this.#db.dialect)} SELECT count(*) AS total FROM ranked${rankedMatchClause(this.#db.dialect)}`,
         [this.#tenantId, status, since]
       ),
       this.db.query<{ sessionId: string }>(
-        `${rankedSessionCte(this.#db.dialect)} SELECT session_id AS "sessionId" FROM ranked${rankedMatchClause()} ORDER BY created_at DESC LIMIT $4 OFFSET $5`,
+        `${rankedSessionCte(this.#db.dialect)} SELECT session_id AS "sessionId" FROM ranked${rankedMatchClause(this.#db.dialect)} ORDER BY created_at DESC LIMIT $4 OFFSET $5`,
         [this.#tenantId, status, since, filter.limit, filter.offset]
       ),
     ])
@@ -521,6 +524,8 @@ export class PostgresBackend implements SessionBackend {
   }
 
   async listDailyCost(filter: DailyCostFilter): Promise<CostUsageRow[]> {
+    // Same untyped-parameter issue as the list filters: RDS cannot infer $2/$3.
+    const textCast = this.#db.dialect === 'postgres' ? '::text' : ''
     const { rows } = await this.#db.query<{
       day: string
       agent: string
@@ -531,8 +536,8 @@ export class PostgresBackend implements SessionBackend {
     }>(
       `SELECT day, agent, model, prompt_tokens, completion_tokens, step_cost FROM daily_cost_buckets
        WHERE tenant_id = $1
-         AND ($2 IS NULL OR day >= $2)
-         AND ($3 IS NULL OR day <= $3)
+         AND ($2${textCast} IS NULL OR day >= $2${textCast})
+         AND ($3${textCast} IS NULL OR day <= $3${textCast})
        ORDER BY day ASC`,
       [this.#tenantId, filter.since ?? null, filter.until ?? null]
     )
@@ -552,8 +557,9 @@ export class PostgresBackend implements SessionBackend {
  * from the ranking — otherwise a trailing message would hide the session from
  * every status filter. */
 function jsonExtract(dialect: Db['dialect'], field: string, path: string): string {
+  // Postgres `->>` takes an unqualified key; SQLite json_extract takes the path.
   return dialect === 'postgres'
-    ? `${field}->>'${path}'`
+    ? `${field}->>'${path.replace(/^\$\./, '')}'`
     : `json_extract(${field}, '${path}')`
 }
 
@@ -580,15 +586,24 @@ function rankedSessionCte(dialect: Db['dialect']): string {
 }
 
 /** Row-selection predicate shared by the count and page queries. */
-function rankedMatchClause(): string {
+function rankedMatchClause(dialect: Db['dialect']): string {
+  // Explicit casts: Postgres cannot infer a parameter used only in an IS NULL
+  // branch, and the RDS planner rejects the untyped query. The ranked CTE's
+  // created_at is text (event timestamps), so the since filter stays text.
+  const textCast = dialect === 'postgres' ? '::text' : ''
   return `
     WHERE rn = 1
-      AND ($2 IS NULL
-           OR last_type = 'session.' || $2
-           OR ($2 = 'queued' AND last_type = 'session.created'))
-      AND ($3 IS NULL OR created_at >= $3)`
+      AND ($2${textCast} IS NULL
+           OR last_type = 'session.' || $2${textCast}
+           OR ($2${textCast} = 'queued' AND last_type = 'session.created'))
+      AND ($3${textCast} IS NULL OR created_at >= $3${textCast})`
 }
 
 function normalizeFilter(filter: SessionFilter): { status: string | null; since: string | null } {
-  return { status: filter.status ?? null, since: filter.since ?? null }
+  return {
+    status: filter.status ?? null,
+    // The ranked CTE compares created_at as text: canonical UTC keeps that
+    // text order equal to time order for any accepted offset.
+    since: filter.since ? new Date(filter.since).toISOString() : null,
+  }
 }
