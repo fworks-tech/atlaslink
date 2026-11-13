@@ -149,6 +149,20 @@ test('migrations apply once and are idempotent on a fresh database', async () =>
   assert.deepEqual(tables.map((t) => t.name), ['api_keys', 'daily_cost_buckets', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
 })
 
+test('PostgresBackend: ranked listing works on the Postgres dialect', async () => {
+  const db = new PGlite()
+  const adapter = new PgliteDb(db)
+  await runMigrations(adapter)
+  const backend = new PostgresBackend(adapter)
+  await backend.append({ ...created })
+  await backend.append({ ...running })
+
+  const list = await backend.list({ limit: 50, offset: 0 })
+  assert.equal(list.total, 1)
+  assert.equal(list.sessions[0]?.status, 'running')
+  await db.close()
+})
+
 async function tableNames(adapter: Db): Promise<string[]> {
   const { rows } = await adapter.query<{ name: string }>(
     `SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name`
