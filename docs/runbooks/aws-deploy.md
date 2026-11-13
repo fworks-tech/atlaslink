@@ -115,8 +115,13 @@ aws ssm put-parameter --name /atlaslink/GROQ_API_KEY       --type SecureString -
 aws ssm put-parameter --name /atlaslink/ATLASLINK_API_TOKEN --type SecureString --value "$(openssl rand -hex 32)"
 aws ssm put-parameter --name /atlaslink/ATLASLINK_JWT_SECRET --type SecureString --value "$(openssl rand -hex 32)"
 aws ssm put-parameter --name /atlaslink/ATLASLINK_DATABASE_URL --type SecureString \
-  --value "postgresql://atlas:<password>@atlaslink.xxxxx.us-east-1.rds.amazonaws.com:5432/atlaslink"
+  --value "postgresql://atlas:<password>@atlaslink.xxxxx.us-east-1.rds.amazonaws.com:5432/atlaslink?sslmode=require&uselibpqcompat=true"
 ```
+
+RDS enforces TLS. The installed `pg` treats `sslmode=require` as `verify-full` and
+rejects the RDS CA, so `uselibpqcompat=true` restores libpq behavior: the
+connection is encrypted without CA verification. Staging shortcut: switch to
+`sslmode=verify-full` plus the RDS CA bundle before production.
 
 ## 6. First boot on the instance
 
@@ -213,6 +218,7 @@ Oracle sibling per #329.
 | Symptom | Cause / fix |
 |---|---|
 | `docker compose` fails on `.env` | §6 didn't run, or SSM parameters are missing (`aws ssm get-parameter …` as the `ubuntu` user) |
+| Startup logs `no pg_hba.conf entry ... no encryption` or `self-signed certificate in certificate chain` | `ATLASLINK_DATABASE_URL` is missing `?sslmode=require&uselibpqcompat=true` (§5) |
 | Build dies with `Killed` / exit 137 | Swap is missing (§6) — `npm ci` plus the `better-sqlite3` compile needs more than the 1 GB t4g.micro offers; `free -m` should show the swapfile |
 | Cert not issued | DNS not resolving yet, or port 443 SG closed — Caddy retries once DNS is right |
 | Caddy log shows `acme-staging-v02` | The Caddyfile must pin `acme_ca https://acme-v02.api.letsencrypt.org/directory`; reload Caddy |
