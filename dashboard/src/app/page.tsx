@@ -1,14 +1,13 @@
 import Link from "next/link";
 import { IconEye, IconGitFork, IconShieldCheck, IconWallet } from "@tabler/icons-react";
 import FadeIn from "@/components/FadeIn";
-import LandingCanvas from "@/components/LandingCanvas";
 import SharedRoomCard from "@/components/SharedRoomCard";
 
 /**
  * Marketing surface for visitors — the app lives at /atlas (spec:
  * docs/spec/auth-app-flow.md). Atlas identity: deep navy, violet + gold,
- * Space Grotesk display type, the giant watermark, and a live choreography
- * of an actual session as the hero. Deliberately NOT agenthood-site's
+ * Space Grotesk display type, the giant watermark, and a demo video of a
+ * real hand-off to the room as the hero. Deliberately NOT agenthood-site's
  * structure: no stats bar, no members grid, no 3-step "how it works".
  */
 
@@ -37,7 +36,7 @@ const evidence = [
 export default function LandingPage() {
   return (
     <main className="font-sans">
-      {/* Hero — watermark + display type + live canvas */}
+      {/* Hero — watermark + display type + demo video */}
       <section>
         <div className="mx-auto max-w-6xl px-6 pb-16 pt-14 sm:pt-20">
           <div className="grid items-center gap-10 lg:grid-cols-[1fr_1.15fr]">
@@ -87,7 +86,16 @@ export default function LandingPage() {
             </FadeIn>
 
             <FadeIn delay={150}>
-              <LandingCanvas />
+              <video
+                data-testid="hero-video"
+                className="w-full rounded-2xl border border-line shadow-lg"
+                src="/hand-it-to-the-room.mp4"
+                autoPlay
+                muted
+                loop
+                playsInline
+                aria-label="Demo video: handing a task to the shared room"
+              />
             </FadeIn>
           </div>
         </div>

@@ -1,6 +1,8 @@
 "use client";
 
 import { IconCheck } from "@tabler/icons-react";
+import Disc from "./room/Disc";
+import LiveBadge from "./room/LiveBadge";
 
 /**
  * Storyboard of a shared room resolving a PR security review — the visual
@@ -79,22 +81,6 @@ const TIMELINE: Array<{ label: string; time: string; pill?: string; done?: boole
   { label: "Vulnerability resolved", time: "8:05 PM", done: true },
 ];
 
-function Disc({ initials, tone, size = "md" }: { initials: string; tone: "human" | "agent"; size?: "md" | "sm" }) {
-  const dims = size === "md" ? "h-9 w-9 text-xs" : "h-7 w-7 text-[10px]";
-  const palette =
-    tone === "human"
-      ? "border-gold/50 bg-gold/10 text-gold"
-      : "border-accent/50 bg-accent/10 text-accent";
-  return (
-    <span
-      aria-hidden
-      className={`flex shrink-0 items-center justify-center rounded-full border font-semibold ${dims} ${palette}`}
-    >
-      {initials}
-    </span>
-  );
-}
-
 function AgentCard({ agent, member, children }: { agent: string; member: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border border-accent/40 bg-surface p-4">
@@ -137,10 +123,7 @@ export default function SharedRoomCard() {
             </span>
           ))}
         </div>
-        <span className="flex items-center gap-1.5 rounded-full bg-gold/10 px-3 py-1 text-xs font-medium text-gold">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gold" />
-          Live
-        </span>
+        <LiveBadge />
       </div>
 
       {/* Room body: two agents flanking the collaboration chat */}
