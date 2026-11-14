@@ -35,6 +35,28 @@ function parseEvent(raw: string | SessionEvent): SessionEvent {
   return typeof raw === 'string' ? (JSON.parse(raw) as SessionEvent) : raw
 }
 
+/** Sentinel for the owner-quorum rollback in setProjectMemberGuarded. */
+const LAST_OWNER_ERROR = Symbol('last-owner')
+
+async function upsertProjectMember(
+  db: Db,
+  dialect: Db['dialect'],
+  tenantId: string,
+  projectId: string,
+  userId: string,
+  role: ProjectRole
+): Promise<void> {
+  if (dialect === 'postgres') {
+    await db.query(
+      `INSERT INTO project_members (tenant_id, project_id, user_id, role) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (tenant_id, project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+      [tenantId, projectId, userId, role]
+    )
+  } else {
+    await db.query(`DELETE FROM project_members WHERE tenant_id = $1 AND project_id = $2 AND user_id = $3`, [tenantId, projectId, userId])
+    await db.query(`INSERT INTO project_members (tenant_id, project_id, user_id, role) VALUES ($1, $2, $3, $4)`, [tenantId, projectId, userId, role])
+  }
+}
 /** Chat/steer/reply and member.event mirrors append to history without moving
  * the lifecycle — the sessions directory keeps its status and only `updated_at`
  * advances. Single source for both the directory projection and the ranked-CTE
@@ -449,17 +471,7 @@ export class PostgresBackend implements SessionBackend {
   }
 
   async setProjectMember(projectId: string, userId: string, role: ProjectRole): Promise<ProjectMember> {
-    const dialect = this.#db.dialect
-    if (dialect === 'postgres') {
-      await this.db.query(
-        `INSERT INTO project_members (tenant_id, project_id, user_id, role) VALUES ($1, $2, $3, $4)
-         ON CONFLICT (tenant_id, project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
-        [this.#tenantId, projectId, userId, role]
-      )
-    } else {
-      await this.db.query(`DELETE FROM project_members WHERE tenant_id = $1 AND project_id = $2 AND user_id = $3`, [this.#tenantId, projectId, userId])
-      await this.db.query(`INSERT INTO project_members (tenant_id, project_id, user_id, role) VALUES ($1, $2, $3, $4)`, [this.#tenantId, projectId, userId, role])
-    }
+    await upsertProjectMember(this.db, this.#db.dialect, this.#tenantId, projectId, userId, role)
     return { projectId, userId, role, tenantId: this.#tenantId }
   }
 
@@ -469,6 +481,47 @@ export class PostgresBackend implements SessionBackend {
       [this.#tenantId, projectId, userId]
     )
     return rows.length > 0
+  }
+
+  async setProjectMemberGuarded(
+    projectId: string,
+    userId: string,
+    role: ProjectRole
+  ): Promise<{ member: ProjectMember } | { error: 'last-owner' }> {
+    // Upsert then verify ≥1 owner inside one transaction: concurrent demotes
+    // serialize, and the throw rolls back the stranding write.
+    try {
+      const member = await this.db.transaction(async (tx) => {
+        await upsertProjectMember(tx, tx.dialect, this.#tenantId, projectId, userId, role)
+        const { rows } = await tx.query<{ n: string }>(
+          `SELECT COUNT(*) AS n FROM project_members WHERE tenant_id = $1 AND project_id = $2 AND role = 'owner'`,
+          [this.#tenantId, projectId]
+        )
+        if (Number(rows[0]?.n ?? 0) === 0) throw LAST_OWNER_ERROR
+        return { projectId, userId, role, tenantId: this.#tenantId } as ProjectMember
+      })
+      return { member }
+    } catch (err) {
+      if (err === LAST_OWNER_ERROR) return { error: 'last-owner' }
+      throw err
+    }
+  }
+
+  async listProjectInvites(projectId: string): Promise<ProjectInvite[]> {
+    const { rows } = await this.db.query<{ id: string; project_id: string; role: string; token_hash: string; expires_at: string | Date; created_by: string }>(
+      `SELECT id, project_id, role, token_hash, expires_at, created_by FROM project_invites
+       WHERE tenant_id = $1 AND project_id = $2 ORDER BY created_at DESC`,
+      [this.#tenantId, projectId]
+    )
+    return rows.map((r) => ({
+      id: r.id,
+      projectId: r.project_id,
+      role: r.role as ProjectRole,
+      tokenHash: r.token_hash,
+      expiresAt: r.expires_at instanceof Date ? r.expires_at.toISOString() : String(r.expires_at),
+      createdBy: r.created_by,
+      tenantId: this.#tenantId,
+    }))
   }
 
   async createProjectInvite(invite: ProjectInvite): Promise<ProjectInvite> {
@@ -496,6 +549,28 @@ export class PostgresBackend implements SessionBackend {
       [this.#tenantId, id, projectId]
     )
     return rows.length > 0
+  }
+
+  async acceptProjectInvite(
+    tokenHash: string,
+    userId: string
+  ): Promise<{ projectId: string; role: ProjectRole } | null> {
+    // DELETE..RETURNING consumes the link atomically: exactly one of two
+    // concurrent accepts deletes the row. The member upsert joins the same
+    // transaction so a failed insert restores the invite.
+    return this.db.transaction(async (tx) => {
+      const { rows } = await tx.query<{ project_id: string; role: string; expires_at: string | Date }>(
+        `DELETE FROM project_invites WHERE tenant_id = $1 AND token_hash = $2
+         RETURNING project_id, role, expires_at`,
+        [this.#tenantId, tokenHash]
+      )
+      if (rows.length === 0) return null
+      const expiresAt = rows[0].expires_at instanceof Date ? rows[0].expires_at.toISOString() : String(rows[0].expires_at)
+      if (Date.parse(expiresAt) < Date.now()) return null
+      const role = rows[0].role as ProjectRole
+      await upsertProjectMember(tx, tx.dialect, this.#tenantId, rows[0].project_id, userId, role)
+      return { projectId: rows[0].project_id, role }
+    })
   }
 
   async deleteSession(sessionId: string): Promise<void> {

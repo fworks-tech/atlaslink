@@ -264,6 +264,32 @@ export class EventLogBackend implements SessionBackend {
     return this._members.delete(`${this._tenantId}:${projectId}:${userId}`)
   }
 
+  async setProjectMemberGuarded(
+    projectId: string,
+    userId: string,
+    role: ProjectRole
+  ): Promise<{ member: ProjectMember } | { error: 'last-owner' }> {
+    // Synchronous map ops with no await between mutate and check: atomic on
+    // the Node event loop, so concurrent demotes cannot strand the project.
+    const key = `${this._tenantId}:${projectId}:${userId}`
+    const prior = this._members.get(key) ?? null
+    const member: ProjectMember = { projectId, userId, role, tenantId: this._tenantId }
+    this._members.set(key, member)
+    const hasOwner = [...this._members.values()].some(
+      (m) => m.tenantId === this._tenantId && m.projectId === projectId && m.role === 'owner'
+    )
+    if (!hasOwner) {
+      if (prior) this._members.set(key, prior)
+      else this._members.delete(key)
+      return { error: 'last-owner' }
+    }
+    return { member }
+  }
+
+  async listProjectInvites(projectId: string): Promise<ProjectInvite[]> {
+    return [...this._invites.values()].filter((i) => i.tenantId === this._tenantId && i.projectId === projectId)
+  }
+
   async createProjectInvite(invite: ProjectInvite): Promise<ProjectInvite> {
     const row: ProjectInvite = { ...invite, tenantId: this._tenantId }
     this._invites.set(`${this._tenantId}:${invite.id}`, row)
@@ -274,6 +300,30 @@ export class EventLogBackend implements SessionBackend {
   async getProjectInviteByTokenHash(tokenHash: string): Promise<ProjectInvite | null> {
     const inv = this._invitesByHash.get(tokenHash) ?? null
     return inv && inv.tenantId === this._tenantId ? inv : null
+  }
+
+  async acceptProjectInvite(
+    tokenHash: string,
+    userId: string
+  ): Promise<{ projectId: string; role: ProjectRole } | null> {
+    // No await between lookup, consume, and insert: atomic on the event loop,
+    // so a double-submitted single-use link admits exactly one member.
+    const inv = this._invitesByHash.get(tokenHash) ?? null
+    if (!inv || inv.tenantId !== this._tenantId) return null
+    if (Date.parse(inv.expiresAt) < Date.now()) {
+      this._invites.delete(`${this._tenantId}:${inv.id}`)
+      this._invitesByHash.delete(inv.tokenHash)
+      return null
+    }
+    this._invites.delete(`${this._tenantId}:${inv.id}`)
+    this._invitesByHash.delete(inv.tokenHash)
+    this._members.set(`${this._tenantId}:${inv.projectId}:${userId}`, {
+      projectId: inv.projectId,
+      userId,
+      role: inv.role,
+      tenantId: this._tenantId,
+    })
+    return { projectId: inv.projectId, role: inv.role }
   }
 
   async deleteProjectInvite(id: string, projectId: string): Promise<boolean> {

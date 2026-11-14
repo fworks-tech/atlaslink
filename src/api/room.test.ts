@@ -796,13 +796,16 @@ test('room takes the tenant from the JWT and rejects a client tenant claim', asy
   const srv = await trackedServer(dir, { authStore, jwtSecret: JWT_SECRET, token: 'legacy-token' })
   try {
     const jwt = jwtFor('tenant-a')
+    const projectId = JSON.parse(
+      (await jsonRequest(srv.port, 'POST', '/v1/projects', { name: 'tenant-probe' }, { authorization: `Bearer ${jwt}` })).body
+    ).project.id
     const created = JSON.parse(
       (
         await jsonRequest(
           srv.port,
           'POST',
           '/v1/tasks',
-          { member: 'm', prompt: 'p', projectId: 'proj-1' },
+          { member: 'm', prompt: 'p', projectId },
           { authorization: `Bearer ${jwt}` }
         )
       ).body

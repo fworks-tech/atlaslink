@@ -91,6 +91,10 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       if (edgeError !== null) return reply.code(400).send({ ok: false, error: edgeError })
       // missing project rows are legacy (pre-ACL sessions) — enforce only when the project exists
       const project = await tenantCtx.backend.getProject(projectId)
+      if (!project && request.auth?.userId) {
+        // authenticated callers must not mint sessions under unknown ids (ACL bypass)
+        return reply.code(404).send({ ok: false, error: 'unknown project' })
+      }
       if (project) {
         if (!(await canReadProject(tenantCtx.backend, projectId, request.auth?.userId))) {
           return reply.code(404).send({ ok: false, error: 'unknown project' })
@@ -154,16 +158,36 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
           return reply.code(404).send({ ok: false, error: 'unknown project' })
         }
       }
-      const { sessions, total } = await backend.list(filter)
-      // selective sharing: hide sessions in invited-only projects from non-members
       const userId = request.auth?.userId
-      const visible = userId
-        ? (await Promise.all(sessions.map(async (s) => ((await canReadProject(backend, s.projectId ?? '', userId)) ? s : null)))).filter((s): s is AggregateSession => s !== null)
-        : sessions
+      // selective sharing: hide sessions in invited-only projects from non-members.
+      // ACL applies per session, so paginate AFTER filtering — paging the store
+      // first would silently drop rows (hidden sessions eat page slots) and
+      // report a wrong total. Full scan then slice; fine at free-tier scale.
+      if (!userId) {
+        const { sessions, total } = await backend.list(filter)
+        return reply.send({
+          ok: true,
+          sessions: sessions.map(sessionToWire),
+          total,
+          limit: filter.limit,
+          offset: filter.offset,
+        })
+      }
+      const base = { projectId: filter.projectId, tenantId, status: filter.status, since: filter.since }
+      const candidates: AggregateSession[] = []
+      for (let offset = 0; ; offset += 500) {
+        const { sessions } = await backend.list({ ...base, limit: 500, offset })
+        candidates.push(...sessions)
+        if (sessions.length < 500) break
+      }
+      const visible: AggregateSession[] = []
+      for (const s of candidates) {
+        if (await canReadProject(backend, s.projectId ?? '', userId)) visible.push(s)
+      }
       return reply.send({
         ok: true,
-        sessions: visible.map(sessionToWire),
-        total: userId ? visible.length : total,
+        sessions: visible.slice(filter.offset, filter.offset + filter.limit).map(sessionToWire),
+        total: visible.length,
         limit: filter.limit,
         offset: filter.offset,
       })

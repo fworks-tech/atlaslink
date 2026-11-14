@@ -253,7 +253,7 @@ export async function createAppServer(params: {
     }
 
     // --- M4 Project API: project-scoped session workspace ---
-    registerProjectRoutes(api, { backend })
+    registerProjectRoutes(api, { backend, authStore: params.authStore ?? null })
 
     // --- Auth key management (requires authentication) ---
     if (params.authStore) {

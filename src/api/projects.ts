@@ -1,11 +1,15 @@
 import type { FastifyInstance } from 'fastify'
 import type { SessionBackend } from '../session/sessionBackend'
+import type { AuthStore } from '../session/authStore'
 import { randomBytes, randomUUID } from 'node:crypto'
+import { isUniqueViolation } from '../session/db'
 import { tenantBackendForRequest } from './tenant'
 import { canManageMembers, canReadProject, canWriteProject, generateInviteToken, hashInviteToken, isProjectRole } from './projectAcl'
 
 interface ProjectDeps {
   backend: SessionBackend
+  /** Optional: when present, member writes verify the user exists. */
+  authStore?: AuthStore | null
 }
 
 /**
@@ -80,8 +84,8 @@ export function registerProjectRoutes(app: FastifyInstance, deps: ProjectDeps): 
       if (!(await canReadProject(tenantCtx.backend, project.id, request.auth?.userId))) {
         return reply.code(404).send({ ok: false, error: 'unknown project' })
       }
-      if (!(await canWriteProject(tenantCtx.backend, project.id, request.auth?.userId))) {
-        return reply.code(403).send({ ok: false, error: 'viewer cannot delete project' })
+      if (!(await canManageMembers(tenantCtx.backend, project.id, request.auth?.userId))) {
+        return reply.code(403).send({ ok: false, error: 'only owners delete project' })
       }
       const deleted = await tenantCtx.backend.deleteProject(request.params.projectId)
       if (!deleted) return reply.code(404).send({ ok: false, error: 'unknown project' })
@@ -134,17 +138,18 @@ export function registerProjectRoutes(app: FastifyInstance, deps: ProjectDeps): 
         if (!self) return reply.code(404).send({ ok: false, error: 'unknown project' })
         return reply.code(403).send({ ok: false, error: 'only owners manage members' })
       }
-      const member = await tenantCtx.backend.setProjectMember(project.id, userId!, role)
-      // never strand a project without an owner (would lock out management)
-      const after = await tenantCtx.backend.listProjectMembers(project.id)
-      if (!after.some((m) => m.role === 'owner')) {
-        // roll back the demotion — the store has no transaction here, restore prior role
-        const prior = members.find((m) => m.userId === userId)
-        if (prior) await tenantCtx.backend.setProjectMember(project.id, userId!, prior.role)
-        else await tenantCtx.backend.removeProjectMember(project.id, userId!)
+      // ghost users can never act, so adding one risks an unmanageable project
+      if (deps.authStore && !isLegacyClaim) {
+        const exists = await deps.authStore.findUserById(userId!)
+        if (!exists) return reply.code(404).send({ ok: false, error: 'unknown user' })
+      }
+      // guarded write: refuses (and rolls back) when it would strand the
+      // project without an owner — atomic, no check-then-write race
+      const result = await tenantCtx.backend.setProjectMemberGuarded(project.id, userId!, role)
+      if ('error' in result) {
         return reply.code(400).send({ ok: false, error: 'project must keep at least one owner' })
       }
-      return reply.send({ ok: true, member })
+      return reply.send({ ok: true, member: result.member })
     }
   )
 
@@ -175,16 +180,30 @@ export function registerProjectRoutes(app: FastifyInstance, deps: ProjectDeps): 
       }
       const role = request.body.role ?? 'editor'
       if (!isProjectRole(role)) return reply.code(400).send({ ok: false, error: 'invalid role' })
+      // editor → owner via a self-dealt link is privilege escalation: only
+      // owners mint owner invites
+      if (role === 'owner' && !(await canManageMembers(tenantCtx.backend, project.id, request.auth?.userId))) {
+        return reply.code(403).send({ ok: false, error: 'only owners invite owners' })
+      }
       const token = generateInviteToken()
       const hours = request.body.expiresInHours ?? 24
-      const invite = await tenantCtx.backend.createProjectInvite({
-        id: `inv-${randomBytes(8).toString('hex')}`,
-        projectId: project.id,
-        role,
-        tokenHash: hashInviteToken(token),
-        expiresAt: new Date(Date.now() + hours * 3600_000).toISOString(),
-        createdBy: request.auth?.userId ?? '',
-      })
+      // invite ids are 8 random bytes: retry once on the rare PK collision
+      let invite = null
+      for (let attempt = 0; attempt < 2 && !invite; attempt += 1) {
+        try {
+          invite = await tenantCtx.backend.createProjectInvite({
+            id: `inv-${randomBytes(8).toString('hex')}`,
+            projectId: project.id,
+            role,
+            tokenHash: hashInviteToken(token),
+            expiresAt: new Date(Date.now() + hours * 3600_000).toISOString(),
+            createdBy: request.auth?.userId ?? '',
+          })
+        } catch (err) {
+          if (!isUniqueViolation(err) || attempt > 0) throw err
+        }
+      }
+      if (!invite) throw new Error('invite id collision; retry the request')
       // single display of the plaintext token — stored only as a hash
       return reply.code(201).send({ ok: true, invite: { id: invite.id, projectId: invite.projectId, role: invite.role, expiresAt: invite.expiresAt }, token })
     }
@@ -194,17 +213,71 @@ export function registerProjectRoutes(app: FastifyInstance, deps: ProjectDeps): 
     const tenantCtx = tenantBackendForRequest(request, deps.backend)
     if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
     if (!request.auth?.userId) return reply.code(401).send({ ok: false, error: 'unauthorized' })
-    const invite = await tenantCtx.backend.getProjectInviteByTokenHash(hashInviteToken(request.params.token))
-    if (!invite) return reply.code(404).send({ ok: false, error: 'unknown or expired invite' })
-    if (Date.parse(invite.expiresAt) < Date.now()) {
-      await tenantCtx.backend.deleteProjectInvite(invite.id, invite.projectId).catch(() => undefined)
-      return reply.code(404).send({ ok: false, error: 'unknown or expired invite' })
-    }
-    const project = await tenantCtx.backend.getProject(invite.projectId)
+    // atomic single-use consume: exactly one of two concurrent accepts wins
+    const accepted = await tenantCtx.backend.acceptProjectInvite(hashInviteToken(request.params.token), request.auth.userId)
+    if (!accepted) return reply.code(404).send({ ok: false, error: 'unknown or expired invite' })
+    const project = await tenantCtx.backend.getProject(accepted.projectId)
     if (!project) return reply.code(404).send({ ok: false, error: 'unknown or expired invite' })
-    const member = await tenantCtx.backend.setProjectMember(invite.projectId, request.auth.userId, invite.role)
-    // single-use: consume on accept so a leaked link cannot be replayed
-    await tenantCtx.backend.deleteProjectInvite(invite.id, invite.projectId).catch(() => undefined)
+    const member = await tenantCtx.backend.getProjectMember(accepted.projectId, request.auth.userId)
     return reply.send({ ok: true, project, member })
+  })
+
+  app.get<{ Params: { projectId: string } }>('/projects/:projectId/invites', async (request, reply) => {
+    const tenantCtx = tenantBackendForRequest(request, deps.backend)
+    if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+    const project = await tenantCtx.backend.getProject(request.params.projectId)
+    if (!project) return reply.code(404).send({ ok: false, error: 'unknown project' })
+    if (!(await canReadProject(tenantCtx.backend, project.id, request.auth?.userId))) {
+      return reply.code(404).send({ ok: false, error: 'unknown project' })
+    }
+    if (!(await canManageMembers(tenantCtx.backend, project.id, request.auth?.userId))) {
+      return reply.code(403).send({ ok: false, error: 'only owners list invites' })
+    }
+    const invites = await tenantCtx.backend.listProjectInvites(project.id)
+    // token hashes stay server-side: only metadata leaves, the secret was
+    // shown once at creation
+    return reply.send({
+      ok: true,
+      invites: invites.map((i) => ({ id: i.id, projectId: i.projectId, role: i.role, expiresAt: i.expiresAt, createdBy: i.createdBy })),
+    })
+  })
+
+  app.delete<{ Params: { projectId: string; inviteId: string } }>('/projects/:projectId/invites/:inviteId', async (request, reply) => {
+    const tenantCtx = tenantBackendForRequest(request, deps.backend)
+    if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+    const project = await tenantCtx.backend.getProject(request.params.projectId)
+    if (!project) return reply.code(404).send({ ok: false, error: 'unknown project' })
+    if (!(await canReadProject(tenantCtx.backend, project.id, request.auth?.userId))) {
+      return reply.code(404).send({ ok: false, error: 'unknown project' })
+    }
+    if (!(await canManageMembers(tenantCtx.backend, project.id, request.auth?.userId))) {
+      return reply.code(403).send({ ok: false, error: 'only owners revoke invites' })
+    }
+    const deleted = await tenantCtx.backend.deleteProjectInvite(request.params.inviteId, project.id)
+    if (!deleted) return reply.code(404).send({ ok: false, error: 'unknown invite' })
+    return reply.send({ ok: true })
+  })
+
+  app.delete<{ Params: { projectId: string; userId: string } }>('/projects/:projectId/members/:userId', async (request, reply) => {
+    const tenantCtx = tenantBackendForRequest(request, deps.backend)
+    if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+    const project = await tenantCtx.backend.getProject(request.params.projectId)
+    if (!project) return reply.code(404).send({ ok: false, error: 'unknown project' })
+    if (!(await canReadProject(tenantCtx.backend, project.id, request.auth?.userId))) {
+      return reply.code(404).send({ ok: false, error: 'unknown project' })
+    }
+    if (!(await canManageMembers(tenantCtx.backend, project.id, request.auth?.userId))) {
+      return reply.code(403).send({ ok: false, error: 'only owners manage members' })
+    }
+    const target = await tenantCtx.backend.getProjectMember(project.id, request.params.userId)
+    if (!target) return reply.code(404).send({ ok: false, error: 'unknown member' })
+    if (target.role === 'owner') {
+      const members = await tenantCtx.backend.listProjectMembers(project.id)
+      if (!members.some((m) => m.role === 'owner' && m.userId !== target.userId)) {
+        return reply.code(400).send({ ok: false, error: 'project must keep at least one owner' })
+      }
+    }
+    await tenantCtx.backend.removeProjectMember(project.id, target.userId)
+    return reply.send({ ok: true })
   })
 }
