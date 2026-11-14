@@ -1,13 +1,13 @@
 name: Deploy AWS
 
-# Same discipline as the Render deploy: only what passed CI on main reaches
-# the EC2 stack (#328). Skips silently while the AWS secrets are unconfigured
-# (fresh forks) — the Render hook keeps working in parallel until #329.
+# Only what passed CI on main reaches the EC2 stack (#328). Skips silently
+# while the AWS secrets are unconfigured (fresh forks). Render is retired.
 on:
   workflow_run:
     workflows: ["CI"]
     types:
       - completed
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -16,17 +16,22 @@ jobs:
       contents: read
     concurrency:
       group: aws-deploy
-      cancel-in-progress: true
+      # Queue deploys: cancelling one can kill `docker compose up -d` between
+      # stopping the old backend and starting the new one.
+      cancel-in-progress: false
     env:
       AWS_DEPLOY_HOST: ${{ secrets.AWS_DEPLOY_HOST }}
     if: |
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main'
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
     steps:
-      - name: Check out repository
-        if: env.AWS_DEPLOY_HOST != ''
-        uses: actions/checkout@v5
+      - name: Refuse a silent no-op on the canonical repository
+        if: github.repository == 'fworks-tech/atlaslink' && env.AWS_DEPLOY_HOST == ''
+        run: |
+          echo "::error::AWS_DEPLOY_HOST is not configured — refusing a green no-op deploy"
+          exit 1
 
       - name: Deploy over SSH
         if: env.AWS_DEPLOY_HOST != ''
@@ -36,25 +41,40 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$AWS_DEPLOY_KEY" > ~/.ssh/aws_deploy_key
           chmod 600 ~/.ssh/aws_deploy_key
-          ssh -i ~/.ssh/aws_deploy_key -o StrictHostKeyChecking=accept-new "ubuntu@$AWS_DEPLOY_HOST" \
-            'cd atlaslink && git pull --ff-only && docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build'
+          # The Caddyfile is a single-file bind mount: `git pull` replaces the
+          # inode, so a running Caddy keeps serving the old file and a reload
+          # re-reads that stale copy. Recreate Caddy to pick up the new file.
+          # The RDS CA bundle is untracked (certs/ is ignored) and survives.
+          ssh -i ~/.ssh/aws_deploy_key -o StrictHostKeyChecking=accept-new "ubuntu@$AWS_DEPLOY_HOST" '
+            set -e
+            cd atlaslink
+            git pull --ff-only
+            mkdir -p certs
+            test -f certs/global-bundle.pem || curl -fsS https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o certs/global-bundle.pem
+            docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build
+            docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --force-recreate caddy
+          '
           echo "Compose accepted the new build — waiting for it to serve."
 
       - name: Wait for the service to come back with the new build
-        # Same build marker as the Render gate: "providers":N with N >= 1 means
-        # the current build is live — /health ok:true alone also passes a stale
-        # release, which must fail the workflow instead of the users finding it.
+        # "providers":N with N >= 1 means the current build is live — /health
+        # ok:true alone also passes a stale release, which must fail the workflow
+        # instead of the users finding it.
         if: env.AWS_DEPLOY_HOST != ''
         env:
           AWS_STAGING_URL: ${{ vars.AWS_STAGING_URL || 'https://staging.atlas.flabs.tech' }}
+          AWS_PROD_URL: ${{ vars.AWS_PROD_URL || 'https://api.atlas.flabs.tech' }}
         run: |
+          healthy() {
+            curl -fsS --max-time 10 "$1/health" | grep -Eq '"providers":[1-9]'
+          }
           for i in $(seq 1 30); do
             sleep 10
-            if curl -fsS --max-time 10 "$AWS_STAGING_URL/health" | grep -Eq '"providers":[1-9]'; then
-              echo "Service is healthy on a current build after $((i * 10))s"
+            if healthy "$AWS_STAGING_URL" && healthy "$AWS_PROD_URL"; then
+              echo "staging and production are healthy on the current build after $((i * 10))s"
               exit 0
             fi
-            echo "attempt $i: not healthy on the new build yet"
+            echo "attempt $i: staging or production is not healthy on the new build yet"
           done
-          echo "::error::service did not report the current build within 5 minutes — check EC2 (docker compose ps), Caddy, and the DNS record"
+          echo "::error::service did not report the current build within 5 minutes — check EC2 (docker compose ps), Caddy, and the DNS records for staging and api"
           exit 1

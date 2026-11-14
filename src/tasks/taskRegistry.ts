@@ -35,6 +35,7 @@ export class TaskRegistry {
     member: string
     prompt: string
     provider?: string
+    tenantId?: string
     id?: string
     correlationId?: string
     resume?: { checkpointId: string; reply: string }
@@ -50,6 +51,7 @@ export class TaskRegistry {
       correlationId: params.correlationId ?? `cor-${randomUUID()}`,
       status: SessionStatus.QUEUED,
       task: { member: params.member, prompt: params.prompt, ...(params.provider ? { provider: params.provider } : {}) },
+      ...(params.tenantId !== undefined ? { tenantId: params.tenantId } : {}),
       createdAt: new Date().toISOString(),
       startedAt: undefined,
       finishedAt: undefined,
@@ -198,6 +200,8 @@ export interface Session {
   correlationId: string
   status: SessionStatusType
   task: { member: string; prompt: string; provider?: string }
+  /** Tenant the session was created in; stamped on bridge envelopes. */
+  tenantId?: string
   createdAt: string
   startedAt: string | undefined
   finishedAt: string | undefined

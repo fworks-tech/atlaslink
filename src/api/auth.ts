@@ -65,6 +65,17 @@ export function checkBearer(
 /** Room upgrades are the one path that may carry the bearer in the query. */
 const ROOM_UPGRADE_PATTERN = /^\/v1\/sessions\/[^/]+\/room$/
 
+/** SSE streams browsers read with EventSource (no header support): ticket only here. */
+const SSE_TICKET_PATTERN = /^\/v1\/(events(\/[^/]+)?|projects\/[^/]+\/events)$/
+
+function queryBearer(query: unknown): string | undefined {
+  const q = query as { ticket?: unknown; token?: unknown } | undefined
+  const ticket = q?.ticket
+  if (typeof ticket === 'string' && ticket.length > 0) return ticket
+  const token = q?.token
+  return typeof token === 'string' && token.length > 0 ? token : undefined
+}
+
 function roomUpgradeToken(request: {
   method: string
   url: string
@@ -77,8 +88,18 @@ function roomUpgradeToken(request: {
     return undefined
   }
   if (!ROOM_UPGRADE_PATTERN.test(request.url.split('?')[0] ?? '')) return undefined
-  const token = (request.query as { token?: unknown } | undefined)?.token
-  return typeof token === 'string' ? token : undefined
+  return queryBearer(request.query)
+}
+
+function sseTicketToken(request: {
+  method: string
+  url: string
+  headers: Record<string, string | string[] | undefined>
+  query?: unknown
+}): string | undefined {
+  if (request.method !== 'GET') return undefined
+  if (!SSE_TICKET_PATTERN.test(request.url.split('?')[0] ?? '')) return undefined
+  return queryBearer(request.query)
 }
 
 /**
@@ -201,10 +222,12 @@ export function registerAuthGate(
   app.addHook('preHandler', async (request, reply) => {
     const token = extractBearer(request)
     if (!token) {
-      // WS room upgrade may carry the bearer as ?token=
-      const roomToken = roomUpgradeToken(request)
-      if (roomToken) {
-        const ctx = await resolveAuth(roomToken, authStore)
+      // WS room upgrade may carry the bearer as ?ticket=/?token=, and SSE
+      // streams (EventSource cannot set headers) as ?ticket=/?token= — and
+      // only there. Every other route stays header-only.
+      const queryBearerToken = roomUpgradeToken(request) ?? sseTicketToken(request)
+      if (queryBearerToken) {
+        const ctx = await resolveAuth(queryBearerToken, authStore)
         if (ctx) {
           request.auth = ctx
           return

@@ -1,7 +1,8 @@
 import { test, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import WebSocket from 'ws'
-import { tmpDataDir, startServer, jsonRequest, cleanup } from '../test/serverHarness'
+import { tmpDataDir, startServer, jsonRequest, collectStream, createAuthStore, cleanup } from '../test/serverHarness'
+import { signJwt } from '../session/jwt'
 import type { SessionBackend } from '../session/sessionBackend'
 import type { Session } from '../session/types'
 import type { BridgeEnvelope } from '../bridge/EventLogStore'
@@ -771,6 +772,98 @@ test('room typing frames publish under the join name and dedupe repeats', async 
     await bob.closed
     await srv.close()
   } finally {
+    cleanup(dir)
+  }
+})
+
+const JWT_SECRET = 'room-tenant-test-secret-32-bytes!!'
+
+function jwtFor(tenant: string, sub = 'user-1'): string {
+  const now = Math.floor(Date.now() / 1000)
+  const previous = process.env.ATLASLINK_JWT_SECRET
+  process.env.ATLASLINK_JWT_SECRET = JWT_SECRET
+  try {
+    return signJwt({ sub, tenant, iat: now, exp: now + 3600 })
+  } finally {
+    if (previous === undefined) delete process.env.ATLASLINK_JWT_SECRET
+    else process.env.ATLASLINK_JWT_SECRET = previous
+  }
+}
+
+test('room takes the tenant from the JWT and rejects a client tenant claim', async () => {
+  const dir = tmpDataDir()
+  const { authStore, close: closeAuth } = await createAuthStore()
+  const srv = await trackedServer(dir, { authStore, jwtSecret: JWT_SECRET, token: 'legacy-token' })
+  try {
+    const jwt = jwtFor('tenant-a')
+    const created = JSON.parse(
+      (
+        await jsonRequest(
+          srv.port,
+          'POST',
+          '/v1/tasks',
+          { member: 'm', prompt: 'p', projectId: 'proj-1' },
+          { authorization: `Bearer ${jwt}` }
+        )
+      ).body
+    ).session
+    const membersPath = `/v1/sessions/${created.sessionId}/room/members`
+
+    // identity alone resolves the tenant: no claim is needed
+    const own = await jsonRequest(srv.port, 'GET', membersPath, undefined, { authorization: `Bearer ${jwt}` })
+    assert.equal(own.status, 200, own.body)
+
+    // a query or header claim is rejected, never honored
+    const queryClaim = await jsonRequest(srv.port, 'GET', `${membersPath}?tenant=tenant-b`, undefined, {
+      authorization: `Bearer ${jwt}`,
+    })
+    assert.equal(queryClaim.status, 400)
+    assert.match(JSON.parse(queryClaim.body).error, /not accepted when authenticated/)
+    const headerClaim = await jsonRequest(srv.port, 'GET', membersPath, undefined, {
+      authorization: `Bearer ${jwt}`,
+      'x-tenant-id': 'tenant-b',
+    })
+    assert.equal(headerClaim.status, 400)
+
+    // WS: the same rule, and a JWT joins even when the legacy token is configured
+    const intruder = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?token=${jwt}&tenant=tenant-b`)
+    await intruder.closed
+    assert.equal(intruder.closeCode, 4400)
+
+    const owner = await connect(srv.port, `/v1/sessions/${created.sessionId}/room?token=${jwt}`)
+    await waitForFrame(owner.frames, (f) => f.type === 'snapshot', 'jwt snapshot')
+    owner.ws.close()
+    await owner.closed
+  } finally {
+    await srv.close()
+    closeAuth()
+    cleanup(dir)
+  }
+})
+
+test('global SSE streams only the authenticated tenant', async () => {
+  const dir = tmpDataDir()
+  const { authStore, close: closeAuth } = await createAuthStore()
+  const srv = await trackedServer(dir, { authStore, jwtSecret: JWT_SECRET })
+  try {
+    const stream = collectStream(
+      `http://127.0.0.1:${srv.port}/v1/events`,
+      { authorization: `Bearer ${jwtFor('tenant-a', 'user-a')}` },
+      900
+    )
+    await new Promise((r) => setTimeout(r, 150))
+    srv.broadcaster.emit({ eventId: 0, type: 'run.started', correlationId: 'cor-a', tenantId: 'tenant-a' })
+    srv.broadcaster.emit({ eventId: 0, type: 'run.started', correlationId: 'cor-b', tenantId: 'tenant-b' })
+    // no tenant claim: fail closed, never guessed into a tenant
+    srv.broadcaster.emit({ eventId: 0, type: 'run.started', correlationId: 'cor-none' })
+
+    const body = await stream
+    assert.ok(body.includes('cor-a'))
+    assert.ok(!body.includes('cor-b'))
+    assert.ok(!body.includes('cor-none'))
+  } finally {
+    await srv.close()
+    closeAuth()
     cleanup(dir)
   }
 })

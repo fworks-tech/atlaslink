@@ -5,6 +5,15 @@
 # Adds the Cosmo router (hermetic image, configs baked in the Dockerfile
 # router stage) and swaps the Caddy config for the AWS/staging routes.
 services:
+  # RDS enforces TLS. The certificate is verified against the RDS global CA
+  # bundle downloaded by the deploy (and by runbook §6 on a fresh host);
+  # ./certs/ is untracked.
+  backend:
+    volumes:
+      - ./certs/global-bundle.pem:/app/certs/global-bundle.pem:ro
+    environment:
+      NODE_EXTRA_CA_CERTS: /app/certs/global-bundle.pem
+
   caddy:
     volumes:
       - ./deploy/aws/Caddyfile:/etc/caddy/Caddyfile:ro

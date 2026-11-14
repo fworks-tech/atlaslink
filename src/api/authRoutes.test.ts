@@ -16,7 +16,7 @@ import { AuthStore } from '../session/authStore'
 import { SQLiteDb } from '../session/sqliteDb'
 import { runMigrations } from '../session/migrations'
 import { sqliteMigrations } from '../session/sqliteMigrations'
-import { jsonRequest } from '../test/serverHarness'
+import { collectStream, jsonRequest } from '../test/serverHarness'
 
 async function createTestServer(): Promise<{
   port: number
@@ -70,8 +70,8 @@ async function createTestServer(): Promise<{
   }
 }
 
-test('POST /auth/register — creates user and returns JWT', async () => {
-  const { port, close } = await createTestServer()
+test('POST /auth/register — stores the new user in the default tenant', async () => {
+  const { port, authStore, close } = await createTestServer()
   try {
     const res = await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'newuser@example.com',
@@ -83,7 +83,44 @@ test('POST /auth/register — creates user and returns JWT', async () => {
     assert.ok(body.token)
     assert.equal(body.user.email, 'newuser@example.com')
     assert.equal(body.user.tenant_id, 'default')
+    const stored = await authStore.findUserByEmail('newuser@example.com')
+    assert.equal(stored?.tenant_id, 'default')
   } finally {
+    await close()
+  }
+})
+
+test('POST /auth/register — rejects a client-supplied tenantId', async () => {
+  const { port, authStore, close } = await createTestServer()
+  try {
+    const res = await jsonRequest(port, 'POST', '/v1/auth/register', {
+      email: 'tenant-escape@example.com',
+      password: 'password123',
+      tenantId: 'someone-else',
+    })
+    assert.equal(res.status, 400)
+    assert.equal(JSON.parse(res.body).error, 'tenantId is not accepted; accounts use the server tenant')
+    assert.equal(await authStore.findUserByEmail('tenant-escape@example.com'), null)
+  } finally {
+    await close()
+  }
+})
+
+test('POST /auth/register — returns 403 when signup is closed', async () => {
+  const { port, authStore, close } = await createTestServer()
+  const previous = process.env.ATLASLINK_ALLOW_SIGNUP
+  process.env.ATLASLINK_ALLOW_SIGNUP = 'false'
+  try {
+    const res = await jsonRequest(port, 'POST', '/v1/auth/register', {
+      email: 'closed@example.com',
+      password: 'password123',
+    })
+    assert.equal(res.status, 403)
+    assert.equal(JSON.parse(res.body).error, 'registration is closed')
+    assert.equal(await authStore.findUserByEmail('closed@example.com'), null)
+  } finally {
+    if (previous === undefined) delete process.env.ATLASLINK_ALLOW_SIGNUP
+    else process.env.ATLASLINK_ALLOW_SIGNUP = previous
     await close()
   }
 })
@@ -385,6 +422,74 @@ test('POST /auth/register — seeds the inbox project for the new tenant', async
     assert.equal(list.ok, true, JSON.stringify(list))
     assert.ok(project)
     assert.equal(project.id, `proj-inbox-${user.id}`)
+  } finally {
+    await close()
+  }
+})
+
+test('POST /auth/stream-ticket — issues a short-lived ticket that opens SSE via query', async () => {
+  const { port, close } = await createTestServer()
+  try {
+    await jsonRequest(port, 'POST', '/v1/auth/register', {
+      email: 'ticket@example.com',
+      password: 'password123',
+    })
+    const login = JSON.parse((await jsonRequest(port, 'POST', '/v1/auth/login', {
+      email: 'ticket@example.com',
+      password: 'password123',
+    })).body)
+
+    const unauth = await jsonRequest(port, 'POST', '/v1/auth/stream-ticket', {})
+    assert.equal(unauth.status, 401)
+
+    const res = await jsonRequest(port, 'POST', '/v1/auth/stream-ticket', {}, {
+      authorization: `Bearer ${login.token}`,
+    })
+    assert.equal(res.status, 200)
+    const body = JSON.parse(res.body)
+    assert.equal(body.ok, true)
+    assert.ok(typeof body.ticket === 'string' && body.ticket.split('.').length === 3)
+    assert.ok(typeof body.expiresAt === 'string')
+
+    // query ticket must not work on non-SSE routes
+    const forbidden = await jsonRequest(port, 'GET', `/v1/tasks?ticket=${encodeURIComponent(body.ticket)}`)
+    assert.equal(forbidden.status, 401)
+
+    // same ticket opens the SSE stream via query (EventSource has no headers)
+    const stream = await collectStream(`http://127.0.0.1:${port}/v1/events?ticket=${encodeURIComponent(body.ticket)}`, {}, 800)
+    assert.ok(stream.includes('keep-alive'), `expected SSE keep-alive, got: ${stream.slice(0, 200)}`)
+  } finally {
+    await close()
+  }
+})
+
+test('GET /v1/members — tenant-scoped directory without credential material', async () => {
+  const { port, close } = await createTestServer()
+  try {
+    await jsonRequest(port, 'POST', '/v1/auth/register', {
+      email: 'dir@example.com',
+      password: 'password123',
+    })
+    const login = JSON.parse((await jsonRequest(port, 'POST', '/v1/auth/login', {
+      email: 'dir@example.com',
+      password: 'password123',
+    })).body)
+
+    const unauth = await jsonRequest(port, 'GET', '/v1/members')
+    assert.equal(unauth.status, 401)
+
+    const res = await jsonRequest(port, 'GET', '/v1/members', undefined, {
+      authorization: `Bearer ${login.token}`,
+    })
+    assert.equal(res.status, 200)
+    const body = JSON.parse(res.body)
+    assert.equal(body.ok, true)
+    assert.ok(Array.isArray(body.members) && body.members.length >= 1)
+    const me = body.members.find((m: { email: string }) => m.email === 'dir@example.com')
+    assert.ok(me)
+    assert.equal(me.displayName, 'dir')
+    assert.ok(!('password_hash' in me) && !('key_hash' in me))
+    assert.ok(body.members.every((m: { id: string; email: string }) => typeof m.id === 'string' && typeof m.email === 'string'))
   } finally {
     await close()
   }

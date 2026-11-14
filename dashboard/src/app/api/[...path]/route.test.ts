@@ -157,4 +157,16 @@ describe("dashboard BFF proxy", () => {
     expect(res.status).toBe(405);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("omits the timeout signal for event streams so SSE stays open", async () => {
+    const fetchMock = stubDaemonFetch(
+      () => new Response(": keep-alive\n\n", { headers: { "content-type": "text/event-stream" } })
+    );
+
+    await GET(request("http://localhost:3000/api/events?lastEventId=42"), ctx("events"));
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/v1/events?lastEventId=42");
+    expect(init.signal).toBeUndefined();
+  });
 });

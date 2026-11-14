@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { request, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import Database from 'better-sqlite3'
 import { EventLogStore, type BridgeEnvelope } from '../bridge/EventLogStore'
 import { EventBroadcaster } from '../bridge/EventBroadcaster'
 import { SessionQueue } from '../bridge/SessionQueue'
@@ -10,6 +11,10 @@ import { SseHandler } from '../bridge/sseEndpoint'
 import { createAppServer } from '../server'
 import { TaskRegistry } from '../tasks/taskRegistry'
 import { SessionStore } from '../session/sessionStore'
+import { AuthStore } from '../session/authStore'
+import { SQLiteDb } from '../session/sqliteDb'
+import { runMigrations } from '../session/migrations'
+import { sqliteMigrations } from '../session/sqliteMigrations'
 
 export function tmpDataDir(): string {
   return mkdtempSync(join(tmpdir(), 'atlaslink-sse-'))
@@ -22,6 +27,7 @@ export function runEnv(eventId: number, overrides: Record<string, unknown> = {})
     executionId: 'e-1',
     member: 'the-architect',
     correlationId: 'cor-1',
+    tenantId: 'default',
     timestamp: '2026-08-22T00:00:00.000Z',
     task: 'plan the M2 bridge',
     ...overrides,
@@ -40,6 +46,9 @@ export interface ServerHarness {
 export interface HarnessOptions {
   /** Bearer token to register on the gated scope (default: none → dev mode). */
   token?: string
+  /** Identity-gated mode: auth store plus the secret used to sign test JWTs. */
+  authStore?: AuthStore
+  jwtSecret?: string
   rateLimit?: { max: number; timeWindow: string }
   /** Session-creation pick list (tests inject their own roster). */
   providers?: { name: string; model: string; models: string[]; configured: boolean }[]
@@ -54,6 +63,14 @@ export async function startServer(dir: string, opts: HarnessOptions = {}): Promi
   const previousToken = process.env.ATLASLINK_API_TOKEN
   if (opts.token === undefined) delete process.env.ATLASLINK_API_TOKEN
   else process.env.ATLASLINK_API_TOKEN = opts.token
+  const previousJwtSecret = process.env.ATLASLINK_JWT_SECRET
+  const restoreJwtSecret = (): void => {
+    if (previousJwtSecret === undefined) delete process.env.ATLASLINK_JWT_SECRET
+    else process.env.ATLASLINK_JWT_SECRET = previousJwtSecret
+  }
+  if (opts.jwtSecret === undefined) delete process.env.ATLASLINK_JWT_SECRET
+  else process.env.ATLASLINK_JWT_SECRET = opts.jwtSecret
+  let started = false
   let httpServer: Server
   let broadcaster: EventBroadcaster
   let sse: SseHandler
@@ -72,15 +89,20 @@ export async function startServer(dir: string, opts: HarnessOptions = {}): Promi
       queue,
       sse,
       backend,
+      ...(opts.authStore ? { authStore: opts.authStore } : {}),
       ...(opts.rateLimit ? { rateLimit: opts.rateLimit } : {}),
       ...(opts.providers ? { providers: opts.providers } : {}),
       ...(opts.insightsTracesPath ? { insightsTracesPath: opts.insightsTracesPath } : {}),
     })
     httpServer = app.server
     await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve))
+    started = true
   } finally {
     if (previousToken === undefined) delete process.env.ATLASLINK_API_TOKEN
     else process.env.ATLASLINK_API_TOKEN = previousToken
+    // verifyJwt reads the secret at request time, so it must outlive boot;
+    // restore it when the server closes unless boot itself failed
+    if (!started) restoreJwtSecret()
   }
   const port = (httpServer!.address() as AddressInfo).port
   return {
@@ -92,7 +114,10 @@ export async function startServer(dir: string, opts: HarnessOptions = {}): Promi
     close: () =>
       new Promise<void>((resolve) => {
         httpServer!.closeAllConnections?.()
-        httpServer!.close(() => resolve())
+        httpServer!.close(() => {
+          restoreJwtSecret()
+          resolve()
+        })
       }),
   }
 }
@@ -144,4 +169,19 @@ export function collectStream(url: string, headers: Record<string, string>, coll
 /** Remove the temp data dir, best-effort after the server closed. */
 export function cleanup(dir: string): void {
   rmSync(dir, { recursive: true, force: true })
+}
+
+/** Fresh SQLite-backed AuthStore for identity-gated tests. */
+export async function createAuthStore(): Promise<{ authStore: AuthStore; close: () => void }> {
+  const file = join(tmpdir(), `atlaslink-auth-${Date.now()}-${Math.random().toString(36).slice(2)}.sqlite`)
+  const sqlite = new Database(file)
+  const db = new SQLiteDb(sqlite)
+  await runMigrations(db, sqliteMigrations)
+  return {
+    authStore: new AuthStore(db),
+    close: () => {
+      sqlite.close()
+      rmSync(file, { force: true })
+    },
+  }
 }

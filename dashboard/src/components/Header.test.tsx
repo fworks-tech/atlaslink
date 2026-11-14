@@ -92,14 +92,19 @@ describe("Header cost badge", () => {
   it("exposes /cost inside the mobile drawer", async () => {
     seed("/", 0.02);
     renderHeader();
-    fireEvent.click(screen.getByRole("button", { name: /toggle menu/i }));
+    // jsdom ≥31 evaluates Mantine's hiddenFrom media query, so the Burger is
+    // display:none at the default 1024px viewport and its accessible name
+    // computes empty — match the aria-label attribute directly
+    fireEvent.click(screen.getByLabelText(/toggle menu/i));
     // the Drawer portal mounts its content on the next frame — wait for it
     await waitFor(() => {
-      // desktop pill + drawer link — jsdom applies no media queries, so both render
-      const costLinks = screen.getAllByRole("link").filter((l) => l.getAttribute("href") === "/cost");
+      // desktop pill + drawer link — jsdom ≥31 applies Mantine's
+      // hiddenFrom/hidden media queries at its 1024px viewport, so the
+      // mobile-only nodes query as hidden
+      const costLinks = screen.getAllByRole("link", { hidden: true }).filter((l) => l.getAttribute("href") === "/cost");
       expect(costLinks.length).toBeGreaterThanOrEqual(2);
     });
-    const costLinks = screen.getAllByRole("link").filter((l) => l.getAttribute("href") === "/cost");
+    const costLinks = screen.getAllByRole("link", { hidden: true }).filter((l) => l.getAttribute("href") === "/cost");
     expect(costLinks.every((l) => l.textContent?.includes("$0.02"))).toBe(true);
   });
 });

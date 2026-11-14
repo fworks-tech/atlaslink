@@ -37,7 +37,7 @@ Atlaslink is a product-oriented multi-agent orchestrator built on **[Agenthood](
 | Frontend | Next.js 16, React 19, Mantine 9, Tailwind CSS v4, React Flow 12, dagre layout |
 | Auth | JWT (HS256), API keys (SHA-256 hashed), scrypt passwords |
 | Testing | Node built-in test runner (backend), Vitest (dashboard), c8 coverage |
-| CI/CD | GitHub Actions, auto-deploy to Render + AWS staging (ADR-013), semantic-release |
+| CI/CD | GitHub Actions, auto-deploy to EC2 + RDS, semantic-release |
 
 ## Quick start
 
@@ -108,7 +108,7 @@ curl -N http://127.0.0.1:3000/v1/events \
 Atlaslink enforces a fail-closed auth model:
 
 - **JWT sessions** (HS256, 7-day expiry) for dashboard users; **API keys** (`ak_`-prefixed, SHA-256 hashed) for programmatic access.
-- **Tenant isolation** — every request is scoped by `request.auth.tenantId`; the `x-tenant-id` header is rejected when auth is present.
+- **Tenant scoping** — every request is scoped by `request.auth.tenantId`; the `x-tenant-id` header is rejected when auth is present. Self-service signups all land in `default`, so accounts on one deployment see each other's data — set `ATLASLINK_ALLOW_SIGNUP=false` until per-user tenants land (ADR-008).
 - **Fail-closed binding** — the daemon refuses to bind a non-loopback address without auth configured.
 - **Rate limiting** — 100 requests per minute, keyed by user ID or IP.
 - **Secret scanning** via Gitleaks in CI; no secrets in code or logs.
@@ -117,16 +117,16 @@ Details: [ADR-008](docs/adr/ADR-008-auth-and-tenancy.md)
 
 ## Deployment
 
-### Render (production today)
+### AWS (recommended)
 
-`render.yaml` defines a Docker-based daemon plus a free-tier Postgres. Sessions survive deploys and cold starts when `ATLASLINK_DATABASE_URL` is set. Auto-deploy triggers after every green CI run on `main`.
+Production and staging run on one EC2 stack (Caddy, daemon, Cosmo router) with
+RDS Postgres, SSM secrets, and a GitHub Actions deploy after green CI. Follow
+[`docs/runbooks/aws-deploy.md`](docs/runbooks/aws-deploy.md).
 
 ```bash
-# Set in the Render dashboard:
-#   OPENCODE_API_KEY (or GROQ_API_KEY)
-# Copy the generated ATLASLINK_API_TOKEN into dashboard/.env.local:
-echo 'ATLASLINK_API_URL=https://atlaslink-daemon.onrender.com' >> dashboard/.env.local
-echo 'ATLASLINK_API_TOKEN=<your-token>' >> dashboard/.env.local
+# Local dashboard → production API (token from /atlaslink/ATLASLINK_API_TOKEN)
+echo 'ATLASLINK_API_URL=https://api.atlas.flabs.tech' >> dashboard/.env.local
+echo 'ATLASLINK_API_TOKEN=<from SSM>' >> dashboard/.env.local
 ```
 
 ### Docker
@@ -138,17 +138,13 @@ docker run -p 3000:3000 --env-file .env atlaslink
 
 ### Vercel (dashboard)
 
-The dashboard at [atlas.flabs.tech](https://atlas.flabs.tech) is a Next.js app with a BFF proxy (`/api/*` → backend). Set `ATLASLINK_API_URL` and `ATLASLINK_API_TOKEN` as build-time env vars.
+The dashboard at [atlas.flabs.tech](https://atlas.flabs.tech) is a Next.js app with a BFF proxy (`/api/*` → backend). Set `ATLASLINK_API_URL` and `ATLASLINK_API_TOKEN` as server-side env vars; changing them requires a redeploy.
 
-### AWS (staging, ADR-013)
+### Oracle Cloud Always Free (retired)
 
-EC2 + RDS + Cosmo router via `docker-compose.aws.yml`. See [spec](docs/spec/aws-deployment.md) and [runbook](docs/runbooks/aws-deploy.md). Retiring Render/Oracle after the soak — see [#329](https://github.com/fworks-tech/atlaslink/issues/329).
-
-### Oracle Cloud Always Free (legacy, retired)
-
-> ⚠️ Retired after the AWS cutover — kept for reference only.
-
-A zero-cost option: VM + Caddy + Docker Compose. See [`docs/tasks/deploy-oracle-free-tier.md`](docs/tasks/deploy-oracle-free-tier.md).
+A zero-cost option kept for reference only: VM + Caddy + Docker Compose. Retired
+in [#329](https://github.com/fworks-tech/atlaslink/issues/329); the archived
+guide is [`docs/archive/deploy-oracle-free-tier.md`](docs/archive/deploy-oracle-free-tier.md).
 
 ## Roadmap
 
@@ -162,7 +158,7 @@ A zero-cost option: VM + Caddy + Docker Compose. See [`docs/tasks/deploy-oracle-
 | **P0 — Auth & Tenancy** | JWT sessions + `ak_` API keys, per-tenant isolation, fail-closed bind | Shipped — [ADR-008](docs/adr/ADR-008-auth-and-tenancy.md) |
 | **M5 — Federation & Workspace** | Cosmo router + `files/sessions/tasks/insights` subgraphs, git-backed workspaces | Shipped — [spec](docs/spec/m5-federation-workspace.md) |
 
-Milestones M1–M5, Auth and Federation are shipped on `main`. The backlog focuses on analytics, session export, and decommissioning Render/Oracle ([#329](https://github.com/fworks-tech/atlaslink/issues/329)).
+Milestones M1–M5, Auth and Federation are shipped on `main`. The backlog focuses on analytics and session export.
 
 ## Quality gates
 

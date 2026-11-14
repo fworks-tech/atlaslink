@@ -9,6 +9,9 @@ export interface JwtClaims {
 
 const JWT_TTL_SECONDS = 7 * 24 * 60 * 60 // 7 days
 
+/** Short-lived ticket for direct browser SSE/WS (A3): same JWT shape, 60s TTL. */
+export const STREAM_TICKET_TTL_SECONDS = 60
+
 function base64url(input: Buffer | string): string {
   return Buffer.from(input)
     .toString('base64')
@@ -93,4 +96,16 @@ export function createToken(userId: string, tenantId: string): string {
     iat: now,
     exp: now + JWT_TTL_SECONDS,
   })
+}
+
+/** Short-lived stream ticket: same claims as the session JWT, 60s expiry. */
+export function createStreamTicket(userId: string, tenantId: string, ttlSeconds = STREAM_TICKET_TTL_SECONDS): { ticket: string; expiresAt: string } {
+  const now = Math.floor(Date.now() / 1000)
+  const ticket = signJwt({
+    sub: userId,
+    tenant: tenantId,
+    iat: now,
+    exp: now + ttlSeconds,
+  })
+  return { ticket, expiresAt: new Date((now + ttlSeconds) * 1000).toISOString() }
 }

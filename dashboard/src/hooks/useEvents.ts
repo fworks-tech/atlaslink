@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { BridgeEvent } from "@/lib/types";
+import { loadAuth } from "@/lib/auth";
 
 export type ConnectionState = "connecting" | "connected" | "disconnected";
 
@@ -101,24 +102,54 @@ export function useEvents({ enabled = true }: { enabled?: boolean } = {}) {
     const connect = (): void => {
       setConnection("connecting");
       const savedId = lastEventId.current ?? sessionStorage.getItem(LAST_EVENT_ID_KEY);
-      const url = savedId ? `/api/events?lastEventId=${savedId}` : "/api/events";
-      const es = new EventSource(url);
-      esRef.current = es;
-      for (const type of EVENT_TYPES) es.addEventListener(type, (msg) => onFrame(msg.data));
-      es.addEventListener("message", (msg) => onFrame(msg.data));
-      es.onopen = () => {
-        attempt.current = 0;
-        setConnection("connected");
-      };
-      es.onerror = () => {
-        es.close();
-        esRef.current = null;
+
+      const openStream = (url: string): void => {
         if (cancelled) return;
-        const delay = Math.min(RECONNECT_BASE_MS * 2 ** attempt.current, RECONNECT_MAX_MS);
-        attempt.current += 1;
-        setConnection("disconnected");
-        timer.current = setTimeout(connect, delay);
+        const es = new EventSource(url);
+        esRef.current = es;
+        for (const type of EVENT_TYPES) es.addEventListener(type, (msg) => onFrame(msg.data));
+        es.addEventListener("message", (msg) => onFrame(msg.data));
+        es.onopen = () => {
+          attempt.current = 0;
+          setConnection("connected");
+        };
+        es.onerror = () => {
+          es.close();
+          esRef.current = null;
+          if (cancelled) return;
+          const delay = Math.min(RECONNECT_BASE_MS * 2 ** attempt.current, RECONNECT_MAX_MS);
+          attempt.current += 1;
+          setConnection("disconnected");
+          timer.current = setTimeout(connect, delay);
+        };
       };
+
+      // Direct browser stream (A3): ticket via BFF (REST-only), bytes direct
+      // from the API host. Falls back to the BFF proxy when no public API
+      // URL is configured or the ticket fetch fails. The ticket must be cut
+      // for the signed-in tenant — forward the browser bearer so the BFF
+      // does not fall back to the shared legacy token.
+      const directBase = process.env.NEXT_PUBLIC_ATLASLINK_API_URL?.replace(/\/$/, "");
+      const fallbackUrl = savedId ? `/api/events?lastEventId=${savedId}` : "/api/events";
+      if (!directBase) {
+        openStream(fallbackUrl);
+        return;
+      }
+      const session = loadAuth();
+      const ticketInit: RequestInit = session?.jwt
+        ? { method: "POST", headers: { Authorization: `Bearer ${session.jwt}` } }
+        : { method: "POST" };
+      void fetch("/api/auth/stream-ticket", ticketInit)
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`ticket ${res.status}`))))
+        .then((body: unknown) => {
+          const ticket = (body as { ticket?: unknown }).ticket;
+          if (typeof ticket !== "string" || ticket.length === 0) throw new Error("no ticket");
+          const query = savedId
+            ? `ticket=${encodeURIComponent(ticket)}&lastEventId=${encodeURIComponent(savedId)}`
+            : `ticket=${encodeURIComponent(ticket)}`;
+          openStream(`${directBase}/v1/events?${query}`);
+        })
+        .catch(() => openStream(fallbackUrl));
     };
 
     connect();

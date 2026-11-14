@@ -10,7 +10,15 @@ import type { SessionQueue } from '../bridge/SessionQueue'
 import type { TaskRegistry } from '../tasks/taskRegistry'
 import { tenantBackendForRequest } from './tenant'
 import { checkBearer } from './auth'
-import { appendChatMessage, replyToParked, steerSession } from './sessionActions'
+import {
+  MAX_MESSAGE_ANCHOR_LENGTH,
+  MAX_MESSAGE_MENTION_LENGTH,
+  MAX_MESSAGE_MENTIONS,
+  MAX_MESSAGE_PARENT_ID_LENGTH,
+  appendChatMessage,
+  replyToParked,
+  steerSession,
+} from './sessionActions'
 
 /**
  * WS room channel (Stage 5, ADR-007): one realtime room per session for
@@ -73,6 +81,28 @@ function firstQuery(value: unknown): string | undefined {
   return undefined
 }
 
+/**
+ * Tenant for a room surface. An authenticated caller's tenant comes from the
+ * token, never a claim: sending `?tenant=` or `x-tenant-id` is an error, not a
+ * redirect. Unauthenticated dev mode keeps the legacy query/header fallback.
+ */
+function resolveRoomTenant(
+  request: { headers: Record<string, string | string[] | undefined>; auth?: { tenantId: string } },
+  query: Record<string, unknown>,
+  base: SessionBackend
+): ReturnType<typeof tenantBackendForRequest> {
+  if (request.auth) {
+    if (firstQuery(query.tenant) !== undefined || request.headers['x-tenant-id'] !== undefined) {
+      return { backend: base, error: 'tenant is not accepted when authenticated — remove tenant/x-tenant-id' }
+    }
+    return tenantBackendForRequest(request, base)
+  }
+  return tenantBackendForRequest(
+    { headers: { 'x-tenant-id': firstQuery(query.tenant) ?? request.headers['x-tenant-id'] } },
+    base
+  )
+}
+
 export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rosterOf: (sessionId: string) => RoomMember[] } {
   const rooms = new Map<string, Map<string, RoomClient>>()
   // Registration-time capture: the upgrade check runs after harnesses (and
@@ -95,8 +125,7 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
     '/sessions/:id/room/members',
     async (request, reply) => {
       const query = (request.query ?? {}) as Record<string, unknown>
-      const tenantValue = firstQuery(query.tenant) ?? request.headers['x-tenant-id']
-      const tenantCtx = tenantBackendForRequest({ headers: { 'x-tenant-id': tenantValue } }, deps.backend)
+      const tenantCtx = resolveRoomTenant(request, query, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
       const aggregate = await tenantCtx.backend.get(request.params.id)
       if (!aggregate || aggregate.tenantId !== tenantCtx.tenantId) {
@@ -113,8 +142,7 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
     '/sessions/:id/room/typing',
     async (request, reply) => {
       const query = (request.query ?? {}) as Record<string, unknown>
-      const tenantValue = firstQuery(query.tenant) ?? request.headers['x-tenant-id']
-      const tenantCtx = tenantBackendForRequest({ headers: { 'x-tenant-id': tenantValue } }, deps.backend)
+      const tenantCtx = resolveRoomTenant(request, query, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
       const aggregate = await tenantCtx.backend.get(request.params.id)
       if (!aggregate || aggregate.tenantId !== tenantCtx.tenantId) {
@@ -131,6 +159,7 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
         at: new Date().toISOString(),
         name: sanitizeName(body.name),
         typing: body.typing,
+        ...(tenantCtx.tenantId !== undefined ? { tenantId: tenantCtx.tenantId } : {}),
       })
       return { ok: true }
     }
@@ -144,15 +173,16 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
         const query = (request.query ?? {}) as Record<string, unknown>
         const sessionId = request.params.id
 
-        // Browsers cannot set upgrade headers: same bearer via ?token=.
+        // Browsers cannot set upgrade headers: same bearer via ?ticket=/?token=.
         // The preHandler gate may already have enforced the header — this
         // check is idempotent with it, never weaker.
-        if (!checkBearer(request.headers.authorization, firstQuery(query.token), expectedToken)) {
+        // A JWT/API-key session already passed the upgrade gate; the legacy
+        // bearer check only applies when the gate left `request.auth` unset.
+        if (!request.auth && !checkBearer(request.headers.authorization, firstQuery(query.ticket) ?? firstQuery(query.token), expectedToken)) {
           socket.close(ROOM_CLOSE_UNAUTHORIZED, 'unauthorized')
           return
         }
-        const tenantValue = firstQuery(query.tenant) ?? request.headers['x-tenant-id']
-        const tenantCtx = tenantBackendForRequest({ headers: { 'x-tenant-id': tenantValue } }, deps.backend)
+        const tenantCtx = resolveRoomTenant(request, query, deps.backend)
         if (tenantCtx.error) {
           socket.close(ROOM_CLOSE_BAD_TENANT, tenantCtx.error)
           return
@@ -266,6 +296,7 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
                 send({ type: 'error', id, error: 'typing must be a boolean' })
                 return
               }
+              if (throttled()) return
               if (typing === lastTyping) return
               lastTyping = typing
               deps.broadcaster.publishEphemeral({
@@ -275,6 +306,7 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
                 at: new Date().toISOString(),
                 name: client.name,
                 typing,
+                tenantId,
               })
               return
             }
@@ -282,17 +314,44 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
               send({ type: 'error', id, error: 'unknown frame type' })
               return
             }
-            if (typeof frame.content !== 'string' || frame.content.length > MAX_ROOM_CONTENT_LENGTH) {
-              send({ type: 'ack', id, ok: false, code: 400, error: 'content must be a string up to 10000 chars' })
-              return
-            }
             if (throttled()) {
               send({ type: 'ack', id, ok: false, code: 429, error: 'room ingress rate exceeded' })
               return
             }
+            if (typeof frame.content !== 'string' || frame.content.length > MAX_ROOM_CONTENT_LENGTH) {
+              send({ type: 'ack', id, ok: false, code: 400, error: 'content must be a string up to 10000 chars' })
+              return
+            }
+            // A2 thread fields: same caps as the POST route, server-stamped author
+            const chatOpts: { parentId?: string; mentions?: string[]; anchor?: string; authorId?: string } = {}
+            if (frame.type === 'chat') {
+              const extra = frame as { parentId?: unknown; mentions?: unknown; anchor?: unknown }
+              if (extra.parentId !== undefined) {
+                if (typeof extra.parentId !== 'string' || extra.parentId.length === 0 || extra.parentId.length > MAX_MESSAGE_PARENT_ID_LENGTH) {
+                  send({ type: 'ack', id, ok: false, code: 400, error: 'parentId must be 1..200 chars' })
+                  return
+                }
+                chatOpts.parentId = extra.parentId
+              }
+              if (extra.anchor !== undefined) {
+                if (typeof extra.anchor !== 'string' || extra.anchor.length === 0 || extra.anchor.length > MAX_MESSAGE_ANCHOR_LENGTH) {
+                  send({ type: 'ack', id, ok: false, code: 400, error: 'anchor must be 1..500 chars' })
+                  return
+                }
+                chatOpts.anchor = extra.anchor
+              }
+              if (extra.mentions !== undefined) {
+                if (!Array.isArray(extra.mentions) || extra.mentions.length > MAX_MESSAGE_MENTIONS || extra.mentions.some((m) => typeof m !== 'string' || m.length === 0 || m.length > MAX_MESSAGE_MENTION_LENGTH)) {
+                  send({ type: 'ack', id, ok: false, code: 400, error: 'mentions must be up to 20 strings of 1..254 chars' })
+                  return
+                }
+                chatOpts.mentions = extra.mentions as string[]
+              }
+              if (request.auth?.userId !== undefined) chatOpts.authorId = request.auth.userId
+            }
             const ingress = { backend, registry: deps.registry, queue: deps.queue, broadcaster: deps.broadcaster }
             if (frame.type === 'chat') {
-              const result = await appendChatMessage(ingress, sessionId, frame.content)
+              const result = await appendChatMessage(ingress, sessionId, frame.content, chatOpts)
               send(result.code === 201
                 ? { type: 'ack', id, ok: true, code: 201, status: result.session.status, version: result.session.version }
                 : { type: 'ack', id, ok: false, code: result.code, error: result.error })

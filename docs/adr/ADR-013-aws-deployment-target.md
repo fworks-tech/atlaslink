@@ -8,7 +8,7 @@
 Production has run on two free tiers chosen for cost, not design: Render
 (`render.yaml`, Docker web service) whose filesystem is ephemeral across
 deploys — sessions depend on a bind mount over a disk that resets — and whose
-free instances suspend, and Oracle Cloud Always Free (`docs/tasks/deploy-oracle-free-tier.md`),
+free instances suspend, and Oracle Cloud Always Free (`docs/archive/deploy-oracle-free-tier.md`),
 a manually operated VM with SSH-driven deploys and no CI/CD. Neither offers
 managed persistence, secrets management, or first-class monitoring. The
 operator also wants the deployment itself to be portfolio-relevant (AWS +

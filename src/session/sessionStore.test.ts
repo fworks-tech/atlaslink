@@ -207,3 +207,18 @@ test('rehydrate caps the projected thread with a trim marker (#227)', () => {
   assert.match(s.interaction[0].content, /11 earlier turns trimmed/)
   assert.equal(s.interaction.at(-1)?.content, `m${INTERACTION_CAP + 9}`)
 })
+
+test('rehydrate projects message thread fields (authorId/parentId/mentions/anchor)', () => {
+  const running: SessionEvent = { type: 'session.running', sessionId: 'ses-1', correlationId: 'cor-1', at: '2026-01-01T00:00:01Z' }
+  const msg: SessionEvent = {
+    type: 'session.message', sessionId: 'ses-1', correlationId: 'cor-1',
+    at: '2026-01-01T00:00:02Z', message: 'reply to you',
+    authorId: 'u-1', parentId: 'm-0', mentions: ['u-2'], anchor: 'L12',
+  }
+  const s = rehydrate([created, running, msg])
+  assert.ok(s)
+  assert.deepEqual(s.interaction.at(-1), {
+    role: 'user', at: '2026-01-01T00:00:02Z', content: 'reply to you',
+    authorId: 'u-1', parentId: 'm-0', mentions: ['u-2'], anchor: 'L12',
+  })
+})

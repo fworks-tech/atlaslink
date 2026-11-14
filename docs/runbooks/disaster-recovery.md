@@ -1,6 +1,6 @@
 # Disaster Recovery Plan
 
-**Date:** 2026-09-05
+**Date:** 2026-11-14
 **Status:** Active
 **Owner:** Atlaslink Team
 
@@ -8,270 +8,191 @@
 
 ## Overview
 
-This document outlines the disaster recovery (DR) procedures for Atlaslink, including backup strategies, recovery procedures, and runbooks for common failure scenarios.
+Recovery procedures for the AWS stack that serves
+[atlas.flabs.tech](https://atlas.flabs.tech). Render and Oracle are retired;
+this runbook covers EC2 + RDS + Vercel only.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Atlaslink Stack                        │
-├─────────────────────────────────────────────────────────────┤
-│  Dashboard (Vercel)     │  API Server (Render/Fly.io)      │
-│  - Next.js app          │  - Fastify HTTP                   │
-│  - Static assets        │  - WebSocket                     │
-│  - BFF proxy            │  - SSE streams                   │
-├─────────────────────────────────────────────────────────────┤
-│                      Data Layer                             │
-│  - PostgreSQL (primary) │  - NDJSON event log              │
-│  - Session storage      │  - Auth store                    │
-└─────────────────────────────────────────────────────────────┘
+Browser ─▶ https://atlas.flabs.tech        (Vercel, Next.js + BFF /api/*)
+               │  injects ATLASLINK_API_TOKEN server-side
+               ▼
+           https://api.atlas.flabs.tech    (Caddy on EC2, Let's Encrypt)
+               │
+               ▼
+           backend:3000 (Fastify)  ──▶  RDS Postgres 16
+               │                         atlaslink.cqz4ocg6of03.us-east-1.rds.amazonaws.com
+               └──▶ docker volume atlaslink-data (/app/data, NDJSON event log)
 ```
 
-## Backup Strategy
+| Component | Reality |
+|---|---|
+| EC2 | `t4g.micro`, `us-east-1d`, `i-06f5ce7c361a2e8b1`, Elastic IP `100.58.138.196` |
+| Host names | `api.atlas.flabs.tech` and `staging.atlas.flabs.tech` — same stack, same store, same Caddy site block |
+| RDS | `db.t3.micro`, Postgres 16.15, 20 GB, **single AZ**, automated backups retained **1 day** |
+| Secrets | SSM `/atlaslink/{OPENCODE_API_KEY,ATLASLINK_API_TOKEN,ATLASLINK_JWT_SECRET,ATLASLINK_DATABASE_URL}` |
+| Dashboard | Vercel project `atlaslink-dashboard` (Hobby) |
+| Event log | Docker volume, not backed up — sessions in RDS are the source of truth |
 
-### Database (PostgreSQL)
+## Targets
 
-| Component | Strategy | Frequency | Retention |
-|-----------|----------|-----------|-----------|
-| Full backup | pg_dump | Daily at 02:00 UTC | 30 days |
-| WAL archiving | Continuous | Real-time | 7 days |
-| Logical replication | Optional | Real-time | Current |
+| Metric | Value | Why |
+|---|---|---|
+| RPO | 24 h | RDS keeps 1 day of automated backups (free tier cap) |
+| RTO | ~1 h | restore snapshot + recreate backend |
 
-**Backup command:**
+Anything older than 24 h is unrecoverable from AWS alone. Take a manual
+snapshot before any migration or destructive maintenance:
+`aws rds create-db-snapshot --db-instance-identifier atlaslink --db-snapshot-identifier atlaslink-pre-<change>-$(date +%Y%m%d)`.
+
+## Access
+
 ```bash
-pg_dump -Fc -Z 9 -f atlaslink_$(date +%Y%m%d_%H%M%S).dump atlaslink
+aws ssm start-session --target i-06f5ce7c361a2e8b1   # or: ssh -i atlaslink.pem ubuntu@100.58.138.196
+cd ~/atlaslink
+docker compose -f docker-compose.yml -f docker-compose.aws.yml ps
 ```
 
-**Restore command:**
+## Scenario 1 — Backend down or serving a stale build
+
+**Symptoms:** `https://api.atlas.flabs.tech/health` non-200, 5xx from the BFF,
+`providers` missing, or `/health` answering with an old `"providers"` count.
+
 ```bash
-pg_restore -d atlaslink atlaslink_YYYYMMDD_HHMMSS.dump
+cd ~/atlaslink
+docker compose -f docker-compose.yml -f docker-compose.aws.yml logs --tail=100 backend
+docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build backend
 ```
 
-### Event Log (NDJSON)
+If `/health` is fine but routes 404, Caddy is serving an old inode after
+`git pull` — recreate it:
 
-| Component | Strategy | Frequency | Retention |
-|-----------|----------|-----------|-----------|
-| Event files | File copy | Hourly | 7 days |
-| Compressed archives | gzip | Daily | 30 days |
-
-**Backup command:**
 ```bash
-tar -czf events_$(date +%Y%m%d_%H%M%S).tar.gz /data/events/
+docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --force-recreate caddy
 ```
 
-### Configuration
+Verify: `/health` → `"providers"` >= 1, `/health/ready` → `OK`, and a tokenless
+subgraph query → `401`:
 
-| Component | Strategy | Location |
-|-----------|----------|----------|
-| Environment variables | Git (private) | `.env.production` |
-| Secrets | Vault/SSM | AWS SSM / Doppler |
-| Database URLs | Vault/SSM | AWS SSM |
+```bash
+curl -fsS https://api.atlas.flabs.tech/health
+curl -fsS https://api.atlas.flabs.tech/health/ready
+curl -sS -X POST https://api.atlas.flabs.tech/graphql \
+  -H 'content-type: application/json' -d '{"query":"{ sessions { total } }"}'
+```
 
-## Recovery Procedures
+## Scenario 2 — Database lost or corrupted
 
-### Scenario 1: Database Corruption
+RDS automated backups keep 1 day. Restore into a **new** instance rather than
+overwriting the broken one:
 
-**Symptoms:**
-- Connection errors
-- Data integrity issues
-- Query failures
+```bash
+aws rds restore-db-instance-to-point-in-time \
+  --source-db-instance-identifier atlaslink \
+  --target-db-instance-identifier atlaslink-restored \
+  --db-instance-class db.t3.micro \
+  --db-subnet-group-name atlaslink-db-subnets \
+  --vpc-security-group-ids sg-019cea876264ae2b9 \
+  --restore-time "$(date -u -d '-2 hours' +%Y-%m-%dT%H:%M:%SZ)"
+```
 
-**Recovery steps:**
-1. Stop the API server
-2. Assess damage: `SELECT * FROM pg_stat_activity WHERE datname = 'atlaslink'`
-3. Restore from latest backup:
-   ```bash
-   pg_restore -d atlaslink -c atlaslink_YYYYMMDD_HHMMSS.dump
-   ```
-4. Verify data integrity:
-   ```bash
-   psql -d atlaslink -c "SELECT COUNT(*) FROM sessions"
-   psql -d atlaslink -c "SELECT COUNT(*) FROM session_events"
-   ```
-5. Restart API server
-6. Verify health: `curl https://atlas.flabs.tech/health`
+The subnet group and security group are not optional: without them the restore
+lands in the default ones and the EC2 host cannot reach port 5432. The restored
+instance keeps the source master password.
 
-### Scenario 2: Event Log Loss
+Then, on the EC2 host, repoint the stack at the restored endpoint:
 
-**Symptoms:**
-- SSE streams fail
-- Session history incomplete
-- Dashboard shows missing events
+1. Update `/atlaslink/ATLASLINK_DATABASE_URL` in SSM (keep `?sslmode=verify-full`
+   and the same user/password).
+2. Copy the new value into `~/atlaslink/.env` — §5 writes the parameter and §6
+   shows the loop that assembles the file.
+3. `docker compose ... up -d --force-recreate backend`.
+4. Verify counts:
+   `select (select count(*) from users), (select count(*) from sessions), (select count(*) from projects);`
 
-**Recovery steps:**
-1. Assess loss window from NDJSON files
-2. Rebuild from database projection:
-   ```bash
-   # Sessions are the source of truth; events are derived
-   # Rebuild event log from session state
-   node scripts/rebuild-events.js
-   ```
-3. Verify SSE streams work
-4. Notify users of potential gaps in session history
+Sessions and API keys are in RDS; the NDJSON event log volume is not restored —
+the dashboard rebuilds session state from Postgres, so history survives with
+gaps in per-event detail.
 
-### Scenario 3: Complete Data Loss
+**Deleted a single row?** Restore the snapshot into `atlaslink-restored`, copy
+the rows out with `psql`, and insert them back; do not point the app at the
+restored instance for a one-row fix.
 
-**Symptoms:**
-- Database unreachable
-- All data gone
-- Event log missing
+## Scenario 3 — DNS record missing
 
-**Recovery steps:**
-1. **RTO (Recovery Time Objective):** 4 hours
-2. **RPO (Recovery Point Objective):** 24 hours (daily backups)
+Observed once on `atlas.flabs.tech` (2026-11-13): the record vanished and the
+dashboard returned 5xx while the API stayed healthy. Nothing monitors it yet.
 
-**Procedure:**
-1. Provision new database instance
-2. Restore from latest backup:
-   ```bash
-   pg_restore -d atlaslink atlaslink_YYYYMMDD_HHMMSS.dump
-   ```
-3. Replay WAL archives if available:
-   ```bash
-   pg_walreplay /archive/wal/
-   ```
-4. Update connection strings in environment
-5. Restart API server
-6. Verify full functionality
-7. Update DNS if needed
+The zone runs on **Vercel DNS** (`ns1.vercel-dns.com`) — there is no Route 53
+zone for `flabs.tech`. Recreate the records in Vercel → Domains → `flabs.tech`
+→ DNS Records:
 
-### Scenario 4: API Server Failure
+| Name | Type | Value | Record ID (to spot the right row) |
+|---|---|---|---|
+| `atlas` | ALIAS | `cname.vercel-dns.com` | `rec_d2d98bfbe669649637f95fbc` |
+| `api.atlas` | A | `100.58.138.196` (EIP) | `rec_3a09800dbd5074f43fd2136f` |
+| `staging.atlas` | A | `100.58.138.196` (EIP) | `rec_8e68da9992a70330fbdb412d` |
 
-**Symptoms:**
-- 5xx errors
-- Health check fails
-- No response
+After recreating, wait for propagation and re-check
+`https://atlas.flabs.tech/api/health` → `"providers"` >= 1. If Caddy logged an
+ACME failure meanwhile, it retries on its own.
 
-**Recovery steps:**
-1. Check server logs
-2. Restart the service:
-   ```bash
-   # Render
-   render services restart atlaslink-api
-   
-   # Fly.io
-   fly restart --app atlaslink-api
-   ```
-3. If persistent, redeploy:
-   ```bash
-   git push origin main  # triggers auto-deploy
-   ```
-4. Verify health: `curl https://atlas.flabs.tech/health`
+## Scenario 4 — TLS or database certificate failure
 
-### Scenario 4b: Stale or Suspended Render Service
+| Log line | Fix |
+|---|---|
+| `no pg_hba.conf entry ... no encryption` | `ATLASLINK_DATABASE_URL` lost `?sslmode=verify-full` |
+| `self-signed certificate in certificate chain`, `unable to verify the first certificate` | refresh the RDS CA bundle: `curl -fsS https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o certs/global-bundle.pem`, then recreate the backend |
+| ACME failure in Caddy logs | DNS not pointing at the EIP yet, or the Caddyfile `acme_ca` was changed away from `https://acme-v02.api.letsencrypt.org/directory` |
 
-**Symptoms (observed 2026-09-17):**
-- Every dashboard data surface fails at once: provider picker down, cost page 404, empty sessions — but `/health` via the BFF still returns 200
-- Direct daemon curl of a **newly added route** returns the JSON `{"ok":false,"error":"not found"}` while older routes work → the running image predates that route (stale release)
-- `curl -i <service-url>/health` shows `x-render-routing: no-server` and a plain-text `Not Found` → Render's edge has no server to route to: service suspended (free-tier instance hours), deleted, or renamed (renaming changes the `*.onrender.com` URL)
+## Scenario 5 — Total loss (instance terminated, AMI gone)
 
-**Key distinction:** the deploy workflow going green proves only that the deploy hook accepted the trigger — never that the image built or the service restarted. A failed image build leaves the last good release serving indefinitely.
+The stack is disposable; only RDS is not.
 
-**Recovery steps:**
-1. Render dashboard → the web service → **Events**: check for failed builds after the latest merge; fix the build error or roll back the offending commit
-2. If suspended (free plan): suspend/resume or Manual Deploy → **Deploy latest commit**; free-tier instance hours are shared across the workspace's services (pollers on the dashboard keep waking the daemon, burning hours)
-3. If the service was renamed/recreated, update `ATLASLINK_API_URL` in the Vercel dashboard to the new `*.onrender.com` URL
-4. Verify the release is current with a build-marker route (a route that only recent code has), e.g. `curl "$ATLASLINK_API_URL/v1/providers"` → 200 with the provider roster
-5. Confirm the deploy hook belongs to the live service: Render → service → Settings → Deploy Hook, and re-copy it into the `RENDER_DEPLOY_HOOK_URL` GitHub secret after any rename/recreation
+1. Restore RDS into a new instance (Scenario 2) if the database is gone.
+2. Follow [aws-deploy.md](aws-deploy.md) §1–§7 to provision the instance, security
+   groups, EIP, SSM parameters, and `certs/global-bundle.pem`.
+3. Point `api.atlas` / `staging.atlas` at the new EIP.
+4. Run **Actions → Deploy AWS → Run workflow** (or push to `main`) and wait for
+   the poll of both hosts to pass.
+5. Vercel needs no change unless `ATLASLINK_API_TOKEN` was rotated.
 
-### Scenario 5: Dashboard Failure
+Expected cost of an unplanned rebuild: ~30–60 min of manual work plus backup
+restore time.
 
-**Symptoms:**
-- Vercel deployment fails
-- 404 errors
-- Build errors
+## Scenario 6 — Dashboard (Vercel)
 
-**Recovery steps:**
-1. Check Vercel dashboard for build logs
-2. Rollback to previous deployment:
-   ```bash
-   vercel rollback atlaslink-dashboard
-   ```
-3. If build issue, fix and push:
-   ```bash
-   git push origin main  # triggers auto-deploy
-   ```
-4. Verify dashboard loads
+```bash
+cd dashboard
+npx vercel rollback          # to the previous production deployment
+npx vercel --prod            # or redeploy the current commit
+```
 
-## Monitoring & Alerts
+Rollback only reaches deployments that already carry the current
+`ATLASLINK_API_URL` / `ATLASLINK_API_TOKEN` — both are Sensitive, so they cannot
+be read back. If a bad env value shipped, set it again and redeploy instead of
+rolling back.
 
-### Health Checks
+## Monitoring & alerting
 
-| Endpoint | Frequency | Alert Threshold |
-|----------|-----------|-----------------|
-| `GET /health` | 1 minute | 3 consecutive failures |
-| Database connection | 30 seconds | 5 consecutive failures |
-| SSE stream health | 5 minutes | Stream down > 10 minutes |
+**Gap, by design of the free tier:** there is no uptime monitor on
+`atlas.flabs.tech` or `api.atlas.flabs.tech` — the DNS loss in Scenario 3 was
+found by a user. Until a monitor exists, run the health check manually after
+each deploy and when a user reports a 5xx.
 
-### Alert Channels
-
-| Severity | Channel | Response Time |
-|----------|---------|---------------|
-| Critical (P0) | PagerDuty | 15 minutes |
-| High (P1) | Slack #incidents | 1 hour |
-| Medium (P2) | Email | 24 hours |
-
-### Key Metrics
-
-| Metric | Threshold | Action |
-|--------|-----------|--------|
-| Error rate | > 1% | Investigate |
-| Response time p99 | > 2s | Scale up |
-| Database connections | > 80% | Scale up |
-| Memory usage | > 80% | Restart/scale |
-
-## Communication Plan
-
-### Incident Timeline
-
-1. **T+0:** Detect incident (monitoring alert)
-2. **T+5:** Acknowledge in Slack #incidents
-3. **T+15:** Initial assessment posted
-4. **T+30:** Status page updated
-5. **T+60:** Detailed update
-6. **T+R:** Resolution confirmed
-7. **T+24h:** Post-mortem scheduled
-
-### Status Page
-
-Update https://status.atlaslink.com with:
-- Incident title
-- Current status (investigating/identified/monitoring/resolved)
-- Impact assessment
-- Workaround (if available)
-
-## Testing & Drills
-
-### Quarterly DR Drills
-
-| Quarter | Scenario | Success Criteria |
-|---------|----------|------------------|
-| Q1 | Database restore | RTO < 2 hours |
-| Q2 | Complete failover | RTO < 4 hours |
-| Q3 | Event log rebuild | RPO < 24 hours |
-| Q4 | Full stack recovery | RTO < 4 hours, RPO < 24 hours |
-
-### Drill Checklist
-
-- [ ] Backup exists and is recent
-- [ ] Restore procedure documented
-- [ ] Team knows roles and responsibilities
-- [ ] Communication plan tested
-- [ ] Monitoring alerts work
-- [ ] Post-drill review completed
-
-## Contacts
-
-| Role | Name | Contact |
-|------|------|---------|
-| Primary On-call | TBD | PagerDuty |
-| Secondary On-call | TBD | PagerDuty |
-| Database Admin | TBD | Slack |
-| Infrastructure | TBD | Slack |
+| Check | Healthy |
+|---|---|
+| `GET https://api.atlas.flabs.tech/health` | `ok:true`, `"providers"` >= 1 |
+| `GET https://api.atlas.flabs.tech/health/ready` | `OK` |
+| `GET https://atlas.flabs.tech/api/health` | `"providers"` >= 1 (via BFF) |
+| `GET https://atlas.flabs.tech/api/tasks` | `ok:true`, sessions list |
+| RDS FreeStorageSpace | > 2 GB |
+| EC2 status checks | 2/2 |
 
 ## References
 
-- [PostgreSQL Backup & Restore](https://www.postgresql.org/docs/current/backup-dump.html)
-- [WAL Archiving](https://www.postgresql.org/docs/current/runtime-config-wal.html)
-- [Vercel Rollback](https://vercel.com/docs/deployments/rollback)
-- [Render Recovery](https://render.com/docs/recovery)
+- [Deploy runbook](aws-deploy.md) — provisioning, TLS, deploy gate, troubleshooting
+- [AWS RDS backup and restore](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_BackupRestore.html)
+- [Vercel rollback](https://vercel.com/docs/deployments/rollback)
+- [AWS deployment spec](../spec/aws-deployment.md)

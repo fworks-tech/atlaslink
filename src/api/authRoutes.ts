@@ -10,7 +10,7 @@ import {
   verifyPassword,
 } from '../session/authStore'
 import { isUniqueViolation } from '../session/db'
-import { createToken } from '../session/jwt'
+import { createStreamTicket, createToken } from '../session/jwt'
 import { DEFAULT_TENANT_ID } from '../session/migrations'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -26,6 +26,7 @@ const TIMING_HASH = (() => {
 interface RegisterBody {
   email?: string
   password?: string
+  /** Rejected by the handler; declared so the validator does not strip it. */
   tenantId?: string
 }
 
@@ -62,13 +63,24 @@ export function registerAuthRoutes(
           properties: {
             email: { type: 'string', minLength: 3, maxLength: 254 },
             password: { type: 'string', minLength: MIN_PASSWORD_LENGTH, maxLength: 128 },
-            tenantId: { type: 'string', minLength: 1, maxLength: 64 },
+            // declared only so the handler can reject it: the validator strips
+            // unknown keys, and a stripped tenantId would silently land in the
+            // shared tenant instead of failing loudly
+            tenantId: { type: 'string', maxLength: 64 },
           },
         },
       },
     },
     async (request, reply) => {
-      const { email, password, tenantId } = request.body
+      if (process.env.ATLASLINK_ALLOW_SIGNUP === 'false') {
+        return reply.code(403).send({ ok: false, error: 'registration is closed' })
+      }
+
+      if (request.body.tenantId !== undefined) {
+        return reply.code(400).send({ ok: false, error: 'tenantId is not accepted; accounts use the server tenant' })
+      }
+
+      const { email, password } = request.body
 
       if (!email || !EMAIL_PATTERN.test(email)) {
         return reply.code(400).send({ ok: false, error: 'invalid email' })
@@ -86,7 +98,9 @@ export function registerAuthRoutes(
           id: generateRandomId(),
           email: email.toLowerCase(),
           passwordHash,
-          tenantId: tenantId ?? DEFAULT_TENANT_ID,
+          // server-chosen: a client-supplied tenantId would let any signup read
+          // another tenant's projects and sessions
+          tenantId: DEFAULT_TENANT_ID,
         })
       } catch (err) {
         // a concurrent register for the same email lost the check-then-insert
@@ -267,6 +281,48 @@ export function registerAuthKeyRoutes(
       return reply.send({
         ok: true,
         user: { id: user.id, email: user.email, tenant_id: user.tenant_id },
+      })
+    }
+  )
+
+  app.post(
+    '/auth/stream-ticket',
+    async (request, reply) => {
+      const auth = request.auth
+      if (!auth) {
+        return reply.code(401).send({ ok: false, error: 'unauthorized' })
+      }
+      // short-lived JWT for direct browser SSE/WS (A3) — same secret, 60s TTL,
+      // tenant-bound; issuance requires the JWT secret, fail closed without it
+      if (!process.env.ATLASLINK_JWT_SECRET) {
+        return reply.code(503).send({ ok: false, error: 'stream tickets require ATLASLINK_JWT_SECRET' })
+      }
+      try {
+        const { ticket, expiresAt } = createStreamTicket(auth.userId, auth.tenantId)
+        return reply.send({ ok: true, ticket, expiresAt })
+      } catch {
+        return reply.code(503).send({ ok: false, error: 'stream tickets unavailable' })
+      }
+    }
+  )
+
+  app.get(
+    '/members',
+    async (request, reply) => {
+      const auth = request.auth
+      if (!auth) {
+        return reply.code(401).send({ ok: false, error: 'unauthorized' })
+      }
+      // tenant-scoped display directory for @mention autocomplete —
+      // ids/emails only, never password hashes or other tenants
+      const users = await authStore.listUsersByTenant(auth.tenantId)
+      return reply.send({
+        ok: true,
+        members: users.map((u) => ({
+          id: u.id,
+          email: u.email,
+          displayName: u.email.split('@')[0] ?? u.email,
+        })),
       })
     }
   )

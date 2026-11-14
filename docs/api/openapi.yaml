@@ -23,8 +23,8 @@ info:
 servers:
   - url: http://localhost:3000
     description: Local development
-  - url: https://atlaslink-daemon.onrender.com
-    description: Production daemon (Render)
+  - url: https://api.atlas.flabs.tech
+    description: Production API (EC2)
   - url: https://atlas.flabs.tech/api
     description: Dashboard BFF proxy (Vercel) — same Task API via /api/*
 

@@ -15,6 +15,7 @@ import { EventBroadcaster } from './bridge/EventBroadcaster'
 import { SessionQueue } from './bridge/SessionQueue'
 import { SseHandler } from './bridge/sseEndpoint'
 import { createSessionBackend, backendForTenant, DEFAULT_TENANT_ID } from './session/backendFactory'
+import { resolveTenantIdFromAuth } from './session/tenant'
 import { costUsageOf } from './session/costUsage'
 import { PostgresBackend } from './session/postgresBackend'
 import { SessionStore } from './session/sessionStore'
@@ -99,7 +100,7 @@ function friendlyKeyError(err: unknown): string {
 
 async function runOnce({ config, member, task }: { config: LLMConfig; member: string; task: string }): Promise<boolean> {
   const registry = new TaskRegistry()
-  const session = registry.create({ member, prompt: task })
+  const session = registry.create({ member, prompt: task, tenantId: DEFAULT_TENANT_ID })
   logger.info('session created', { correlationId: session.correlationId, member: session.task.member })
   const finished = await runSession({
     registry,
@@ -275,7 +276,9 @@ export async function createAppServer(params: {
       },
       async (request, reply) => {
         const { member, prompt } = request.body as { member: string; prompt: string }
-        const session = registry.create({ member, prompt })
+        const { tenantId, error } = resolveTenantIdFromAuth(request.auth?.tenantId, request.headers)
+        if (error) return reply.code(400).send({ ok: false, error })
+        const session = registry.create({ member, prompt, tenantId })
         queue.declareSession(session)
         logger.info('session delegated', { sessionId: session.id, correlationId: session.correlationId, member })
         return reply.code(202).send({ ok: true, session: { id: session.id, status: session.status } })
@@ -287,8 +290,12 @@ export async function createAppServer(params: {
     // stream — the reconnection contract (Last-Event-ID, ping, bridge.gap/shutdown)
     // survives the framework swap untouched (ADR-006 Decision 2).
     api.get('/events', (request, reply) => {
+      // The global stream carries every session's chat and run events: scope
+      // it to the caller's identity, never the process-wide firehose.
+      const { tenantId, error } = resolveTenantIdFromAuth(request.auth?.tenantId, request.headers)
+      if (error) return reply.code(400).send({ ok: false, error })
       reply.hijack()
-      sse.handle(request.raw, reply.raw)
+      sse.handleForTenant(request.raw, reply.raw, tenantId)
     })
 
     // --- M3 Task API (spec §3/§7): token-gated, store-backed, queue-driven ---
@@ -352,6 +359,11 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
      registry,
      runner: async (sessionId) => {
        const session = registry.get(sessionId)!
+       // One aggregate read per run resolves the tenant for the cost counter
+       // and every mirror/bridge envelope below. /runs has no store row, so
+       // fall back to the registry copy stamped at creation.
+       const seed = await backend.get(sessionId).catch(() => null)
+       const tenantId = seed?.tenantId ?? session.tenantId ?? DEFAULT_TENANT_ID
        // Mirror lifecycle into the store so GET /tasks read the live aggregate.
        // /runs-created sessions live only in the registry — the store stays the
        // /tasks surface, so a missing aggregate is skipped, not invented. A
@@ -360,7 +372,7 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
          const current = await backend.get(sessionId)
          if (!current || current.status === 'cancelled') return
          try {
-           await backend.readModifyWrite(sessionId, current.version, () => [delta])
+           await backend.readModifyWrite(sessionId, current.version, () => [{ ...delta, tenantId }])
          } catch (err) {
            if (!(err instanceof VersionConflictError)) throw err
            // a cancel landed between read and write — the aggregate moved on,
@@ -379,11 +391,8 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
         // pending member mirror must never race a session.succeeded/failed
         // commit, whose conflict the mirror helper silently drops
         let memberMirror = Promise.resolve()
-        // one aggregate read per run resolves the tenant for the cost
-        // counter; the per-event chain below stays write-only
-        const costSeed = await backend.get(sessionId).catch(() => null)
-        const costBackend = backendForTenant(backend, costSeed?.tenantId ?? DEFAULT_TENANT_ID)
-        const costFallbackDay = costSeed?.createdAt
+        const costBackend = backendForTenant(backend, tenantId)
+        const costFallbackDay = seed?.createdAt
         try {
           await mirror({ type: 'session.running', correlationId: session.correlationId, at: at() })
           let resume = session.resume
@@ -405,7 +414,7 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
             session,
             config: resolveSessionConfig(config.agenthood, session.task),
             onEvent: (event: RunEvent) => {
-              broadcaster.emit({ eventId: 0, ...event })
+              broadcaster.emit({ eventId: 0, ...event, tenantId })
               // fire-and-forget on a serialized chain: the live run is never
               // gated on disk, and this chain is drained before the terminal
               // mirrors so no member mirror can outlive the run
@@ -444,8 +453,8 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
         // every status — including failed — stays traceable to a commit (#301)
         await finalizeWorkspace({
           workspaceRoot: workspaceRootFor(log.dataDir),
-          tenantId: costSeed?.tenantId ?? DEFAULT_TENANT_ID,
-          projectId: costSeed?.projectId,
+          tenantId,
+          projectId: seed?.projectId,
           sessionId,
           status: final.status,
           member: final.task.member,
@@ -482,6 +491,7 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
               sessionId,
               correlationId: final.correlationId,
               member: final.task.member,
+              tenantId,
               at: parkedAt,
               ...(question !== undefined ? { question } : {}),
             }

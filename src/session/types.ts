@@ -45,6 +45,13 @@ export interface SessionEvent {
   reply?: string
   // session.message / session.steer human-authored text
   message?: string
+  // A2 room threading: author is the authenticated user id (server-stamped,
+  // never client-supplied); parentId/mentions/anchor are opaque client
+  // conventions stored verbatim and scoped to this session
+  authorId?: string
+  parentId?: string
+  mentions?: string[]
+  anchor?: string
   iteration?: number
   // session.created on a reply-resumed follow-up: the parked session it continues
   resumeOf?: string
@@ -68,8 +75,10 @@ export interface Session {
   output?: string
   error?: string
   durationMs?: number
-  // conversational + next-step projection (M4)
-  interaction: { role: 'user' | 'atlas' | 'member'; member?: string; at: string; content: string }[]
+  // conversational + next-step projection (M4), room thread (A2):
+  // authorId/parentId/mentions/anchor ride message turns verbatim so the
+  // dashboard can thread and @mention without a second read
+  interaction: { role: 'user' | 'atlas' | 'member'; member?: string; at: string; content: string; authorId?: string; parentId?: string; mentions?: string[]; anchor?: string }[]
   nextStep: { awaiting_input: boolean; prompt?: string; member?: string } | null
   // full unified question payload behind nextStep.prompt; set on awaiting_input
   question?: AskHumanQuestion

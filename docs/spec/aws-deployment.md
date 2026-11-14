@@ -37,7 +37,7 @@ Vercel dashboard ──BFF──▶ https://staging.atlas.flabs.tech (Caddy :443
 | `deploy/aws/router.overrides.yaml` | new | `listen_addr: 0.0.0.0:3002`, subgraph URLs → `http://backend:3000/v1/graphql/<name>` |
 | `.github/workflows/deploy-aws.yml` | new | mirrors `deploy-render.yml` gates; SSH `git pull && docker compose … up -d --build`; polls `/health` build marker; skips silently until secrets exist |
 | `docs/runbooks/aws-deploy.md` | new | account, EC2, Docker, RDS, SSM, DNS, first boot, verification, CI secrets |
-| `render.yaml`, `deploy-render.yml` | untouched | removed in #329 only after soak |
+| `render.yaml`, `deploy-render.yml` | removed | decommissioned in #329 |
 
 ### Deploy flow
 

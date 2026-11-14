@@ -59,6 +59,15 @@ export class SseHandler {
   }
 
   /**
+   * Tenant-scoped global stream: the same firehose, filtered by the identity
+   * that authenticated the connection. Envelopes without a tenant are dropped
+   * rather than guessed into the default tenant.
+   */
+  handleForTenant(req: IncomingMessage, res: ServerResponse, tenantId: string): void {
+    this.#handle(req, res, (envelope) => envelope.tenantId === tenantId)
+  }
+
+  /**
    * Per-session variant (spec §3): replay-then-live limited to one session's
    * events by `correlationId`. Uses the same wire contract — Last-Event-ID
    * resume, ping, gap, shutdown — filtered at the projection boundary.
@@ -93,7 +102,18 @@ export class SseHandler {
     })
 
     const lastIdRaw = req.headers['last-event-id']
-    const lastId = typeof lastIdRaw === 'string' ? parseInt(lastIdRaw, 10) : NaN
+    let lastId = typeof lastIdRaw === 'string' ? parseInt(lastIdRaw, 10) : NaN
+    if (Number.isNaN(lastId)) {
+      // BFF/dashboard resume via ?lastEventId= (EventSource cannot set headers
+      // on the first connect) — header stays the source of truth on reconnect
+      try {
+        const url = new URL(req.url ?? '/', 'http://localhost')
+        const q = url.searchParams.get('lastEventId') ?? url.searchParams.get('last_event_id')
+        if (q !== null) lastId = parseInt(q, 10)
+      } catch {
+        // malformed URL — live-tail only
+      }
+    }
 
     if (!Number.isNaN(lastId)) {
       const oldest = this.log.oldestId
