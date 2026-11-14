@@ -36,7 +36,7 @@ Atlaslink is a product-oriented multi-agent orchestrator built on **[Agenthood](
 | Frontend | Next.js 16, React 19, Mantine 9, Tailwind CSS v4, React Flow 12, dagre layout |
 | Auth | JWT (HS256), API keys (SHA-256 hashed), scrypt passwords |
 | Testing | Node built-in test runner (backend), Vitest (dashboard), c8 coverage |
-| CI/CD | GitHub Actions, auto-deploy to Render + AWS staging (ADR-013), semantic-release |
+| CI/CD | GitHub Actions, auto-deploy to AWS (Render legacy), semantic-release |
 
 ## Quick start
 
@@ -111,17 +111,22 @@ Details: [ADR-008](docs/adr/ADR-008-auth-and-tenancy.md)
 
 ## Deployment
 
-### Render (recommended)
+### AWS (recommended)
 
-`render.yaml` defines a Docker-based daemon plus a free-tier Postgres. Sessions survive deploys and cold starts when `ATLASLINK_DATABASE_URL` is set. Auto-deploy triggers after every green CI run on `main`.
+Production and staging run on one EC2 stack (Caddy, daemon, Cosmo router) with
+RDS Postgres, SSM secrets, and a GitHub Actions deploy after green CI. Follow
+[`docs/runbooks/aws-deploy.md`](docs/runbooks/aws-deploy.md).
 
 ```bash
-# Set in the Render dashboard:
-#   OPENCODE_API_KEY (or GROQ_API_KEY)
-# Copy the generated ATLASLINK_API_TOKEN into dashboard/.env.local:
-echo 'ATLASLINK_API_URL=https://atlaslink-daemon.onrender.com' >> dashboard/.env.local
-echo 'ATLASLINK_API_TOKEN=<your-token>' >> dashboard/.env.local
+# Local dashboard → production API (token from /atlaslink/ATLASLINK_API_TOKEN)
+echo 'ATLASLINK_API_URL=https://api.atlas.flabs.tech' >> dashboard/.env.local
+echo 'ATLASLINK_API_TOKEN=<from SSM>' >> dashboard/.env.local
 ```
+
+### Render (legacy)
+
+Kept as the rollback target until the #329 soak ends. The old
+`atlaslink-daemon.onrender.com` hostname is no longer served; do not use it.
 
 ### Docker
 
@@ -132,7 +137,7 @@ docker run -p 3000:3000 --env-file .env atlaslink
 
 ### Vercel (dashboard)
 
-The dashboard at [atlas.flabs.tech](https://atlas.flabs.tech) is a Next.js app with a BFF proxy (`/api/*` → backend). Set `ATLASLINK_API_URL` and `ATLASLINK_API_TOKEN` as build-time env vars.
+The dashboard at [atlas.flabs.tech](https://atlas.flabs.tech) is a Next.js app with a BFF proxy (`/api/*` → backend). Set `ATLASLINK_API_URL` and `ATLASLINK_API_TOKEN` as server-side env vars; changing them requires a redeploy.
 
 ### Oracle Cloud Always Free (legacy)
 
