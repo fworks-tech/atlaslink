@@ -115,13 +115,14 @@ aws ssm put-parameter --name /atlaslink/GROQ_API_KEY       --type SecureString -
 aws ssm put-parameter --name /atlaslink/ATLASLINK_API_TOKEN --type SecureString --value "$(openssl rand -hex 32)"
 aws ssm put-parameter --name /atlaslink/ATLASLINK_JWT_SECRET --type SecureString --value "$(openssl rand -hex 32)"
 aws ssm put-parameter --name /atlaslink/ATLASLINK_DATABASE_URL --type SecureString \
-  --value "postgresql://atlas:<password>@atlaslink.xxxxx.us-east-1.rds.amazonaws.com:5432/atlaslink?sslmode=require&uselibpqcompat=true"
+  --value "postgresql://atlas:<password>@atlaslink.xxxxx.us-east-1.rds.amazonaws.com:5432/atlaslink?sslmode=verify-full"
 ```
 
-RDS enforces TLS. The installed `pg` treats `sslmode=require` as `verify-full` and
-rejects the RDS CA, so `uselibpqcompat=true` restores libpq behavior: the
-connection is encrypted without CA verification. Staging shortcut: switch to
-`sslmode=verify-full` plus the RDS CA bundle before production.
+RDS enforces TLS. The backend verifies the server certificate against the RDS
+global CA bundle at `certs/global-bundle.pem`, mounted by
+`docker-compose.aws.yml` and exposed through `NODE_EXTRA_CA_CERTS`. The deploy
+downloads it when missing; §6 does the same on a fresh host. Do not add
+`uselibpqcompat` — it turns certificate verification off.
 
 ## 6. First boot on the instance
 
@@ -154,6 +155,12 @@ git clone https://github.com/fworks-tech/atlaslink.git && cd atlaslink
     [ -n "$val" ] && echo "$p=$val"
   done
 } > .env && chmod 600 .env
+
+# RDS CA bundle: the compose overlay mounts it into the backend and sets
+# NODE_EXTRA_CA_CERTS. The deploy refreshes it if an instance loses it.
+mkdir -p certs
+curl -fsS https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+  -o certs/global-bundle.pem
 
 docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build
 ```

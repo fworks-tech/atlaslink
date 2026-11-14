@@ -70,6 +70,9 @@ web_modules/
 .env.*
 !.env.example
 
+# RDS CA bundle fetched by the deploy / runbook §6
+certs/
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
