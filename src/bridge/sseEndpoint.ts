@@ -102,7 +102,18 @@ export class SseHandler {
     })
 
     const lastIdRaw = req.headers['last-event-id']
-    const lastId = typeof lastIdRaw === 'string' ? parseInt(lastIdRaw, 10) : NaN
+    let lastId = typeof lastIdRaw === 'string' ? parseInt(lastIdRaw, 10) : NaN
+    if (Number.isNaN(lastId)) {
+      // BFF/dashboard resume via ?lastEventId= (EventSource cannot set headers
+      // on the first connect) — header stays the source of truth on reconnect
+      try {
+        const url = new URL(req.url ?? '/', 'http://localhost')
+        const q = url.searchParams.get('lastEventId') ?? url.searchParams.get('last_event_id')
+        if (q !== null) lastId = parseInt(q, 10)
+      } catch {
+        // malformed URL — live-tail only
+      }
+    }
 
     if (!Number.isNaN(lastId)) {
       const oldest = this.log.oldestId

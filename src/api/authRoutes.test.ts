@@ -16,7 +16,7 @@ import { AuthStore } from '../session/authStore'
 import { SQLiteDb } from '../session/sqliteDb'
 import { runMigrations } from '../session/migrations'
 import { sqliteMigrations } from '../session/sqliteMigrations'
-import { jsonRequest } from '../test/serverHarness'
+import { collectStream, jsonRequest } from '../test/serverHarness'
 
 async function createTestServer(): Promise<{
   port: number
@@ -422,6 +422,42 @@ test('POST /auth/register — seeds the inbox project for the new tenant', async
     assert.equal(list.ok, true, JSON.stringify(list))
     assert.ok(project)
     assert.equal(project.id, `proj-inbox-${user.id}`)
+  } finally {
+    await close()
+  }
+})
+
+test('POST /auth/stream-ticket — issues a short-lived ticket that opens SSE via query', async () => {
+  const { port, close } = await createTestServer()
+  try {
+    await jsonRequest(port, 'POST', '/v1/auth/register', {
+      email: 'ticket@example.com',
+      password: 'password123',
+    })
+    const login = JSON.parse((await jsonRequest(port, 'POST', '/v1/auth/login', {
+      email: 'ticket@example.com',
+      password: 'password123',
+    })).body)
+
+    const unauth = await jsonRequest(port, 'POST', '/v1/auth/stream-ticket', {})
+    assert.equal(unauth.status, 401)
+
+    const res = await jsonRequest(port, 'POST', '/v1/auth/stream-ticket', {}, {
+      authorization: `Bearer ${login.token}`,
+    })
+    assert.equal(res.status, 200)
+    const body = JSON.parse(res.body)
+    assert.equal(body.ok, true)
+    assert.ok(typeof body.ticket === 'string' && body.ticket.split('.').length === 3)
+    assert.ok(typeof body.expiresAt === 'string')
+
+    // query ticket must not work on non-SSE routes
+    const forbidden = await jsonRequest(port, 'GET', `/v1/tasks?ticket=${encodeURIComponent(body.ticket)}`)
+    assert.equal(forbidden.status, 401)
+
+    // same ticket opens the SSE stream via query (EventSource has no headers)
+    const stream = await collectStream(`http://127.0.0.1:${port}/v1/events?ticket=${encodeURIComponent(body.ticket)}`, {}, 800)
+    assert.ok(stream.includes('keep-alive'), `expected SSE keep-alive, got: ${stream.slice(0, 200)}`)
   } finally {
     await close()
   }

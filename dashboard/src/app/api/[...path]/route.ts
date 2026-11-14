@@ -48,6 +48,13 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   const body = method === "get" ? undefined : await req.text();
   if (body !== undefined) headers.set("content-type", req.headers.get("content-type") ?? "application/json");
 
+  // SSE streams are long-lived by design — the 30s timeout is for REST only.
+  // An aborted stream would force EventSource into a reconnect loop that
+  // fights Last-Event-ID resume. Direct browser streams (A3 ticket) bypass
+  // the BFF entirely; this fallback path must not cut them either.
+  const isEventStream = path.includes("events");
+  const signal = isEventStream ? undefined : AbortSignal.timeout(30000);
+
   let upstream: Response;
   try {
     upstream = await fetch(target, {
@@ -56,7 +63,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
       body,
       // route handlers must not let the data cache treat daemon responses as static
       cache: "no-store",
-      signal: AbortSignal.timeout(30000),
+      ...(signal ? { signal } : {}),
     });
   } catch (err) {
     if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {

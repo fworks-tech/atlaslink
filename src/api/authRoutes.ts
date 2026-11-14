@@ -10,7 +10,7 @@ import {
   verifyPassword,
 } from '../session/authStore'
 import { isUniqueViolation } from '../session/db'
-import { createToken } from '../session/jwt'
+import { createStreamTicket, createToken } from '../session/jwt'
 import { DEFAULT_TENANT_ID } from '../session/migrations'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -282,6 +282,27 @@ export function registerAuthKeyRoutes(
         ok: true,
         user: { id: user.id, email: user.email, tenant_id: user.tenant_id },
       })
+    }
+  )
+
+  app.post(
+    '/auth/stream-ticket',
+    async (request, reply) => {
+      const auth = request.auth
+      if (!auth) {
+        return reply.code(401).send({ ok: false, error: 'unauthorized' })
+      }
+      // short-lived JWT for direct browser SSE/WS (A3) — same secret, 60s TTL,
+      // tenant-bound; issuance requires the JWT secret, fail closed without it
+      if (!process.env.ATLASLINK_JWT_SECRET) {
+        return reply.code(503).send({ ok: false, error: 'stream tickets require ATLASLINK_JWT_SECRET' })
+      }
+      try {
+        const { ticket, expiresAt } = createStreamTicket(auth.userId, auth.tenantId)
+        return reply.send({ ok: true, ticket, expiresAt })
+      } catch {
+        return reply.code(503).send({ ok: false, error: 'stream tickets unavailable' })
+      }
     }
   )
 }
