@@ -179,6 +179,7 @@ async function spawnResumeFollowup(
       member: original.task.member,
       prompt,
       ...(resumeProvider !== undefined ? { provider: resumeProvider } : {}),
+      tenantId,
       id: followupId,
       correlationId: followupCorrelationId,
       ...(resume ? { resume } : {}),
@@ -272,6 +273,7 @@ export async function askFollowup(
       member: original.task.member,
       prompt,
       ...(resumeProvider !== undefined ? { provider: resumeProvider } : {}),
+      tenantId,
       id: followupId,
       correlationId: followupCorrelationId,
     })
@@ -338,6 +340,7 @@ export async function appendChatMessage(
       correlationId: current.correlationId,
       at,
       message: content,
+      ...(current.tenantId !== undefined ? { tenantId: current.tenantId } : {}),
     }),
   })
   return result
@@ -384,6 +387,7 @@ export async function replyToParked(
       correlationId: current.correlationId,
       at,
       reply: content,
+      ...(current.tenantId !== undefined ? { tenantId: current.tenantId } : {}),
     }),
   })
   if (result.code !== 201) return result
@@ -448,6 +452,7 @@ export async function steerSession(
         correlationId: fresh.correlationId,
         at,
         message: content,
+        ...(fresh.tenantId !== undefined ? { tenantId: fresh.tenantId } : {}),
       }),
     })
     if (result.code !== 201) {
@@ -486,6 +491,7 @@ export async function steerSession(
         correlationId: fresh.correlationId,
         at,
         reply: content,
+        ...(fresh.tenantId !== undefined ? { tenantId: fresh.tenantId } : {}),
       }),
     })
     // the abort already fired even on CAS failure — the run still
