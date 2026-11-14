@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, cleanup, act } from "@testing-library/react";
+import { render, screen, cleanup } from "@testing-library/react";
 
 const authMock = vi.fn<(session?: { jwt: string; email: string; userId: string } | null) => { session: { jwt: string; email: string; userId: string } | null; signOut: () => void }>(() => ({ session: null, signOut: () => {} }));
 
@@ -52,25 +52,15 @@ describe("DemoBanner", () => {
   });
 });
 
-describe("LandingCanvas choreography", () => {
-  it("builds the session step by step and keeps the room alive", async () => {
-    vi.useFakeTimers();
-    const LandingCanvas = (await import("@/components/LandingCanvas")).default;
-    render(<LandingCanvas />);
-    expect(screen.getByTestId("landing-canvas")).toBeDefined();
-    expect(screen.getByText(/Review my PR for security holes/i)).toBeInTheDocument();
-    // atlas delegates next
-    act(() => { vi.advanceTimersByTime(2000); });
-    expect(screen.getByText("ATLAS")).toBeInTheDocument();
-    act(() => { vi.advanceTimersByTime(5800); });
-    expect(screen.getByText(/Apply the suggested fix\?/i)).toBeInTheDocument();
-    act(() => { vi.advanceTimersByTime(4200); });
-    expect(screen.getByText(/session\.succeeded/i)).toBeInTheDocument();
-    // the loop restarts — the human bubble returns after the cycle
-    act(() => { vi.advanceTimersByTime(7600); });
-    expect(screen.getByText(/Review my PR for security holes/i)).toBeInTheDocument();
-    expect(screen.getByText(/is typing/i)).toBeInTheDocument();
-    vi.useRealTimers();
+describe("hero video", () => {
+  it("autoplays the hand-it-to-the-room demo muted and on loop", () => {
+    render(<LandingPage />);
+    const video = screen.getByTestId("hero-video") as HTMLVideoElement;
+    expect(video.getAttribute("src")).toBe("/hand-it-to-the-room.mp4");
+    expect(video.autoplay).toBe(true);
+    expect(video.muted).toBe(true);
+    expect(video.loop).toBe(true);
+    expect(video.playsInline).toBe(true);
   });
 });
 
