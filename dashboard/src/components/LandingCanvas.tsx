@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Disc from "./room/Disc";
+import LiveBadge from "./room/LiveBadge";
 
 /**
  * Scripted choreography of a real Atlaslink session: a human asks, Atlas
@@ -13,14 +15,16 @@ import { useEffect, useState } from "react";
 
 type Step = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-/** x/y in % of the canvas — every card anchors by center. */
+/** x/y in % of the canvas — every card anchors by center. Human and ask sit
+ *  slightly inward so their cards clear the canvas edge and each other on
+ *  narrow screens (cards shrink below sm, positions stay put). */
 const NODES = {
-  human: { x: 14, y: 16, label: "you · live", role: "Review my PR for security holes", tone: "gold" },
-  atlas: { x: 48, y: 14, label: "ATLAS", role: "root · bearer of sessions", tone: "accent" },
-  member: { x: 80, y: 30, label: "the-reviewer", role: "five-axis review", tone: "accent" },
-  tool: { x: 76, y: 58, label: "tool · grep", role: "3 matches", tone: "accent" },
-  ask: { x: 45, y: 56, label: "Atlas asks", role: "Apply the suggested fix?", tone: "gold" },
-  done: { x: 16, y: 82, label: "session.succeeded", role: "3 members · 1 human · $0.04", tone: "ok" },
+  human: { x: 16, y: 16, label: "you · live", role: "Review my PR for security holes", tone: "gold", kind: "human" },
+  atlas: { x: 48, y: 14, label: "ATLAS", role: "root · bearer of sessions", tone: "accent", kind: "agent" },
+  member: { x: 80, y: 30, label: "the-reviewer", role: "five-axis review", tone: "accent", kind: "agent" },
+  tool: { x: 76, y: 58, label: "tool · grep", role: "3 matches", tone: "accent", kind: "plain" },
+  ask: { x: 38, y: 56, label: "Atlas asks", role: "Apply the suggested fix?", tone: "gold", kind: "plain" },
+  done: { x: 16, y: 82, label: "session.succeeded", role: "3 members · 1 human · $0.04", tone: "ok", kind: "plain" },
 } as const;
 
 const EDGES: Array<{ from: keyof typeof NODES; to: keyof typeof NODES; showFrom: Step }> = [
@@ -49,15 +53,31 @@ function useTimeline(): Step {
   return step;
 }
 
-function NodeCard({ x, y, label, role, tone }: { x: number; y: number; label: string; role: string; tone: "accent" | "ok" | "gold" }) {
+type NodeTone = "accent" | "ok" | "gold";
+
+/** Compact agent-card language shared with the Live Shared Room card: humans
+ *  get an initial-disc row, agents an AI badge, system nodes stay two-line. */
+function NodeCard({ x, y, label, role, tone, kind }: { x: number; y: number; label: string; role: string; tone: NodeTone; kind: "human" | "agent" | "plain" }) {
   const border = tone === "ok" ? "border-ok/40" : tone === "gold" ? "border-gold/50" : "border-accent/50";
   return (
     <div
-      className={`absolute w-40 max-w-[46%] -translate-x-1/2 -translate-y-1/2 animate-[pop-in_.5s_ease-out_forwards] rounded-xl border ${border} bg-surface px-3 py-2 shadow-lg`}
+      className={`absolute w-28 max-w-[40%] -translate-x-1/2 -translate-y-1/2 animate-[pop-in_.5s_ease-out_forwards] rounded-xl border ${border} bg-surface px-2.5 py-2 shadow-lg sm:w-40 sm:max-w-[46%] sm:px-3`}
       style={{ left: `${x}%`, top: `${y}%` }}
     >
-      <div className="text-sm font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{label}</div>
-      <div className="mt-0.5 text-[11px] leading-snug text-muted">{role}</div>
+      {kind === "human" ? (
+        <div className="flex items-center gap-1.5">
+          <Disc initials="you" tone="human" size="sm" />
+          <div className="text-xs font-semibold text-foreground sm:text-sm" style={{ fontFamily: "var(--font-display)" }}>{label}</div>
+        </div>
+      ) : kind === "agent" ? (
+        <div className="flex items-center gap-1.5">
+          <span className="rounded-md bg-accent/15 px-1 py-px text-[10px] font-bold text-accent sm:text-[11px]">AI</span>
+          <div className="truncate text-xs font-semibold text-foreground sm:text-sm" style={{ fontFamily: "var(--font-display)" }}>{label}</div>
+        </div>
+      ) : (
+        <div className="text-xs font-semibold text-foreground sm:text-sm" style={{ fontFamily: "var(--font-display)" }}>{label}</div>
+      )}
+      <div className="mt-0.5 text-[10px] leading-snug text-muted sm:text-[11px]">{role}</div>
     </div>
   );
 }
@@ -68,7 +88,9 @@ export default function LandingCanvas() {
   return (
     <div
       data-testid="landing-canvas"
-      className="relative h-[440px] w-full overflow-hidden rounded-2xl border border-line bg-surface/60"
+      role="img"
+      aria-label="A shared room session: you ask for a PR review, Atlas delegates to the-reviewer, a grep tool finds matches, Atlas asks for approval, you approve, the session succeeds"
+      className="relative h-[520px] w-full overflow-hidden rounded-2xl border border-line bg-surface/60 sm:h-[440px]"
     >
       {/* edge layer */}
       <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
@@ -88,20 +110,20 @@ export default function LandingCanvas() {
         })}
       </svg>
 
-      {step >= 0 && <NodeCard {...NODES.human} tone="gold" />}
-      {step >= 1 && <NodeCard {...NODES.atlas} tone="accent" />}
-      {step >= 2 && <NodeCard {...NODES.member} tone="accent" />}
-      {step >= 3 && <NodeCard {...NODES.tool} tone="accent" />}
+      {step >= 0 && <NodeCard {...NODES.human} />}
+      {step >= 1 && <NodeCard {...NODES.atlas} />}
+      {step >= 2 && <NodeCard {...NODES.member} />}
+      {step >= 3 && <NodeCard {...NODES.tool} />}
       {step >= 4 && (
         <div
-          className="absolute w-44 max-w-[46%] -translate-x-1/2 -translate-y-1/2 animate-[pop-in_.5s_ease-out_forwards] rounded-xl border border-gold/60 bg-surface px-3 py-2 shadow-lg"
+          className="absolute w-36 max-w-[44%] -translate-x-1/2 -translate-y-1/2 animate-[pop-in_.5s_ease-out_forwards] rounded-xl border border-gold/60 bg-surface px-2.5 py-2 shadow-lg sm:w-44 sm:max-w-[46%] sm:px-3"
           style={{ left: `${NODES.ask.x}%`, top: `${NODES.ask.y}%` }}
         >
           <div className="animate-[pulse-gold_1.5s_ease-in-out_infinite]">
             <div className="text-[10px] uppercase tracking-widest text-gold">Atlas asks · waiting on you</div>
-            <div className="mt-0.5 text-sm text-foreground">Apply the suggested fix?</div>
+            <div className="mt-0.5 text-xs text-foreground sm:text-sm">Apply the suggested fix?</div>
             <div className="mt-2 flex gap-2 text-[11px]">
-              <span className="rounded bg-accent/15 px-2.5 py-1 font-medium text-accent">approve</span>
+              <span className="rounded border border-gold/50 px-2.5 py-1 font-medium text-gold">approve</span>
               <span className="rounded border border-line px-2.5 py-1 text-muted">reject</span>
             </div>
           </div>
@@ -112,7 +134,7 @@ export default function LandingCanvas() {
           ✓ approved — run resumes
         </div>
       )}
-      {step >= 6 && <NodeCard {...NODES.done} tone="ok" />}
+      {step >= 6 && <NodeCard {...NODES.done} />}
 
       {/* the room is always alive */}
       <div className="absolute bottom-3 right-4 flex items-center gap-1.5 text-[11px] text-muted">
@@ -120,11 +142,12 @@ export default function LandingCanvas() {
         the-reviewer is typing
       </div>
       <div className="absolute left-4 top-3 flex items-center gap-2 text-[11px] text-muted">
-        <span className="flex -space-x-1">
-          <span className="h-2.5 w-2.5 rounded-full border border-line bg-gold" />
-          <span className="h-2.5 w-2.5 rounded-full border border-line bg-accent" />
+        <span className="flex -space-x-1" aria-hidden>
+          <Disc initials="you" tone="human" size="sm" />
+          <Disc initials="AT" tone="agent" size="sm" />
         </span>
-        2 humans · 3 agents in the room
+        <LiveBadge label="Live" />
+        1 human · 2 agents in the room
       </div>
     </div>
   );
