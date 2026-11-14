@@ -223,8 +223,8 @@ and production share the RDS store: do not run destructive tests on staging.
    `ATLASLINK_API_TOKEN` value into the cutover issue (#329) or the team
    password manager. The Vercel values are Sensitive (write-only), and Hobby
    can only roll back to the immediately previous deployment.
-3. Merge the address change in `deploy/aws/Caddyfile`; the deploy reloads Caddy
-   and Let's Encrypt obtains the certificate. Verify the API directly before
+3. Merge the address change in `deploy/aws/Caddyfile`; the deploy recreates
+   Caddy and Let's Encrypt obtains the certificate. Verify the API directly before
    pointing the dashboard at it:
    `curl -fsS https://api.atlas.flabs.tech/health` (`"providers"` >= 1),
    `/health/ready` → `OK`, and a tokenless `/graphql` → `401`.
@@ -259,10 +259,11 @@ redeploy. Render sleeps when idle; expect a 30–60s cold start.
 | Startup logs `self-signed certificate in certificate chain` or `unable to verify the first certificate` | `certs/global-bundle.pem` is missing or stale — the deploy downloads it; check the mount and `NODE_EXTRA_CA_CERTS` (§5, §6) |
 | Build dies with `Killed` / exit 137 | Swap is missing (§6) — `npm ci` plus the `better-sqlite3` compile needs more than the 1 GB t4g.micro offers; `free -m` should show the swapfile |
 | Cert not issued | DNS not resolving yet, or port 443 SG closed — Caddy retries once DNS is right |
-| Caddy log shows `acme-staging-v02` | The Caddyfile must pin `acme_ca https://acme-v02.api.letsencrypt.org/directory`; reload Caddy |
+| Caddy log shows `acme-staging-v02` | The Caddyfile must pin `acme_ca https://acme-v02.api.letsencrypt.org/directory`; recreate Caddy |
 | ACME challenge 404 from `64.29.17.x` / `216.198.79.x` | `staging` still points at Vercel; set the A record to the Elastic IP |
 | Deploy workflow green but nothing deployed | `AWS_DEPLOY_HOST` was empty; the guard now fails instead of skipping |
-| Cert still missing after DNS propagates | `docker compose -f docker-compose.yml -f docker-compose.aws.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile` |
+| Cert still missing after DNS propagates | `docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --force-recreate caddy` |
+| Deploy green but Caddy serves old routes | A single-file bind mount kept the old inode across `git pull`; `docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --force-recreate caddy` |
 | `/health` keeps returning old `"providers"` | Image build failed on the instance: `docker compose -f docker-compose.yml -f docker-compose.aws.yml build` and read the router stage output |
 | `/health/ready` not OK | Router can't reach subgraphs: `docker compose logs router` — `backend:3000` must resolve on the compose network |
 | Deploy workflow red at the poll step | SSH/deploy worked but the marker never matched — same log commands as above |

@@ -42,9 +42,10 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$AWS_DEPLOY_KEY" > ~/.ssh/aws_deploy_key
           chmod 600 ~/.ssh/aws_deploy_key
-          # The Caddyfile is bind-mounted: compose does not recreate Caddy when
-          # only the file changes, so reload it after the stack is up. The RDS
-          # CA bundle is untracked (certs/ is ignored) and survives the pull.
+          # The Caddyfile is a single-file bind mount: `git pull` replaces the
+          # inode, so a running Caddy keeps serving the old file and a reload
+          # re-reads that stale copy. Recreate Caddy to pick up the new file.
+          # The RDS CA bundle is untracked (certs/ is ignored) and survives.
           ssh -i ~/.ssh/aws_deploy_key -o StrictHostKeyChecking=accept-new "ubuntu@$AWS_DEPLOY_HOST" '
             set -e
             cd atlaslink
@@ -52,8 +53,7 @@ jobs:
             mkdir -p certs
             test -f certs/global-bundle.pem || curl -fsS https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem -o certs/global-bundle.pem
             docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build
-            sleep 3
-            docker compose -f docker-compose.yml -f docker-compose.aws.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+            docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --force-recreate caddy
           '
           echo "Compose accepted the new build — waiting for it to serve."
 
