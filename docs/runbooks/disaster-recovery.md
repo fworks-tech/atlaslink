@@ -49,7 +49,7 @@ snapshot before any migration or destructive maintenance:
 ## Access
 
 ```bash
-aws ssm start-session --target i-06f5ce7c361a2e8b1   # or: ssh ubuntu@100.58.138.196
+aws ssm start-session --target i-06f5ce7c361a2e8b1   # or: ssh -i atlaslink.pem ubuntu@100.58.138.196
 cd ~/atlaslink
 docker compose -f docker-compose.yml -f docker-compose.aws.yml ps
 ```
@@ -91,17 +91,25 @@ overwriting the broken one:
 aws rds restore-db-instance-to-point-in-time \
   --source-db-instance-identifier atlaslink \
   --target-db-instance-identifier atlaslink-restored \
+  --db-instance-class db.t3.micro \
+  --db-subnet-group-name atlaslink-db-subnets \
+  --vpc-security-group-ids sg-019cea876264ae2b9 \
   --restore-time "$(date -u -d '-2 hours' +%Y-%m-%dT%H:%M:%SZ)"
 ```
+
+The subnet group and security group are not optional: without them the restore
+lands in the default ones and the EC2 host cannot reach port 5432. The restored
+instance keeps the source master password.
 
 Then, on the EC2 host, repoint the stack at the restored endpoint:
 
 1. Update `/atlaslink/ATLASLINK_DATABASE_URL` in SSM (keep `?sslmode=verify-full`
    and the same user/password).
-2. Re-run the secret sync from §6 of [aws-deploy.md](aws-deploy.md), or edit
-   `~/atlaslink/.env` directly.
+2. Copy the new value into `~/atlaslink/.env` — §5 writes the parameter and §6
+   shows the loop that assembles the file.
 3. `docker compose ... up -d --force-recreate backend`.
-4. Verify counts: `select count(*) from users, sessions, projects`.
+4. Verify counts:
+   `select (select count(*) from users), (select count(*) from sessions), (select count(*) from projects);`
 
 Sessions and API keys are in RDS; the NDJSON event log volume is not restored —
 the dashboard rebuilds session state from Postgres, so history survives with
@@ -116,11 +124,13 @@ restored instance for a one-row fix.
 Observed once on `atlas.flabs.tech` (2026-11-13): the record vanished and the
 dashboard returned 5xx while the API stayed healthy. Nothing monitors it yet.
 
-Route 53, zone `flabs.tech`, recreating the records:
+The zone runs on **Vercel DNS** (`ns1.vercel-dns.com`) — there is no Route 53
+zone for `flabs.tech`. Recreate the records in Vercel → Domains → `flabs.tech`
+→ DNS Records:
 
-| Name | Type | Target | Record ID |
+| Name | Type | Value | Record ID (to spot the right row) |
 |---|---|---|---|
-| `atlas` | ALIAS A | Vercel | `rec_d2d98bfbe669649637f95fbc` |
+| `atlas` | ALIAS | `cname.vercel-dns.com` | `rec_d2d98bfbe669649637f95fbc` |
 | `api.atlas` | A | `100.58.138.196` (EIP) | `rec_3a09800dbd5074f43fd2136f` |
 | `staging.atlas` | A | `100.58.138.196` (EIP) | `rec_8e68da9992a70330fbdb412d` |
 
