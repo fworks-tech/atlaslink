@@ -70,8 +70,8 @@ async function createTestServer(): Promise<{
   }
 }
 
-test('POST /auth/register — creates user and returns JWT', async () => {
-  const { port, close } = await createTestServer()
+test('POST /auth/register — stores the new user in the default tenant', async () => {
+  const { port, authStore, close } = await createTestServer()
   try {
     const res = await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'newuser@example.com',
@@ -83,23 +83,44 @@ test('POST /auth/register — creates user and returns JWT', async () => {
     assert.ok(body.token)
     assert.equal(body.user.email, 'newuser@example.com')
     assert.equal(body.user.tenant_id, 'default')
+    const stored = await authStore.findUserByEmail('newuser@example.com')
+    assert.equal(stored?.tenant_id, 'default')
   } finally {
     await close()
   }
 })
 
-test('POST /auth/register — ignores a client-supplied tenantId', async () => {
-  const { port, close } = await createTestServer()
+test('POST /auth/register — rejects a client-supplied tenantId', async () => {
+  const { port, authStore, close } = await createTestServer()
   try {
     const res = await jsonRequest(port, 'POST', '/v1/auth/register', {
       email: 'tenant-escape@example.com',
       password: 'password123',
       tenantId: 'someone-else',
     })
-    assert.equal(res.status, 201)
-    const body = JSON.parse(res.body)
-    assert.equal(body.user.tenant_id, 'default')
+    assert.equal(res.status, 400)
+    assert.equal(JSON.parse(res.body).error, 'tenantId is not accepted; accounts use the server tenant')
+    assert.equal(await authStore.findUserByEmail('tenant-escape@example.com'), null)
   } finally {
+    await close()
+  }
+})
+
+test('POST /auth/register — returns 403 when signup is closed', async () => {
+  const { port, authStore, close } = await createTestServer()
+  const previous = process.env.ATLASLINK_ALLOW_SIGNUP
+  process.env.ATLASLINK_ALLOW_SIGNUP = 'false'
+  try {
+    const res = await jsonRequest(port, 'POST', '/v1/auth/register', {
+      email: 'closed@example.com',
+      password: 'password123',
+    })
+    assert.equal(res.status, 403)
+    assert.equal(JSON.parse(res.body).error, 'registration is closed')
+    assert.equal(await authStore.findUserByEmail('closed@example.com'), null)
+  } finally {
+    if (previous === undefined) delete process.env.ATLASLINK_ALLOW_SIGNUP
+    else process.env.ATLASLINK_ALLOW_SIGNUP = previous
     await close()
   }
 })

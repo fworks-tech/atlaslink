@@ -116,6 +116,10 @@ aws ssm put-parameter --name /atlaslink/ATLASLINK_API_TOKEN --type SecureString 
 aws ssm put-parameter --name /atlaslink/ATLASLINK_JWT_SECRET --type SecureString --value "$(openssl rand -hex 32)"
 aws ssm put-parameter --name /atlaslink/ATLASLINK_DATABASE_URL --type SecureString \
   --value "postgresql://atlas:<password>@atlaslink.xxxxx.us-east-1.rds.amazonaws.com:5432/atlaslink?sslmode=verify-full"
+
+# Optional, not a secret. "false" closes POST /auth/register: every self-service
+# signup lands in the shared `default` tenant and can read that tenant's data.
+aws ssm put-parameter --name /atlaslink/ATLASLINK_ALLOW_SIGNUP --type String --value "false"
 ```
 
 RDS enforces TLS. The backend verifies the server certificate against the RDS
@@ -150,7 +154,7 @@ git clone https://github.com/fworks-tech/atlaslink.git && cd atlaslink
 {
   echo "ATLASLINK_HOST=0.0.0.0"
   echo "ATLASLINK_PORT=3000"
-  for p in OPENCODE_API_KEY GROQ_API_KEY ATLASLINK_API_TOKEN ATLASLINK_JWT_SECRET ATLASLINK_DATABASE_URL; do
+  for p in OPENCODE_API_KEY GROQ_API_KEY ATLASLINK_API_TOKEN ATLASLINK_JWT_SECRET ATLASLINK_DATABASE_URL ATLASLINK_ALLOW_SIGNUP; do
     val=$(aws ssm get-parameter --name /atlaslink/$p --with-decryption --query Parameter.Value --output text 2>/dev/null) || continue
     [ -n "$val" ] && echo "$p=$val"
   done

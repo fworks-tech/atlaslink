@@ -26,6 +26,7 @@ const TIMING_HASH = (() => {
 interface RegisterBody {
   email?: string
   password?: string
+  /** Rejected by the handler; declared so the validator does not strip it. */
   tenantId?: string
 }
 
@@ -62,11 +63,23 @@ export function registerAuthRoutes(
           properties: {
             email: { type: 'string', minLength: 3, maxLength: 254 },
             password: { type: 'string', minLength: MIN_PASSWORD_LENGTH, maxLength: 128 },
+            // declared only so the handler can reject it: the validator strips
+            // unknown keys, and a stripped tenantId would silently land in the
+            // shared tenant instead of failing loudly
+            tenantId: { type: 'string', maxLength: 64 },
           },
         },
       },
     },
     async (request, reply) => {
+      if (process.env.ATLASLINK_ALLOW_SIGNUP === 'false') {
+        return reply.code(403).send({ ok: false, error: 'registration is closed' })
+      }
+
+      if (request.body.tenantId !== undefined) {
+        return reply.code(400).send({ ok: false, error: 'tenantId is not accepted; accounts use the server tenant' })
+      }
+
       const { email, password } = request.body
 
       if (!email || !EMAIL_PATTERN.test(email)) {
