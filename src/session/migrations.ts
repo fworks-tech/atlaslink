@@ -172,6 +172,34 @@ export const migrations: Migration[] = [
       CREATE INDEX run_checkpoints_session_idx ON run_checkpoints (tenant_id, session_id);
     `,
   },
+  {
+    version: 8,
+    name: 'project_acl',
+    up: `
+      CREATE TABLE project_members (
+        tenant_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (tenant_id, project_id, user_id)
+      );
+      CREATE INDEX project_members_user_idx ON project_members (tenant_id, user_id);
+      CREATE TABLE project_invites (
+        tenant_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        token_hash TEXT UNIQUE NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (tenant_id, id)
+      );
+      CREATE INDEX project_invites_project_idx ON project_invites (tenant_id, project_id);
+    `,
+    down: `DROP TABLE project_invites; DROP TABLE project_members;`,
+  },
 ]
 
 // Advisory lock key serializing the migrate loop across processes; two daemons

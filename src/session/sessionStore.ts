@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, ProjectInvite, ProjectMember, ProjectRole } from './types'
 import { StreamIntegrityError, VersionConflictError, firstQuestionLabel } from './types'
 import type { SessionBackend, SessionFilter, SessionList, CostUsageRow, DailyCostFilter } from './sessionBackend'
 import { deepFreeze } from './deepFreeze'
@@ -20,8 +20,15 @@ interface SharedStore {
   versions: Map<string, number>
   snapshots: Map<string, SessionSnapshot>
   projects: Map<string, Project>
+  projectMembers: Map<string, ProjectMember>
+  projectInvites: Map<string, ProjectInvite>
+  projectInvitesByHash: Map<string, ProjectInvite>
   checkpoints: Map<string, { sessionId: string; rows: CheckpointRow[] }>
   costUsage: Map<string, CostUsageRow & { tenant: string }>
+}
+
+function memberKey(tenant: string, projectId: string, userId: string): string {
+  return `${tenant}:${projectId}:${userId}`
 }
 
 export { StreamIntegrityError, VersionConflictError }
@@ -178,6 +185,9 @@ export class SessionStore implements SessionBackend {
   private readonly _versions: Map<string, number>
   private readonly _snapshots: Map<string, SessionSnapshot>
   private readonly _projects: Map<string, Project>
+  private readonly _members: Map<string, ProjectMember>
+  private readonly _invites: Map<string, ProjectInvite>
+  private readonly _invitesByHash: Map<string, ProjectInvite>
   private readonly _checkpoints: Map<string, { sessionId: string; rows: CheckpointRow[] }>
   private readonly _costUsage: Map<string, CostUsageRow & { tenant: string }>
   private readonly _tenantId: string
@@ -189,6 +199,9 @@ export class SessionStore implements SessionBackend {
       this._versions = shared.versions
       this._snapshots = shared.snapshots
       this._projects = shared.projects
+      this._members = shared.projectMembers
+      this._invites = shared.projectInvites
+      this._invitesByHash = shared.projectInvitesByHash
       this._checkpoints = shared.checkpoints
       this._costUsage = shared.costUsage
     } else {
@@ -196,6 +209,9 @@ export class SessionStore implements SessionBackend {
       this._versions = new Map<string, number>()
       this._snapshots = new Map<string, SessionSnapshot>()
       this._projects = new Map<string, Project>()
+      this._members = new Map<string, ProjectMember>()
+      this._invites = new Map<string, ProjectInvite>()
+      this._invitesByHash = new Map<string, ProjectInvite>()
       this._checkpoints = new Map<string, { sessionId: string; rows: CheckpointRow[] }>()
       this._costUsage = new Map<string, CostUsageRow & { tenant: string }>()
     }
@@ -208,6 +224,9 @@ export class SessionStore implements SessionBackend {
       versions: this._versions,
       snapshots: this._snapshots,
       projects: this._projects,
+      projectMembers: this._members,
+      projectInvites: this._invites,
+      projectInvitesByHash: this._invitesByHash,
       checkpoints: this._checkpoints,
       costUsage: this._costUsage,
     })
@@ -309,6 +328,15 @@ export class SessionStore implements SessionBackend {
     const p = this._projects.get(id)
     if (!p || (p.tenantId ?? DEFAULT_TENANT_ID) !== this._tenantId) return false
     const existed = this._projects.delete(id)
+    for (const [key, m] of this._members.entries()) {
+      if (m.tenantId === this._tenantId && m.projectId === id) this._members.delete(key)
+    }
+    for (const [key, inv] of this._invites.entries()) {
+      if (inv.tenantId === this._tenantId && inv.projectId === id) {
+        this._invites.delete(key)
+        this._invitesByHash.delete(inv.tokenHash)
+      }
+    }
     for (const [sessionId, events] of this._events.entries()) {
       const first = events[0]
       if (first?.projectId === id && tenantOfEvent(first) === this._tenantId) {
@@ -318,6 +346,94 @@ export class SessionStore implements SessionBackend {
       }
     }
     return existed
+  }
+
+  async listProjectMembers(projectId: string): Promise<ProjectMember[]> {
+    return [...this._members.values()].filter((m) => m.tenantId === this._tenantId && m.projectId === projectId)
+  }
+
+  async getProjectMember(projectId: string, userId: string): Promise<ProjectMember | null> {
+    return this._members.get(memberKey(this._tenantId, projectId, userId)) ?? null
+  }
+
+  async setProjectMember(projectId: string, userId: string, role: ProjectRole): Promise<ProjectMember> {
+    const member: ProjectMember = { projectId, userId, role, tenantId: this._tenantId }
+    this._members.set(memberKey(this._tenantId, projectId, userId), member)
+    return member
+  }
+
+  async removeProjectMember(projectId: string, userId: string): Promise<boolean> {
+    return this._members.delete(memberKey(this._tenantId, projectId, userId))
+  }
+
+  async setProjectMemberGuarded(
+    projectId: string,
+    userId: string,
+    role: ProjectRole
+  ): Promise<{ member: ProjectMember } | { error: 'last-owner' }> {
+    // Synchronous map ops with no await between mutate and check: atomic on
+    // the Node event loop, so concurrent demotes cannot strand the project.
+    const key = memberKey(this._tenantId, projectId, userId)
+    const prior = this._members.get(key) ?? null
+    const member: ProjectMember = { projectId, userId, role, tenantId: this._tenantId }
+    this._members.set(key, member)
+    const hasOwner = [...this._members.values()].some(
+      (m) => m.tenantId === this._tenantId && m.projectId === projectId && m.role === 'owner'
+    )
+    if (!hasOwner) {
+      if (prior) this._members.set(key, prior)
+      else this._members.delete(key)
+      return { error: 'last-owner' }
+    }
+    return { member }
+  }
+
+  async listProjectInvites(projectId: string): Promise<ProjectInvite[]> {
+    return [...this._invites.values()].filter((i) => i.tenantId === this._tenantId && i.projectId === projectId)
+  }
+
+  async createProjectInvite(invite: ProjectInvite): Promise<ProjectInvite> {
+    const row: ProjectInvite = { ...invite, tenantId: this._tenantId }
+    this._invites.set(`${this._tenantId}:${invite.id}`, row)
+    this._invitesByHash.set(invite.tokenHash, row)
+    return row
+  }
+
+  async getProjectInviteByTokenHash(tokenHash: string): Promise<ProjectInvite | null> {
+    const inv = this._invitesByHash.get(tokenHash) ?? null
+    return inv && inv.tenantId === this._tenantId ? inv : null
+  }
+
+  async acceptProjectInvite(
+    tokenHash: string,
+    userId: string
+  ): Promise<{ projectId: string; role: ProjectRole } | null> {
+    // No await between lookup, consume, and insert: atomic on the event loop,
+    // so a double-submitted single-use link admits exactly one member.
+    const inv = this._invitesByHash.get(tokenHash) ?? null
+    if (!inv || inv.tenantId !== this._tenantId) return null
+    if (Date.parse(inv.expiresAt) < Date.now()) {
+      this._invites.delete(`${this._tenantId}:${inv.id}`)
+      this._invitesByHash.delete(inv.tokenHash)
+      return null
+    }
+    this._invites.delete(`${this._tenantId}:${inv.id}`)
+    this._invitesByHash.delete(inv.tokenHash)
+    this._members.set(memberKey(this._tenantId, inv.projectId, userId), {
+      projectId: inv.projectId,
+      userId,
+      role: inv.role,
+      tenantId: this._tenantId,
+    })
+    return { projectId: inv.projectId, role: inv.role }
+  }
+
+  async deleteProjectInvite(id: string, projectId: string): Promise<boolean> {
+    const row = this._invites.get(`${this._tenantId}:${id}`)
+    if (!row || row.projectId !== projectId) return false
+    this._invites.delete(`${this._tenantId}:${id}`)
+    this._invitesByHash.delete(row.tokenHash)
+    return true
   }
 
   async deleteSession(sessionId: string): Promise<void> {

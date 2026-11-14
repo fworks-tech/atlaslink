@@ -146,7 +146,7 @@ test('migrations apply once and are idempotent on a fresh database', async () =>
   const { rows: tables } = await adapter.query<{ name: string }>(
     `SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name`
   )
-  assert.deepEqual(tables.map((t) => t.name), ['api_keys', 'daily_cost_buckets', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
+  assert.deepEqual(tables.map((t) => t.name), ['api_keys', 'daily_cost_buckets', 'project_invites', 'project_members', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
 })
 
 test('PostgresBackend: ranked listing works on the Postgres dialect', async () => {
@@ -221,7 +221,7 @@ test('rollback to zero drops every table and the ledger, then ups re-apply clean
 
   await runMigrations(adapter)
   assert.deepEqual(await appliedVersions(adapter), migrations.map((m) => m.version))
-  assert.deepEqual(await tableNames(adapter), ['api_keys', 'daily_cost_buckets', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
+  assert.deepEqual(await tableNames(adapter), ['api_keys', 'daily_cost_buckets', 'project_invites', 'project_members', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
 })
 
 test('rollback to 3 keeps v1-3 and drops v4-6', async () => {
@@ -243,7 +243,7 @@ test('rollback refuses a negative target and no-ops at or below the applied vers
   await assert.rejects(rollbackMigrations(adapter, -1))
   await rollbackMigrations(adapter, 99)
   assert.deepEqual(await appliedVersions(adapter), migrations.map((m) => m.version))
-  assert.deepEqual(await tableNames(adapter), ['api_keys', 'daily_cost_buckets', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
+  assert.deepEqual(await tableNames(adapter), ['api_keys', 'daily_cost_buckets', 'project_invites', 'project_members', 'projects', 'run_checkpoints', 'schema_migrations', 'session_events', 'sessions', 'users'])
 })
 
 test('session events persist across backend instances (durability over the same database)', async () => {

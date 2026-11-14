@@ -99,6 +99,26 @@ export interface Project {
   tenantId?: string
 }
 
+/** Per-project roles: owner manages members, editor writes, viewer reads. */
+export type ProjectRole = 'owner' | 'editor' | 'viewer'
+
+export interface ProjectMember {
+  projectId: string
+  userId: string
+  role: ProjectRole
+  tenantId?: string
+}
+
+export interface ProjectInvite {
+  id: string
+  projectId: string
+  role: ProjectRole
+  tokenHash: string
+  expiresAt: string
+  createdBy?: string
+  tenantId?: string
+}
+
 export class VersionConflictError extends Error {
   constructor(
     public readonly sessionId: string,
