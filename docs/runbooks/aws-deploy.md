@@ -157,7 +157,7 @@ git clone https://github.com/fworks-tech/atlaslink.git && cd atlaslink
 } > .env && chmod 600 .env
 
 # RDS CA bundle: the compose overlay mounts it into the backend and sets
-# NODE_EXTRA_CA_CERTS. The deploy refreshes it if an instance loses it.
+# NODE_EXTRA_CA_CERTS. The deploy fetches it when it is missing.
 mkdir -p certs
 curl -fsS https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
   -o certs/global-bundle.pem
@@ -210,36 +210,53 @@ from a trusted network and keep it (the workflow uses
 deploy key, and a build-sha health marker are tracked in #329).
 
 Push to `main` → green CI → `deploy-aws.yml` pulls, rebuilds, and polls the
-staging health marker.
+staging and production health markers.
 
 ## 9. Cutover (issue #329)
 
-`api.atlas.flabs.tech` and `staging.atlas.flabs.tech` front the same EC2 stack.
+`api.atlas.flabs.tech` and `staging.atlas.flabs.tech` front the same EC2 stack,
+so the cutover is DNS plus a Vercel env swap, not a second deployment. Staging
+and production share the RDS store: do not run destructive tests on staging.
 
 1. Add the `api.atlas` A record pointing at the Elastic IP.
-2. Merge the `api.atlas.flabs.tech` block in `deploy/aws/Caddyfile`; the deploy
-   reloads Caddy and Let's Encrypt issues the certificate on the first request.
-3. Set the Vercel dashboard's `ATLASLINK_API_URL` to
+2. Before touching Vercel, copy the current Render service URL and its
+   `ATLASLINK_API_TOKEN` value into the cutover issue (#329) or the team
+   password manager. The Vercel values are Sensitive (write-only), and Hobby
+   can only roll back to the immediately previous deployment.
+3. Merge the address change in `deploy/aws/Caddyfile`; the deploy reloads Caddy
+   and Let's Encrypt obtains the certificate. Verify the API directly before
+   pointing the dashboard at it:
+   `curl -fsS https://api.atlas.flabs.tech/health` (`"providers"` >= 1),
+   `/health/ready` → `OK`, and a tokenless `/graphql` → `401`.
+4. Set the Vercel dashboard's `ATLASLINK_API_URL` to
    `https://api.atlas.flabs.tech` and `ATLASLINK_API_TOKEN` to the value of
-   `/atlaslink/ATLASLINK_API_TOKEN`, then redeploy production.
-4. Verify `https://atlas.flabs.tech/api/health` reports `"providers":1`.
+   `/atlaslink/ATLASLINK_API_TOKEN`; keep both Sensitive, then redeploy.
+5. Verify `https://atlas.flabs.tech/api/health` reports `"providers"` >= 1 and
+   `api/tasks` lists the RDS sessions.
+6. The swap does not migrate accounts or API keys from the Render store.
+   Recreate the production login and any API keys after the swap. The JWT
+   secret also changes, so browsers holding an old JWT get `401` and must log
+   in again.
 
 Remaining for #329, after the soak:
 
-1. Remove `render.yaml`, `.github/workflows/deploy-render.yml`, and the Render
-   deploy-hook secrets.
+1. Delete the Render service and remove `render.yaml` and
+   `.github/workflows/deploy-render.yml`; remove any Render secrets if present.
 2. Rewrite `docs/runbooks/disaster-recovery.md` around EC2 + RDS only.
 3. Archive `docs/tasks/deploy-oracle-free-tier.md`.
 
-Vercel keeps the old deployments, so an instant rollback to the pre-cutover
-Render API is one click in the dashboard if the soak goes wrong.
+Rollback: on Hobby only the immediately previous production deployment is
+eligible, so the captured Render URL and token are the durable fallback — set
+`ATLASLINK_API_URL` and `ATLASLINK_API_TOKEN` back to the Render values and
+redeploy. Render sleeps when idle; expect a 30–60s cold start.
 
 ## Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
 | `docker compose` fails on `.env` | §6 didn't run, or SSM parameters are missing (`aws ssm get-parameter …` as the `ubuntu` user) |
-| Startup logs `no pg_hba.conf entry ... no encryption` or `self-signed certificate in certificate chain` | `ATLASLINK_DATABASE_URL` is missing `?sslmode=require&uselibpqcompat=true` (§5) |
+| Startup logs `no pg_hba.conf entry ... no encryption` | `ATLASLINK_DATABASE_URL` is missing `?sslmode=verify-full` (§5) |
+| Startup logs `self-signed certificate in certificate chain` or `unable to verify the first certificate` | `certs/global-bundle.pem` is missing or stale — the deploy downloads it; check the mount and `NODE_EXTRA_CA_CERTS` (§5, §6) |
 | Build dies with `Killed` / exit 137 | Swap is missing (§6) — `npm ci` plus the `better-sqlite3` compile needs more than the 1 GB t4g.micro offers; `free -m` should show the swapfile |
 | Cert not issued | DNS not resolving yet, or port 443 SG closed — Caddy retries once DNS is right |
 | Caddy log shows `acme-staging-v02` | The Caddyfile must pin `acme_ca https://acme-v02.api.letsencrypt.org/directory`; reload Caddy |
