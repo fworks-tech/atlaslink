@@ -34,7 +34,7 @@ function HistoryChart({ buckets }: { buckets: CostBucket[] }) {
   const label = granularity === "daily" ? "Daily" : granularity === "weekly" ? "Weekly" : "Monthly";
   const periodNoun = granularity === "daily" ? "days" : granularity === "weekly" ? "weeks" : "months";
   if (buckets.length === 0) {
-    return <p className="mt-6 text-sm text-muted">No spend in this window yet — run a session with a provider that reports usage.</p>;
+    return <p className="mt-6 text-sm text-muted">No spend in this window yet. Run a session with a provider that reports usage.</p>;
   }
   const last = aggregated[aggregated.length - 1];
   return (
@@ -63,7 +63,7 @@ function HistoryChart({ buckets }: { buckets: CostBucket[] }) {
             .filter((a) => !visibleSet.has(a.agent))
             .reduce((sum, a) => sum + a.stepCost, 0);
           return (
-            <div key={b.day} title={`${b.day} — $${b.stepCost.toFixed(4)}`} className="flex min-w-[18px] flex-1 flex-col justify-end self-stretch">
+            <div key={b.day} title={`${b.day}: $${b.stepCost.toFixed(4)}`} className="flex min-w-[18px] flex-1 flex-col justify-end self-stretch">
               {visible.map(([agent]) => {
                 const cost = byAgent.get(agent) ?? 0;
                 if (cost <= 0) return null;
@@ -145,7 +145,7 @@ export default function CostPage() {
             <HistoryChart buckets={history.buckets} />
           )}
           {breakdown.length === 0 ? (
-            <p className="mt-6 text-sm text-muted">No token usage recorded yet — run a session with a provider that reports usage.</p>
+            <p className="mt-6 text-sm text-muted">No token usage recorded yet. Run a session with a provider that reports usage.</p>
           ) : (
             <table className="mt-6 w-full text-left text-sm">
               <thead className="text-muted">
@@ -164,7 +164,7 @@ export default function CostPage() {
                     <td className="py-2 text-muted">{row.promptTokens.toLocaleString()}</td>
                     <td className="py-2 text-muted">{row.completionTokens.toLocaleString()}</td>
                     <td className="py-2 text-accent">${row.stepCost.toFixed(4)}</td>
-                    <td className="py-2 text-muted">{row.models.join(", ") || "—"}</td>
+                    <td className="py-2 text-muted">{row.models.join(", ") || "–"}</td>
                   </tr>
                 ))}
               </tbody>

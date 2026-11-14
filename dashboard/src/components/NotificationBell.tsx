@@ -53,7 +53,7 @@ export function NotificationBell({
           className="absolute right-0 z-50 mt-2 max-h-96 w-80 overflow-auto rounded-xl border border-line bg-surface p-2 shadow-xl"
         >
           {notifications.length === 0 && (
-            <div className="px-3 py-4 text-center text-xs text-muted">No notifications yet — @mentions land here.</div>
+            <div className="px-3 py-4 text-center text-xs text-muted">No notifications yet. @mentions land here.</div>
           )}
           {notifications.map((n) => (
             <button

@@ -92,7 +92,7 @@ export function SessionThread({ session, events, members, onJump, onReply, assig
             onClick={() => setShown((s) => s + TURN_WINDOW)}
             className="sticky top-0 z-10 mx-auto block w-full rounded-lg bg-surface/95 px-2 py-1 text-[11px] text-muted backdrop-blur hover:text-foreground"
           >
-            ↑ {earlier} earlier turn{earlier > 1 ? "s" : ""} — show {Math.min(TURN_WINDOW, earlier)} more
+            ↑ {earlier} earlier turn{earlier > 1 ? "s" : ""} · show {Math.min(TURN_WINDOW, earlier)} more
           </button>
         )}
         {turns.length === 0 && <div className="text-xs text-muted">No turns yet.</div>}

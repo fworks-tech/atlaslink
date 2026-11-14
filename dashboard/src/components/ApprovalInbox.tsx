@@ -55,7 +55,7 @@ export function ApprovalInbox({ onSelect }: { onSelect: (sessionId: string) => v
 
   return (
     <section
-      aria-label={`Approval inbox — ${waiting.length} session${waiting.length === 1 ? "" : "s"} waiting`}
+      aria-label={`Approval inbox: ${waiting.length} session${waiting.length === 1 ? "" : "s"} waiting`}
       className="overflow-hidden rounded-xl border border-accent/25 bg-accent/5"
     >
       <div className="flex items-center gap-2 border-b border-accent/15 px-4 py-2 text-xs uppercase tracking-widest text-accent">

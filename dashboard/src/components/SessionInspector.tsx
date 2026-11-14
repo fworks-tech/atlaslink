@@ -247,7 +247,7 @@ export function SessionInspector({
             </div>
           )}
           {!session ? (
-            <div className="p-4 text-xs text-muted">{contextLoading ? "Loading session context…" : "Session context not loaded yet — node payload shown above."}</div>
+            <div className="p-4 text-xs text-muted">{contextLoading ? "Loading session context…" : "Session context is not loaded yet. Node payload is above."}</div>
           ) : (
           <>
           <div className="flex gap-1 border-b border-line px-2 py-1">
@@ -284,7 +284,7 @@ export function SessionInspector({
             {activeTab === "reasoning" && (
               <div className="space-y-2">
                 {!artifacts || artifacts.reasoning.length === 0 ? (
-                  <div className="text-xs text-muted">No reasoning yet — mediator has not streamed.</div>
+                  <div className="text-xs text-muted">No reasoning yet. The mediator has not streamed anything.</div>
                 ) : (
                   artifacts.reasoning.map((e, i) => (
                     <div key={i} className="rounded border border-line bg-raised/40 p-2">

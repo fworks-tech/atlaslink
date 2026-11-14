@@ -17,7 +17,7 @@ export function AwaitingNode(props: NodeProps) {
           awaiting input
         </div>
         <div title={prompt} className="mt-1.5 line-clamp-4 text-xs leading-snug break-words text-foreground">{prompt.slice(0, 160)}</div>
-        <div className="mt-2 text-[10px] text-muted">Reply in the thread below — the diagram will grow.</div>
+        <div className="mt-2 text-[10px] text-muted">Reply in the thread below. The diagram grows from your reply.</div>
         <Handle type="source" position={Position.Bottom} className="!bg-accent/40" />
       </div>
     </>

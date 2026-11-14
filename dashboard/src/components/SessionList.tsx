@@ -68,8 +68,7 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
     return (
       <div className="rounded-xl border border-dashed border-line bg-surface/50 px-6 py-10 text-center">
         <p className="text-sm text-muted">
-          No sessions yet. Start one above — e.g. “Fix issue #42 — login redirects to
-          /dashboard” — and it appears here the moment it is created.
+          No sessions yet. Start one above, e.g. “Fix issue #42”, and it shows up here.
         </p>
       </div>
     );
@@ -114,7 +113,7 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
                   <StatusBadge status={session.status} />
                 </td>
                 <td className="px-4 py-3 text-muted">
-                  {session.createdAt ? new Date(session.createdAt).toLocaleTimeString() : "—"}
+                  {session.createdAt ? new Date(session.createdAt).toLocaleTimeString() : "–"}
                 </td>
                 <td className="px-4 py-3 text-muted">{formatDuration(session)}</td>
               </tr>
@@ -186,7 +185,7 @@ export function SessionList({ onSelect }: { onSelect?: (sessionId: string) => vo
                   <StatusBadge status={session.status} />
                 </td>
                 <td className="px-4 py-3 text-muted">
-                  {session.createdAt ? new Date(session.createdAt).toLocaleTimeString() : "—"}
+                  {session.createdAt ? new Date(session.createdAt).toLocaleTimeString() : "–"}
                 </td>
                 <td className="px-4 py-3 text-muted">{formatDuration(session)}</td>
               </tr>
