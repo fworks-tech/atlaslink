@@ -462,3 +462,35 @@ test('POST /auth/stream-ticket — issues a short-lived ticket that opens SSE vi
     await close()
   }
 })
+
+test('GET /v1/members — tenant-scoped directory without credential material', async () => {
+  const { port, close } = await createTestServer()
+  try {
+    await jsonRequest(port, 'POST', '/v1/auth/register', {
+      email: 'dir@example.com',
+      password: 'password123',
+    })
+    const login = JSON.parse((await jsonRequest(port, 'POST', '/v1/auth/login', {
+      email: 'dir@example.com',
+      password: 'password123',
+    })).body)
+
+    const unauth = await jsonRequest(port, 'GET', '/v1/members')
+    assert.equal(unauth.status, 401)
+
+    const res = await jsonRequest(port, 'GET', '/v1/members', undefined, {
+      authorization: `Bearer ${login.token}`,
+    })
+    assert.equal(res.status, 200)
+    const body = JSON.parse(res.body)
+    assert.equal(body.ok, true)
+    assert.ok(Array.isArray(body.members) && body.members.length >= 1)
+    const me = body.members.find((m: { email: string }) => m.email === 'dir@example.com')
+    assert.ok(me)
+    assert.equal(me.displayName, 'dir')
+    assert.ok(!('password_hash' in me) && !('key_hash' in me))
+    assert.ok(body.members.every((m: { id: string; email: string }) => typeof m.id === 'string' && typeof m.email === 'string'))
+  } finally {
+    await close()
+  }
+})

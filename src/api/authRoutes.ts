@@ -305,4 +305,25 @@ export function registerAuthKeyRoutes(
       }
     }
   )
+
+  app.get(
+    '/members',
+    async (request, reply) => {
+      const auth = request.auth
+      if (!auth) {
+        return reply.code(401).send({ ok: false, error: 'unauthorized' })
+      }
+      // tenant-scoped display directory for @mention autocomplete —
+      // ids/emails only, never password hashes or other tenants
+      const users = await authStore.listUsersByTenant(auth.tenantId)
+      return reply.send({
+        ok: true,
+        members: users.map((u) => ({
+          id: u.id,
+          email: u.email,
+          displayName: u.email.split('@')[0] ?? u.email,
+        })),
+      })
+    }
+  )
 }

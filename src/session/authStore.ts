@@ -93,6 +93,15 @@ export class AuthStore {
     return rows[0] ?? null
   }
 
+  async listUsersByTenant(tenantId: string): Promise<UserRow[]> {
+    const { rows } = await this.db.query<UserRow>(
+      `SELECT id, email, password_hash, tenant_id, created_at, updated_at
+       FROM users WHERE tenant_id = $1 ORDER BY email ASC`,
+      [tenantId]
+    )
+    return rows
+  }
+
   async createApiKey(key: NewApiKey): Promise<ApiKeyRow> {
     const now = new Date()
     await this.db.query(

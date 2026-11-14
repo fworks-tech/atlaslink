@@ -315,13 +315,46 @@ function rejectBlank(content: string): ActionError | null {
  * Contract: store raw, escape at render — the thread path must never use
  * dangerouslySetInnerHTML (stored XSS would fire for every viewer).
  */
+export const MAX_MESSAGE_PARENT_ID_LENGTH = 200
+export const MAX_MESSAGE_MENTIONS = 20
+export const MAX_MESSAGE_MENTION_LENGTH = 254
+export const MAX_MESSAGE_ANCHOR_LENGTH = 500
+
+export interface ChatMessageOpts {
+  authorId?: string
+  parentId?: string
+  mentions?: string[]
+  anchor?: string
+}
+
+function invalidChatOpts(opts: ChatMessageOpts): string | null {
+  if (opts.parentId !== undefined && (opts.parentId.length === 0 || opts.parentId.length > MAX_MESSAGE_PARENT_ID_LENGTH)) {
+    return 'parentId must be 1..200 chars'
+  }
+  if (opts.anchor !== undefined && (opts.anchor.length === 0 || opts.anchor.length > MAX_MESSAGE_ANCHOR_LENGTH)) {
+    return 'anchor must be 1..500 chars'
+  }
+  if (opts.mentions !== undefined) {
+    if (opts.mentions.length > MAX_MESSAGE_MENTIONS) return 'too many mentions (max 20)'
+    for (const m of opts.mentions) {
+      if (typeof m !== 'string' || m.length === 0 || m.length > MAX_MESSAGE_MENTION_LENGTH) {
+        return 'each mention must be 1..254 chars'
+      }
+    }
+  }
+  return null
+}
+
 export async function appendChatMessage(
   deps: IngressDeps,
   sessionId: string,
-  content: string
+  content: string,
+  opts: ChatMessageOpts = {}
 ): Promise<ActionResult> {
   const blank = rejectBlank(content)
   if (blank) return blank
+  const invalid = invalidChatOpts(opts)
+  if (invalid) return { code: 400, error: invalid }
   const result = await casAppendSessionEvents(deps.broadcaster, {
     backend: deps.backend,
     sessionId,
@@ -331,7 +364,16 @@ export async function appendChatMessage(
       return null
     },
     deltas: (current, at) => [
-      { type: 'session.message', correlationId: current.correlationId, at, message: content },
+      {
+        type: 'session.message',
+        correlationId: current.correlationId,
+        at,
+        message: content,
+        ...(opts.authorId !== undefined ? { authorId: opts.authorId } : {}),
+        ...(opts.parentId !== undefined ? { parentId: opts.parentId } : {}),
+        ...(opts.mentions !== undefined ? { mentions: opts.mentions } : {}),
+        ...(opts.anchor !== undefined ? { anchor: opts.anchor } : {}),
+      },
     ],
     sseEvent: (current, at, version) => ({
       eventId: version,
@@ -340,6 +382,10 @@ export async function appendChatMessage(
       correlationId: current.correlationId,
       at,
       message: content,
+      ...(opts.authorId !== undefined ? { authorId: opts.authorId } : {}),
+      ...(opts.parentId !== undefined ? { parentId: opts.parentId } : {}),
+      ...(opts.mentions !== undefined ? { mentions: opts.mentions } : {}),
+      ...(opts.anchor !== undefined ? { anchor: opts.anchor } : {}),
       ...(current.tenantId !== undefined ? { tenantId: current.tenantId } : {}),
     }),
   })

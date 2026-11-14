@@ -309,13 +309,40 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
               send({ type: 'ack', id, ok: false, code: 400, error: 'content must be a string up to 10000 chars' })
               return
             }
+            // A2 thread fields: same caps as the POST route, server-stamped author
+            const chatOpts: { parentId?: string; mentions?: string[]; anchor?: string; authorId?: string } = {}
+            if (frame.type === 'chat') {
+              const extra = frame as { parentId?: unknown; mentions?: unknown; anchor?: unknown }
+              if (extra.parentId !== undefined) {
+                if (typeof extra.parentId !== 'string' || extra.parentId.length === 0 || extra.parentId.length > 200) {
+                  send({ type: 'ack', id, ok: false, code: 400, error: 'parentId must be 1..200 chars' })
+                  return
+                }
+                chatOpts.parentId = extra.parentId
+              }
+              if (extra.anchor !== undefined) {
+                if (typeof extra.anchor !== 'string' || extra.anchor.length === 0 || extra.anchor.length > 500) {
+                  send({ type: 'ack', id, ok: false, code: 400, error: 'anchor must be 1..500 chars' })
+                  return
+                }
+                chatOpts.anchor = extra.anchor
+              }
+              if (extra.mentions !== undefined) {
+                if (!Array.isArray(extra.mentions) || extra.mentions.length > 20 || extra.mentions.some((m) => typeof m !== 'string' || m.length === 0 || m.length > 254)) {
+                  send({ type: 'ack', id, ok: false, code: 400, error: 'mentions must be up to 20 strings of 1..254 chars' })
+                  return
+                }
+                chatOpts.mentions = extra.mentions as string[]
+              }
+              if (request.auth?.userId !== undefined) chatOpts.authorId = request.auth.userId
+            }
             if (throttled()) {
               send({ type: 'ack', id, ok: false, code: 429, error: 'room ingress rate exceeded' })
               return
             }
             const ingress = { backend, registry: deps.registry, queue: deps.queue, broadcaster: deps.broadcaster }
             if (frame.type === 'chat') {
-              const result = await appendChatMessage(ingress, sessionId, frame.content)
+              const result = await appendChatMessage(ingress, sessionId, frame.content, chatOpts)
               send(result.code === 201
                 ? { type: 'ack', id, ok: true, code: 201, status: result.session.status, version: result.session.version }
                 : { type: 'ack', id, ok: false, code: result.code, error: result.error })

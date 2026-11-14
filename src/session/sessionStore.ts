@@ -128,7 +128,15 @@ export function rehydrate(events: SessionEvent[]): Session | null {
         session.interaction.push({ role: 'user', at: e.at, content: e.reply ?? '' })
         break
       case 'session.message':
-        session.interaction.push({ role: 'user', at: e.at, content: e.message ?? '' })
+        session.interaction.push({
+          role: 'user',
+          at: e.at,
+          content: e.message ?? '',
+          ...(e.authorId !== undefined ? { authorId: e.authorId } : {}),
+          ...(e.parentId !== undefined ? { parentId: e.parentId } : {}),
+          ...(e.mentions !== undefined ? { mentions: e.mentions } : {}),
+          ...(e.anchor !== undefined ? { anchor: e.anchor } : {}),
+        })
         break
       case 'session.steer':
         // steer rewrites the mission: the aggregate prompt moves with the
