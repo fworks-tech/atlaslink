@@ -433,5 +433,53 @@ export async function backendContract(name: string, create: () => Promise<Sessio
       await other.recordCostUsage({ day: '2026-09-10', agent: 'm', model: '', promptTokens: 9, completionTokens: 9, stepCost: 0.009 })
       assert.equal((await store.listDailyCost({}))[0].promptTokens, 1)
     })
+
+    await test('project members: guarded set refuses the last-owner demote', async () => {
+      const store = await create()
+      await store.createProject('proj-g', 'guarded')
+      await store.setProjectMember('proj-g', 'alice', 'owner')
+      await store.setProjectMember('proj-g', 'bob', 'editor')
+      // demoting the sole owner strands the project: refused, prior kept
+      const refused = await store.setProjectMemberGuarded('proj-g', 'alice', 'viewer')
+      assert.deepEqual(refused, { error: 'last-owner' })
+      assert.equal((await store.getProjectMember('proj-g', 'alice'))?.role, 'owner')
+      // with two owners the demote succeeds
+      await store.setProjectMember('proj-g', 'cara', 'owner')
+      const ok = await store.setProjectMemberGuarded('proj-g', 'alice', 'viewer')
+      assert.equal((ok as { member: { role: string } }).member.role, 'viewer')
+      // removing the last owner directly still strands: route guards this,
+      // the store stays a dumb map
+      assert.equal(await store.removeProjectMember('proj-g', 'nobody'), false)
+    })
+
+    await test('project invites: atomic accept admits exactly one, expiry enforced', async () => {
+      const store = await create()
+      await store.createProject('proj-i', 'invites')
+      await store.setProjectMember('proj-i', 'alice', 'owner')
+      const live = {
+        id: 'inv-live', projectId: 'proj-i', role: 'editor' as const,
+        tokenHash: 'hash-live', expiresAt: new Date(Date.now() + 3600_000).toISOString(), createdBy: 'alice',
+      }
+      await store.createProjectInvite(live)
+      const listed = await store.listProjectInvites('proj-i')
+      assert.equal(listed.length, 1)
+      assert.equal(listed[0].id, 'inv-live')
+      assert.equal(listed[0].role, 'editor')
+      const first = await store.acceptProjectInvite('hash-live', 'bob')
+      assert.deepEqual(first, { projectId: 'proj-i', role: 'editor' })
+      assert.equal((await store.getProjectMember('proj-i', 'bob'))?.role, 'editor')
+      // single-use: replay loses
+      assert.equal(await store.acceptProjectInvite('hash-live', 'mallory'), null)
+      assert.equal(await store.getProjectMember('proj-i', 'mallory'), null)
+      // expired links are consumed and rejected
+      await store.createProjectInvite({
+        id: 'inv-old', projectId: 'proj-i', role: 'viewer', tokenHash: 'hash-old',
+        expiresAt: new Date(Date.now() - 1000).toISOString(), createdBy: 'alice',
+      })
+      assert.equal(await store.acceptProjectInvite('hash-old', 'mallory'), null)
+      assert.equal(await store.getProjectInviteByTokenHash('hash-old'), null)
+      // unknown hash stays null
+      assert.equal(await store.acceptProjectInvite('hash-nope', 'mallory'), null)
+    })
   })
 }

@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta, SessionStatus, Project } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionStatus, Project, ProjectMember, ProjectRole, ProjectInvite } from './types'
 
 /**
  * Query surface for the task-rest list endpoint. Filters are applied by the
@@ -55,6 +55,36 @@ export interface SessionBackend {
   getProject(id: string): Promise<Project | null>
   createProject(id: string, name: string): Promise<Project>
   deleteProject(id: string): Promise<boolean>
+  /** Project ACL (A4): per-project membership. Legacy projects have zero rows. */
+  listProjectMembers(projectId: string): Promise<ProjectMember[]>
+  getProjectMember(projectId: string, userId: string): Promise<ProjectMember | null>
+  setProjectMember(projectId: string, userId: string, role: ProjectRole): Promise<ProjectMember>
+  removeProjectMember(projectId: string, userId: string): Promise<boolean>
+  /**
+   * Guarded role write: sets the member then refuses to leave the project
+   * with zero owners (rolls back). Returns `{ error: 'last-owner' }` instead
+   * of stranding the project — the route maps it to 400. Atomic in the store
+   * (transaction on SQL, synchronous maps in-memory) so concurrent demotes
+   * cannot strand the project.
+   */
+  setProjectMemberGuarded(
+    projectId: string,
+    userId: string,
+    role: ProjectRole
+  ): Promise<{ member: ProjectMember } | { error: 'last-owner' }>
+  listProjectInvites(projectId: string): Promise<ProjectInvite[]>
+  createProjectInvite(invite: ProjectInvite): Promise<ProjectInvite>
+  getProjectInviteByTokenHash(tokenHash: string): Promise<ProjectInvite | null>
+  deleteProjectInvite(id: string, projectId: string): Promise<boolean>
+  /**
+   * Atomic single-use accept: consumes a non-expired invite and upserts
+   * membership in one step. Returns null when unknown or expired (expired
+   * rows are deleted). Concurrent accepts of one link admit exactly one.
+   */
+  acceptProjectInvite(
+    tokenHash: string,
+    userId: string
+  ): Promise<{ projectId: string; role: ProjectRole } | null>
   deleteSession(sessionId: string): Promise<void>
   withTenant(tenantId: string): SessionBackend
   /**
