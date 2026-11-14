@@ -18,9 +18,9 @@ describe("landing page", () => {
     render(<LandingPage />);
     expect(screen.getByText("Ask Atlas.")).toBeDefined();
     expect(screen.getByText("Together, live.")).toBeDefined();
-    const open = screen.getByRole("link", { name: "Open Atlas — live demo" });
+    const open = screen.getByRole("link", { name: "Open Atlas · live demo" });
     expect(open.getAttribute("href")).toBe("/atlas");
-    expect(screen.getByRole("link", { name: "My Atlas — sign in" }).getAttribute("href")).toBe("/login");
+    expect(screen.getByRole("link", { name: "My Atlas · sign in" }).getAttribute("href")).toBe("/login");
   });
 
   it("renders the room band, evidence band and final CTA — and none of the copied agenthood sections", () => {

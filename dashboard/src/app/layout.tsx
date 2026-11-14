@@ -18,9 +18,9 @@ const display = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Atlaslink — Ask Atlas. Together, live.",
+  title: "Atlaslink: Ask Atlas. Together, live.",
   description:
-    "Atlaslink is an experimental shared workspace where people and AI agents work through tasks together. Built on Agenthood — ask Atlas, together, live.",
+    "Atlaslink is an experimental shared workspace where people and AI agents work through tasks together. Built on Agenthood. Ask Atlas, together, live.",
 };
 
 // runs before first paint: stored theme wins, else system preference —
