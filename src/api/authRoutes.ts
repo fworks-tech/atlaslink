@@ -62,13 +62,12 @@ export function registerAuthRoutes(
           properties: {
             email: { type: 'string', minLength: 3, maxLength: 254 },
             password: { type: 'string', minLength: MIN_PASSWORD_LENGTH, maxLength: 128 },
-            tenantId: { type: 'string', minLength: 1, maxLength: 64 },
           },
         },
       },
     },
     async (request, reply) => {
-      const { email, password, tenantId } = request.body
+      const { email, password } = request.body
 
       if (!email || !EMAIL_PATTERN.test(email)) {
         return reply.code(400).send({ ok: false, error: 'invalid email' })
@@ -86,7 +85,9 @@ export function registerAuthRoutes(
           id: generateRandomId(),
           email: email.toLowerCase(),
           passwordHash,
-          tenantId: tenantId ?? DEFAULT_TENANT_ID,
+          // server-chosen: a client-supplied tenantId would let any signup read
+          // another tenant's projects and sessions
+          tenantId: DEFAULT_TENANT_ID,
         })
       } catch (err) {
         // a concurrent register for the same email lost the check-then-insert

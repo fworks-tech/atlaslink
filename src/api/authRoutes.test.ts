@@ -88,6 +88,22 @@ test('POST /auth/register — creates user and returns JWT', async () => {
   }
 })
 
+test('POST /auth/register — ignores a client-supplied tenantId', async () => {
+  const { port, close } = await createTestServer()
+  try {
+    const res = await jsonRequest(port, 'POST', '/v1/auth/register', {
+      email: 'tenant-escape@example.com',
+      password: 'password123',
+      tenantId: 'someone-else',
+    })
+    assert.equal(res.status, 201)
+    const body = JSON.parse(res.body)
+    assert.equal(body.user.tenant_id, 'default')
+  } finally {
+    await close()
+  }
+})
+
 test('POST /auth/register — rejects duplicate email', async () => {
   const { port, close } = await createTestServer()
   try {
