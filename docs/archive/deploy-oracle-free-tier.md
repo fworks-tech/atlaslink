@@ -1,5 +1,10 @@
 # Deploy atlaslink to Oracle Cloud Always Free
 
+> **Archived 2026-11-14.** The Oracle stack was retired in
+> [#329](https://github.com/fworks-tech/atlaslink/issues/329); production runs on
+> AWS EC2 + RDS. Kept for reference only — see
+> [`docs/runbooks/aws-deploy.md`](../runbooks/aws-deploy.md).
+
 Hosts the Fastify daemon at **zero cost** on Oracle Cloud Infrastructure's
 Always Free tier, fronted by the Vercel dashboard at `https://atlas.flabs.tech`.
 A local Postgres container on the VM provides durable sessions — no connection
