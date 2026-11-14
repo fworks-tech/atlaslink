@@ -134,6 +134,7 @@ export class SessionQueue {
       member: session.task.member,
       status,
       at: new Date().toISOString(),
+      ...(session.tenantId !== undefined ? { tenantId: session.tenantId } : {}),
     }
     this.broadcaster.emit(envelope)
   }
@@ -154,6 +155,7 @@ export interface SessionSnapshot {
   correlationId: string
   task: { member: string }
   status: string
+  tenantId?: string
 }
 
 export default SessionQueue

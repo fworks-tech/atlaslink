@@ -73,6 +73,28 @@ function firstQuery(value: unknown): string | undefined {
   return undefined
 }
 
+/**
+ * Tenant for a room surface. An authenticated caller's tenant comes from the
+ * token, never a claim: sending `?tenant=` or `x-tenant-id` is an error, not a
+ * redirect. Unauthenticated dev mode keeps the legacy query/header fallback.
+ */
+function resolveRoomTenant(
+  request: { headers: Record<string, string | string[] | undefined>; auth?: { tenantId: string } },
+  query: Record<string, unknown>,
+  base: SessionBackend
+): ReturnType<typeof tenantBackendForRequest> {
+  if (request.auth) {
+    if (firstQuery(query.tenant) !== undefined || request.headers['x-tenant-id'] !== undefined) {
+      return { backend: base, error: 'tenant is not accepted when authenticated — remove tenant/x-tenant-id' }
+    }
+    return tenantBackendForRequest(request, base)
+  }
+  return tenantBackendForRequest(
+    { headers: { 'x-tenant-id': firstQuery(query.tenant) ?? request.headers['x-tenant-id'] } },
+    base
+  )
+}
+
 export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rosterOf: (sessionId: string) => RoomMember[] } {
   const rooms = new Map<string, Map<string, RoomClient>>()
   // Registration-time capture: the upgrade check runs after harnesses (and
@@ -95,8 +117,7 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
     '/sessions/:id/room/members',
     async (request, reply) => {
       const query = (request.query ?? {}) as Record<string, unknown>
-      const tenantValue = firstQuery(query.tenant) ?? request.headers['x-tenant-id']
-      const tenantCtx = tenantBackendForRequest({ headers: { 'x-tenant-id': tenantValue } }, deps.backend)
+      const tenantCtx = resolveRoomTenant(request, query, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
       const aggregate = await tenantCtx.backend.get(request.params.id)
       if (!aggregate || aggregate.tenantId !== tenantCtx.tenantId) {
@@ -113,8 +134,7 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
     '/sessions/:id/room/typing',
     async (request, reply) => {
       const query = (request.query ?? {}) as Record<string, unknown>
-      const tenantValue = firstQuery(query.tenant) ?? request.headers['x-tenant-id']
-      const tenantCtx = tenantBackendForRequest({ headers: { 'x-tenant-id': tenantValue } }, deps.backend)
+      const tenantCtx = resolveRoomTenant(request, query, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
       const aggregate = await tenantCtx.backend.get(request.params.id)
       if (!aggregate || aggregate.tenantId !== tenantCtx.tenantId) {
@@ -131,6 +151,7 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
         at: new Date().toISOString(),
         name: sanitizeName(body.name),
         typing: body.typing,
+        ...(tenantCtx.tenantId !== undefined ? { tenantId: tenantCtx.tenantId } : {}),
       })
       return { ok: true }
     }
@@ -147,12 +168,13 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
         // Browsers cannot set upgrade headers: same bearer via ?token=.
         // The preHandler gate may already have enforced the header — this
         // check is idempotent with it, never weaker.
-        if (!checkBearer(request.headers.authorization, firstQuery(query.token), expectedToken)) {
+        // A JWT/API-key session already passed the upgrade gate; the legacy
+        // bearer check only applies when the gate left `request.auth` unset.
+        if (!request.auth && !checkBearer(request.headers.authorization, firstQuery(query.token), expectedToken)) {
           socket.close(ROOM_CLOSE_UNAUTHORIZED, 'unauthorized')
           return
         }
-        const tenantValue = firstQuery(query.tenant) ?? request.headers['x-tenant-id']
-        const tenantCtx = tenantBackendForRequest({ headers: { 'x-tenant-id': tenantValue } }, deps.backend)
+        const tenantCtx = resolveRoomTenant(request, query, deps.backend)
         if (tenantCtx.error) {
           socket.close(ROOM_CLOSE_BAD_TENANT, tenantCtx.error)
           return
@@ -275,6 +297,7 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
                 at: new Date().toISOString(),
                 name: client.name,
                 typing,
+                tenantId,
               })
               return
             }
