@@ -13,13 +13,20 @@ export default function Footer({ className = "" }: FooterProps) {
       <Group justify="space-between" align="center" gap="lg" className="flex-col sm:flex-row">
         <Group gap="sm" >
           <Text size="sm" c="dimmed">
-            atlaslink · by{" "}
+            atlaslink · Ask Atlas. Together, live. · by{" "}
             <Anchor href="https://flabs.tech" c="dimmed" target="_blank" rel="noopener noreferrer">
               Fabio Ritzel Borges
             </Anchor>
           </Text>
         </Group>
-        <Group gap="2" >
+        <Group gap="md" >
+          <Anchor
+            href="https://github.com/fworks-tech/atlaslink/blob/main/README.md"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Text size="sm">Docs</Text>
+          </Anchor>
           <Anchor
             href="https://github.com/fworks-tech/atlaslink"
             target="_blank"

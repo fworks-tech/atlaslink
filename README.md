@@ -1,6 +1,6 @@
 # Atlaslink
 
-> Multi-agent orchestration with a live diagram-flow UI. Compose agents like drawing a flowchart, watch them run in real time, and collaborate with them through a WebSocket room.
+> Multi-agent orchestration with a live diagram-flow UI. Humans and agents solve it in one room — chat, delegate, steer, approve — every step on the record.
 
 [![CI](https://github.com/fworks-tech/atlaslink/actions/workflows/ci.yml/badge.svg)](https://github.com/fworks-tech/atlaslink/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -21,8 +21,9 @@ Atlaslink is a product-oriented multi-agent orchestrator built on **[Agenthood](
 - **Live diagram-flow composer** — drag agents onto a canvas, wire them together, and watch the execution unfold in real time. The full DAG renders as a society of nodes: reasoning hexagons, tool parallelograms, diamond decisions, and terminal states.
 - **Real-time event bridge** — every agent decision and action streams to the browser over Server-Sent Events with `Last-Event-ID` resume, gap detection, and 15-second pings.
 - **Human-in-the-loop collaboration** — agents ask single questions via `ask_human`, park the session, and resume from your reply. A per-session WebSocket room lets multiple people observe and steer together.
-- **Task & project APIs** — create, list, cancel, reply to, and steer sessions over a bearer-gated HTTP surface. Projects group sessions; the event feed is addressable per session or per project.
-- **Event-sourced sessions** — every state change is appended to a durable event store: embedded SQLite by default, Postgres in production. Sessions survive deploys and cold starts.
+- **Task, project & GraphQL APIs** — create, list, cancel, reply to, and steer sessions over a bearer-gated REST surface, plus a federated GraphQL plane (`files`, `sessions`, `tasks`, `insights`) behind the same auth. Projects group sessions; the event feed is addressable per session or per project.
+- **Event-sourced sessions** — every state change is appended to a durable event store: embedded SQLite by default, Postgres in production (same SQL on both). Sessions survive deploys and cold starts.
+- **Your providers, honest costs** — per-session provider and model picks, fast-failed when unknown. LLM spend is rolled up per agent, per day, in the open.
 - **Auth & tenancy** — JWT sessions (7-day expiry), SHA-256-hashed API keys, tenant isolation, fail-closed non-loopback binding, and per-user rate limiting.
 
 ## Tech stack
@@ -31,8 +32,8 @@ Atlaslink is a product-oriented multi-agent orchestrator built on **[Agenthood](
 |-------|------------|
 | Runtime | Node.js >= 22.14, TypeScript 5.9, tsx |
 | HTTP server | Fastify 5, `@fastify/cors`, `@fastify/rate-limit`, `@fastify/websocket` |
-| Database | Postgres (production) via `pg`, pglite (CI/tests) — same SQL on both |
-| Event store | SQLite (default) or Postgres, append-only sessions (ADR-010) |
+| Database | SQLite default via `better-sqlite3`, Postgres production via `pg`, `pglite` in CI/tests — same SQL on both |
+| Event store | Append-only `session_events` (source of truth, ADR-010) + NDJSON agent-run provenance log |
 | Frontend | Next.js 16, React 19, Mantine 9, Tailwind CSS v4, React Flow 12, dagre layout |
 | Auth | JWT (HS256), API keys (SHA-256 hashed), scrypt passwords |
 | Testing | Node built-in test runner (backend), Vitest (dashboard), c8 coverage |
@@ -76,12 +77,17 @@ All API routes are prefixed with `/v1`; `GET /health` is the only unprefixed rou
 | `GET` | `/v1/projects/:projectId/events` | Per-project SSE |
 | `POST` | `/v1/projects` | Create a project |
 | `GET` | `/v1/projects` | List projects |
+| `GET` | `/v1/projects/:projectId` | Get one project |
+| `GET` | `/v1/auth/me` | Current user |
+| `DELETE` | `/v1/auth/keys/:id` | Revoke an API key |
 | `WS` | `/v1/sessions/:id/room` | WebSocket room channel |
 | `POST` | `/v1/auth/register` | Register account, returns JWT |
 | `POST` | `/v1/auth/login` | Login, returns JWT |
 | `POST` | `/v1/auth/keys` | Create API key |
 
-Full spec: [`docs/spec/m3-task-api.md`](docs/spec/m3-task-api.md) · [`docs/spec/auth-api.md`](docs/spec/auth-api.md)
+Full spec: [`docs/spec/m3-task-api.md`](docs/spec/m3-task-api.md) · [`docs/spec/auth-api.md`](docs/spec/auth-api.md) · [`docs/spec/m5-federation-workspace.md`](docs/spec/m5-federation-workspace.md) · [OpenAPI](docs/api/openapi.yaml)
+
+GraphQL (`/v1/graphql/files`, `/sessions`, `/tasks`, `/insights`) federates over the same daemon via the Cosmo router — same bearer auth, `Authorization` propagated to subgraphs.
 
 ### Example
 
@@ -111,7 +117,7 @@ Details: [ADR-008](docs/adr/ADR-008-auth-and-tenancy.md)
 
 ## Deployment
 
-### Render (recommended)
+### Render (production today)
 
 `render.yaml` defines a Docker-based daemon plus a free-tier Postgres. Sessions survive deploys and cold starts when `ATLASLINK_DATABASE_URL` is set. Auto-deploy triggers after every green CI run on `main`.
 
@@ -134,9 +140,15 @@ docker run -p 3000:3000 --env-file .env atlaslink
 
 The dashboard at [atlas.flabs.tech](https://atlas.flabs.tech) is a Next.js app with a BFF proxy (`/api/*` → backend). Set `ATLASLINK_API_URL` and `ATLASLINK_API_TOKEN` as build-time env vars.
 
-### Oracle Cloud Always Free (legacy)
+### AWS (staging, ADR-013)
 
-A zero-cost option kept for reference: VM + Caddy + Docker Compose. Being retired after the AWS cutover — see [#329](https://github.com/fworks-tech/atlaslink/issues/329). See [`docs/tasks/deploy-oracle-free-tier.md`](docs/tasks/deploy-oracle-free-tier.md).
+EC2 + RDS + Cosmo router via `docker-compose.aws.yml`. See [spec](docs/spec/aws-deployment.md) and [runbook](docs/runbooks/aws-deploy.md). Retiring Render/Oracle after the soak — see [#329](https://github.com/fworks-tech/atlaslink/issues/329).
+
+### Oracle Cloud Always Free (legacy, retired)
+
+> ⚠️ Retired after the AWS cutover — kept for reference only.
+
+A zero-cost option: VM + Caddy + Docker Compose. See [`docs/tasks/deploy-oracle-free-tier.md`](docs/tasks/deploy-oracle-free-tier.md).
 
 ## Roadmap
 
@@ -147,8 +159,10 @@ A zero-cost option kept for reference: VM + Caddy + Docker Compose. Being retire
 | **M3 — Task API** | Bearer-gated `POST/GET /tasks`, cancel, per-session/project SSE, Postgres-backed | Shipped — [spec](docs/spec/m3-task-api.md) |
 | **M4 — Live Dashboard** | `SocietyDiagram` (`chain\|fanout\|full` DAG), `SessionInspector`, `awaiting_input` ↔ `user_reply` loop, deep-links, composer overlay | Shipped — [tasks](docs/tasks/m4-live-dashboard.md) |
 | **M5 — HITL Room** | Single-question `ask_human` → park → reply → linked resume, WS room, steer/interrupt, approval inbox | Shipped — [spec](docs/spec/m5-hitl-room.md) |
+| **P0 — Auth & Tenancy** | JWT sessions + `ak_` API keys, per-tenant isolation, fail-closed bind | Shipped — [ADR-008](docs/adr/ADR-008-auth-and-tenancy.md) |
+| **M5 — Federation & Workspace** | Cosmo router + `files/sessions/tasks/insights` subgraphs, git-backed workspaces | Shipped — [spec](docs/spec/m5-federation-workspace.md) |
 
-Milestones M1–M5 are shipped on `main`. The backlog focuses on analytics, session export, cost tracking, and Oracle Cloud migration.
+Milestones M1–M5, Auth and Federation are shipped on `main`. The backlog focuses on analytics, session export, and decommissioning Render/Oracle ([#329](https://github.com/fworks-tech/atlaslink/issues/329)).
 
 ## Quality gates
 
@@ -172,6 +186,10 @@ npm --prefix dashboard run typecheck
 - [Task API spec](docs/spec/m3-task-api.md)
 - [HITL room spec](docs/spec/m5-hitl-room.md)
 - [Auth API spec](docs/spec/auth-api.md)
+- [Auth-gated app flow + landing](docs/spec/auth-app-flow.md)
+- [Federation & Workspace spec](docs/spec/m5-federation-workspace.md)
+- [AWS deployment spec](docs/spec/aws-deployment.md) · [AWS runbook](docs/runbooks/aws-deploy.md) · [Router runbook](docs/runbooks/router.md)
+- [OpenAPI](docs/api/openapi.yaml)
 - [Dashboard README](dashboard/README.md)
 - [Disaster recovery runbook](docs/runbooks/disaster-recovery.md)
 

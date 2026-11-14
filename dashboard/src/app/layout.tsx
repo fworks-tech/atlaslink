@@ -18,9 +18,9 @@ const display = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Atlaslink — Live Dashboard",
+  title: "Atlaslink — Ask Atlas. Together, live.",
   description:
-    "Live diagram of the Agenthood society's session provenance — Atlas holds the sky of sessions.",
+    "Multi-agent orchestration with a live diagram-flow UI. Humans and agents solve it in one room — chat, delegate, steer, approve — every step on the record.",
 };
 
 // runs before first paint: stored theme wins, else system preference —

@@ -1,4 +1,6 @@
-# Atlaslink — Live Dashboard (M4)
+# Atlaslink — Live Dashboard
+
+Ask Atlas. Together, live — the Next.js front room for durable agent sessions: live DAG, human approvals, honest costs.
 
 Next.js 16 (App Router) frontend for the Atlaslink daemon. Renders the live
 society diagram — Atlas as the root node, sessions as delegation graphs — from
