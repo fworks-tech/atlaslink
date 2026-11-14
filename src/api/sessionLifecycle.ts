@@ -73,6 +73,7 @@ export async function createSessionAction(deps: IngressDeps, args: CreateSession
     member: args.member,
     prompt: args.prompt,
     ...(args.provider !== undefined ? { provider: args.provider } : {}),
+    tenantId: args.tenantId,
     id: sessionId,
     correlationId,
   })
@@ -128,6 +129,7 @@ export async function cancelSessionAction(
           sessionId,
           correlationId: current.correlationId,
           at: new Date().toISOString(),
+          ...(after.tenantId !== undefined ? { tenantId: after.tenantId } : {}),
         })
       } catch {
         // best-effort; store is truth

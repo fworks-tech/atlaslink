@@ -59,6 +59,15 @@ export class SseHandler {
   }
 
   /**
+   * Tenant-scoped global stream: the same firehose, filtered by the identity
+   * that authenticated the connection. Envelopes without a tenant are dropped
+   * rather than guessed into the default tenant.
+   */
+  handleForTenant(req: IncomingMessage, res: ServerResponse, tenantId: string): void {
+    this.#handle(req, res, (envelope) => envelope.tenantId === tenantId)
+  }
+
+  /**
    * Per-session variant (spec §3): replay-then-live limited to one session's
    * events by `correlationId`. Uses the same wire contract — Last-Event-ID
    * resume, ping, gap, shutdown — filtered at the projection boundary.
