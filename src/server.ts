@@ -27,6 +27,8 @@ import { VersionConflictError } from './session/types'
 import { registerTaskRoutes } from './api/tasks'
 import { registerCostRoutes } from './api/cost'
 import { registerProjectRoutes } from './api/projects'
+import { registerAgentRoutes } from './api/agents'
+import { registerWorkspaceRoutes } from './api/workspace'
 import { registerNotificationRoutes } from './api/notifications'
 import type { MentionDirectory } from './api/notify'
 import { registerRoomRoutes } from './api/room'
@@ -257,6 +259,9 @@ export async function createAppServer(params: {
     // --- M4 Project API: project-scoped session workspace ---
     registerProjectRoutes(api, { backend, authStore: params.authStore ?? null })
 
+    // --- Phase C custom agents: tenant-owned persona overlays ---
+    registerAgentRoutes(api, { backend })
+
     // --- Auth key management (requires authentication) ---
     if (params.authStore) {
       registerAuthKeyRoutes(api, params.authStore)
@@ -345,6 +350,9 @@ export async function createAppServer(params: {
 
     // --- M5 files subgraph (#296): git workspace list/read/diff/commit ---
     registerFilesSubgraph(api, { backend, workspaceRoot: workspaceRootFor(log.dataDir) })
+
+    // --- Phase D workspace REST: same canvas, REST shape for the dashboard ---
+    registerWorkspaceRoutes(api, { backend, workspaceRoot: workspaceRootFor(log.dataDir) })
   }, { prefix: '/v1' })
 
   app.setNotFoundHandler((_request, reply) => {
@@ -437,6 +445,10 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
           await runSession({
             registry,
             session,
+            // custom agents execute as their base member — the persona already
+            // rides the stored prompt, so the registry/store keep the custom
+            // name for display while the runtime sees a canonical member
+            resolveMember: async (name) => (await costBackend.getAgent(name).catch(() => null))?.baseMember ?? name,
             config: resolveSessionConfig(config.agenthood, session.task),
             onEvent: (event: RunEvent) => {
               broadcaster.emit({ eventId: 0, ...event, tenantId })

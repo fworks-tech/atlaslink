@@ -21,6 +21,7 @@ import { hasStoredSidebarOpen, loadSidebarOpen, saveSidebarOpen } from "@/lib/si
 import { clearLastSession, isDiagramMode, loadDiagramMode, loadLastSession, saveDiagramMode, saveLastSession } from "@/lib/uiPrefs";
 import { replyToSession, steerSession, cancelSession, createTask, askFollowup, getMembers, ApiError } from "@/lib/api";
 import { ChatComposer, type ReplyTarget } from "@/components/ChatComposer";
+import { WorkspacePanel } from "@/components/WorkspacePanel";
 import type { MemberDirectoryEntry } from "@/lib/types";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
 import { useDeliveryReceipts } from "@/hooks/useDeliveryReceipts";
@@ -641,6 +642,13 @@ function HomeInner() {
               ) : null}
             </div>
             <SessionInspector open={Boolean(inspectorNode)} onClose={handleCloseInspector} session={selectedSession} events={mergedEvents} selectedNode={inspectorNode} contextLoading={inspectorContextLoading} onConfigChange={handleNodeConfigChange} />
+            {selectedProjectId ? (
+              <div className="mt-6">
+                <ErrorBoundary>
+                  <WorkspacePanel key={selectedProjectId} projectId={selectedProjectId} sessionId={selectedSessionId} />
+                </ErrorBoundary>
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="px-4 pt-4 sm:px-8 sm:pt-8">

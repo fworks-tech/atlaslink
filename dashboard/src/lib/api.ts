@@ -1,4 +1,4 @@
-import type { Session, TaskListResponse, Project, ProjectListResponse, MemberDirectoryEntry, NotificationListResponse } from "./types";
+import type { Session, TaskListResponse, Project, ProjectListResponse, MemberDirectoryEntry, NotificationListResponse, AgentListResponse } from "./types";
 import { loadAuth, clearAuth, saveAuth } from "./auth";
 
 export class ApiError extends Error {
@@ -281,6 +281,45 @@ export function getRoomMembers(sessionId: string): Promise<{ ok: boolean; member
 /** Tenant-scoped member directory for @mention autocomplete — id/email only, never credential material. */
 export function getMembers(): Promise<{ ok: boolean; members: MemberDirectoryEntry[] }> {
   return fetchJSON<{ ok: boolean; members: MemberDirectoryEntry[] }>("/members");
+}
+
+/** Agent catalog: canonical built-ins plus tenant-owned custom personas. */
+export function getAgents(): Promise<AgentListResponse> {
+  return fetchJSON<AgentListResponse>("/agents");
+}
+
+export interface WorkspaceCommit {
+  sha: string;
+  at: string;
+  message: string;
+}
+
+/** Project git workspace: the shared human+agent canvas behind every session. */
+export function listWorkspaceFiles(projectId: string): Promise<{ ok: boolean; files: string[] }> {
+  return fetchJSON<{ ok: boolean; files: string[] }>(`/projects/${encodeURIComponent(projectId)}/workspace/files`);
+}
+
+export function readWorkspaceFile(projectId: string, path: string): Promise<{ ok: boolean; content: string }> {
+  const params = new URLSearchParams({ path });
+  return fetchJSON<{ ok: boolean; content: string }>(`/projects/${encodeURIComponent(projectId)}/workspace/file?${params.toString()}`);
+}
+
+export function logWorkspaceCommits(projectId: string): Promise<{ ok: boolean; commits: WorkspaceCommit[] }> {
+  return fetchJSON<{ ok: boolean; commits: WorkspaceCommit[] }>(
+    `/projects/${encodeURIComponent(projectId)}/workspace/log?limit=20`
+  );
+}
+
+export function diffWorkspace(projectId: string, from: string, to: string): Promise<{ ok: boolean; diff: string }> {
+  const params = new URLSearchParams({ from, to });
+  return fetchJSON<{ ok: boolean; diff: string }>(`/projects/${encodeURIComponent(projectId)}/workspace/diff?${params.toString()}`);
+}
+
+export function commitWorkspace(projectId: string, message: string, sessionId?: string): Promise<{ ok: boolean; sha: string }> {
+  return fetchJSON<{ ok: boolean; sha: string }>(`/projects/${encodeURIComponent(projectId)}/workspace/commit`, {
+    method: "POST",
+    body: JSON.stringify({ message, ...(sessionId ? { sessionId } : {}) }),
+  });
 }
 
 /** In-app bells for the signed-in user: mentions, thread replies, approval asks. */

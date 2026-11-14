@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, ProjectInvite, ProjectMember, ProjectRole, DurabilityMode, Notification, NotificationInput } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, ProjectInvite, ProjectMember, ProjectRole, DurabilityMode, Notification, NotificationInput, CustomAgent, CustomAgentInput } from './types'
 import { VersionConflictError } from './types'
 import { rehydrate } from './sessionStore'
 import { deepFreeze } from './deepFreeze'
@@ -637,6 +637,80 @@ export class PostgresBackend implements SessionBackend {
       [new Date().toISOString(), this.#tenantId, id]
     )
     return true
+  }
+
+  async listAgents(): Promise<CustomAgent[]> {
+    const { rows } = await this.db.query<{ name: string; display_name: string; persona: string; base_member: string; provider: string | null; model: string | null }>(
+      `SELECT name, display_name, persona, base_member, provider, model FROM agents WHERE tenant_id = $1 ORDER BY name ASC`,
+      [this.#tenantId]
+    )
+    return rows.map((r) => ({
+      name: r.name,
+      displayName: r.display_name,
+      persona: r.persona,
+      baseMember: r.base_member,
+      ...(r.provider !== null ? { provider: r.provider } : {}),
+      ...(r.model !== null ? { model: r.model } : {}),
+      tenantId: this.#tenantId,
+    }))
+  }
+
+  async getAgent(name: string): Promise<CustomAgent | null> {
+    const { rows } = await this.db.query<{ name: string; display_name: string; persona: string; base_member: string; provider: string | null; model: string | null }>(
+      `SELECT name, display_name, persona, base_member, provider, model FROM agents WHERE tenant_id = $1 AND name = $2`,
+      [this.#tenantId, name]
+    )
+    if (rows.length === 0) return null
+    const r = rows[0]
+    return {
+      name: r.name,
+      displayName: r.display_name,
+      persona: r.persona,
+      baseMember: r.base_member,
+      ...(r.provider !== null ? { provider: r.provider } : {}),
+      ...(r.model !== null ? { model: r.model } : {}),
+      tenantId: this.#tenantId,
+    }
+  }
+
+  async createAgent(input: CustomAgentInput): Promise<CustomAgent> {
+    try {
+      await this.db.query(
+        `INSERT INTO agents (tenant_id, name, display_name, persona, base_member, provider, model) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [this.#tenantId, input.name, input.displayName ?? input.name, input.persona, input.baseMember, input.provider ?? null, input.model ?? null]
+      )
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new Error(`agent '${input.name}' already exists`, { cause: err })
+      throw err
+    }
+    return (await this.getAgent(input.name))!
+  }
+
+  async updateAgent(name: string, patch: { displayName?: string; persona?: string; baseMember?: string; provider?: string; model?: string }): Promise<CustomAgent | null> {
+    const current = await this.getAgent(name)
+    if (!current) return null
+    await this.db.query(
+      `UPDATE agents SET display_name = $1, persona = $2, base_member = $3, provider = $4, model = $5, updated_at = $6 WHERE tenant_id = $7 AND name = $8`,
+      [
+        patch.displayName ?? current.displayName,
+        patch.persona ?? current.persona,
+        patch.baseMember ?? current.baseMember,
+        patch.provider ?? current.provider ?? null,
+        patch.model ?? current.model ?? null,
+        new Date().toISOString(),
+        this.#tenantId,
+        name,
+      ]
+    )
+    return this.getAgent(name)
+  }
+
+  async deleteAgent(name: string): Promise<boolean> {
+    const { rows } = await this.db.query<{ name: string }>(
+      `DELETE FROM agents WHERE tenant_id = $1 AND name = $2 RETURNING name`,
+      [this.#tenantId, name]
+    )
+    return rows.length > 0
   }
 
   async deleteSession(sessionId: string): Promise<void> {

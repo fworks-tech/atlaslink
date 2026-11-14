@@ -58,6 +58,12 @@ vi.mock("@/lib/api", () => ({
   createTask: (...args: unknown[]) => createMock(...args),
   askFollowup: (...args: unknown[]) => followupMock(...args),
   getMembers: async () => ({ ok: true, members: [] }),
+  getAgents: async () => ({ ok: true, builtIn: ["the-mediator"], agents: [] }),
+  listWorkspaceFiles: async () => ({ ok: true, files: [] }),
+  readWorkspaceFile: async () => ({ ok: true, content: "" }),
+  logWorkspaceCommits: async () => ({ ok: true, commits: [] }),
+  diffWorkspace: async () => ({ ok: true, diff: "" }),
+  commitWorkspace: async () => ({ ok: true, sha: "0".repeat(40) }),
 }));
 
 vi.mock("@/components/ApprovalInbox", () => ({

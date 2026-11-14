@@ -73,6 +73,35 @@ test('runSession replays bus events then finalizes a succeeded session', async (
   assert.ok(finished.finishedAt)
 })
 
+test('runSession maps a custom agent to its base member via resolveMember', async () => {
+  const registry = new TaskRegistry()
+  const session = registry.create({ member: 'reviewer', prompt: 'check this' })
+  let ranAs = ''
+  const app = fakeApp()
+  const capturing: AppLike = {
+    ...app,
+    runner: {
+      async runMemberTask(memberName: string) {
+        ranAs = memberName
+        return app.runner.runMemberTask(memberName, 'check this', {})
+      },
+    },
+  }
+
+  const finished = await runSession({
+    registry,
+    session,
+    config: {},
+    resolveMember: async (name) => (name === 'reviewer' ? 'the-reviewer' : name),
+    createApp: async () => capturing,
+  })
+
+  assert.equal(ranAs, 'the-reviewer')
+  assert.equal(finished.status, 'succeeded')
+  // the record keeps the custom identity — only the runner call is remapped
+  assert.equal(registry.get(session.id)?.task.member, 'reviewer')
+})
+
 test('runSession marks a session failed when the member throws', async () => {
   const registry = new TaskRegistry()
   const session = baseSession(registry)

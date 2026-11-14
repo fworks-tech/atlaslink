@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta, SessionStatus, Project, ProjectMember, ProjectRole, ProjectInvite, Notification, NotificationInput } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionStatus, Project, ProjectMember, ProjectRole, ProjectInvite, Notification, NotificationInput, CustomAgent, CustomAgentInput } from './types'
 
 /**
  * Query surface for the task-rest list endpoint. Filters are applied by the
@@ -91,6 +91,12 @@ export interface SessionBackend {
   countUnread(userId: string): Promise<number>
   countUnreadBySession(userId: string): Promise<Record<string, number>>
   markNotificationRead(id: string, userId: string): Promise<boolean>
+  /** Tenant-owned custom agents (Phase C): persona overlays run as a built-in base member. */
+  listAgents(): Promise<CustomAgent[]>
+  getAgent(name: string): Promise<CustomAgent | null>
+  createAgent(input: CustomAgentInput): Promise<CustomAgent>
+  updateAgent(name: string, patch: { displayName?: string; persona?: string; baseMember?: string; provider?: string; model?: string }): Promise<CustomAgent | null>
+  deleteAgent(name: string): Promise<boolean>
   deleteSession(sessionId: string): Promise<void>
   withTenant(tenantId: string): SessionBackend
   /**

@@ -4,5 +4,5 @@
  * an export is added or removed. See `README.md` for the layer map.
  */
 export { workspacePathFor, workspaceRootFor } from './domain/path'
-export { ensureWorkspace, commitAll, applySessionWrite, isSafeRepoPath, readAt, listAt, diff } from './infrastructure/git'
+export { ensureWorkspace, commitAll, applySessionWrite, isSafeRepoPath, readAt, listAt, diff, logCommits } from './infrastructure/git'
 export { withWorkspaceLock } from './infrastructure/lock'

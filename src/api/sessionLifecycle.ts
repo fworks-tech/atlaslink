@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { getMemberNames } from 'agenthood'
 import type { Session as AggregateSession, SessionEvent } from '../session/types'
 import { VersionConflictError } from '../session/types'
 import type { IngressDeps, ActionResult } from './sessionActions'
@@ -55,6 +56,24 @@ export type CancelResult =
 export async function createSessionAction(deps: IngressDeps, args: CreateSessionArgs): Promise<ActionResult> {
   if (!args.member.trim()) return { code: 400, error: 'member must not be blank' }
   if (!args.prompt.trim()) return { code: 400, error: 'prompt must not be blank' }
+  // custom agents (Phase C): unknown names 400 here instead of failing the
+  // run later; the persona bakes into the stored prompt so resume/followup
+  // folds keep it, and the run maps back to the base member (see server pump)
+  let prompt = args.prompt
+  let provider = args.provider
+  let tweaks = args.tweaks
+  if (!getMemberNames().includes(args.member)) {
+    const agent = await deps.backend.getAgent(args.member)
+    if (!agent) return { code: 400, error: `unknown member '${args.member}'` }
+    prompt = `<agent_persona name="${agent.name}">\n${agent.persona}\n</agent_persona>\n\n${args.prompt}`
+    if (agent.provider !== undefined && provider === undefined && (tweaks as CreateTweaks | undefined)?.provider === undefined) {
+      provider = agent.provider
+    }
+    if (agent.model !== undefined) {
+      const memberTweaks = ((tweaks as CreateTweaks | undefined)?.member ?? {}) as Record<string, unknown>
+      if (memberTweaks.model === undefined) tweaks = { ...tweaks, member: { ...memberTweaks, model: agent.model } }
+    }
+  }
   const sessionId = `ses-${randomUUID()}`
   const correlationId = `cor-${randomUUID()}`
   const event: SessionEvent = {
@@ -63,16 +82,16 @@ export async function createSessionAction(deps: IngressDeps, args: CreateSession
     correlationId,
     at: new Date().toISOString(),
     member: args.member,
-    prompt: args.prompt,
+    prompt,
     tenantId: args.tenantId,
     ...(args.projectId !== undefined ? { projectId: args.projectId } : {}),
-    ...(args.tweaks !== undefined ? { tweaks: args.tweaks } : {}),
+    ...(tweaks !== undefined ? { tweaks } : {}),
   }
   await deps.backend.append(event)
   const created = deps.registry.create({
     member: args.member,
-    prompt: args.prompt,
-    ...(args.provider !== undefined ? { provider: args.provider } : {}),
+    prompt,
+    ...(provider !== undefined ? { provider } : {}),
     tenantId: args.tenantId,
     id: sessionId,
     correlationId,
