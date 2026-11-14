@@ -55,14 +55,18 @@ jobs:
         if: env.AWS_DEPLOY_HOST != ''
         env:
           AWS_STAGING_URL: ${{ vars.AWS_STAGING_URL || 'https://staging.atlas.flabs.tech' }}
+          AWS_PROD_URL: ${{ vars.AWS_PROD_URL || 'https://api.atlas.flabs.tech' }}
         run: |
+          healthy() {
+            curl -fsS --max-time 10 "$1/health" | grep -Eq '"providers":[1-9]'
+          }
           for i in $(seq 1 30); do
             sleep 10
-            if curl -fsS --max-time 10 "$AWS_STAGING_URL/health" | grep -Eq '"providers":[1-9]'; then
-              echo "Service is healthy on a current build after $((i * 10))s"
+            if healthy "$AWS_STAGING_URL" && healthy "$AWS_PROD_URL"; then
+              echo "staging and production are healthy on the current build after $((i * 10))s"
               exit 0
             fi
-            echo "attempt $i: not healthy on the new build yet"
+            echo "attempt $i: staging or production is not healthy on the new build yet"
           done
-          echo "::error::service did not report the current build within 5 minutes — check EC2 (docker compose ps), Caddy, and the DNS record"
+          echo "::error::service did not report the current build within 5 minutes — check EC2 (docker compose ps), Caddy, and the DNS records for staging and api"
           exit 1
