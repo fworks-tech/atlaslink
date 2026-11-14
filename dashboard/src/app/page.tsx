@@ -2,7 +2,7 @@ import Link from "next/link";
 import { IconEye, IconGitFork, IconShieldCheck, IconWallet } from "@tabler/icons-react";
 import FadeIn from "@/components/FadeIn";
 import LandingCanvas from "@/components/LandingCanvas";
-import AskTerminal from "@/components/AskTerminal";
+import SharedRoomCard from "@/components/SharedRoomCard";
 
 /**
  * Marketing surface for visitors — the app lives at /atlas (spec:
@@ -148,36 +148,36 @@ export default function LandingPage() {
         </section>
       </FadeIn>
 
-      {/* Final CTA — the terminal speaks for itself */}
+      {/* Final CTA — hand the work to a shared room */}
       <FadeIn>
         <section>
           <div className="mx-auto max-w-6xl px-6 pb-24 pt-12 text-center">
             <h2
-              className="mb-4 text-4xl font-semibold text-foreground"
+              className="mb-4 text-4xl font-semibold text-foreground sm:text-5xl"
               style={{ fontFamily: "var(--font-display)" }}
             >
               Hand it to the room.
             </h2>
-            <p className="mx-auto mb-8 max-w-lg text-muted">
-              Watch the room earn it — live — or claim your own Atlas with
-              your projects, your sessions, your costs.
+            <p className="mx-auto mb-8 max-w-2xl text-lg leading-relaxed text-muted">
+              Hand a PR review to the room — humans and agents triage, fix, and
+              verify together, with an approval gate at every decision.
             </p>
-            <div className="mx-auto mb-10 max-w-2xl">
-              <AskTerminal />
-            </div>
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <Link
-                href="/atlas"
-                className="inline-block rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-background transition-opacity hover:opacity-90"
-              >
-                Open Atlas
-              </Link>
+            <div className="mb-10 flex flex-wrap items-center justify-center gap-3">
               <Link
                 href="/login"
-                className="inline-block rounded-lg border border-line px-6 py-3 text-sm font-medium text-foreground transition-colors hover:border-accent/40"
+                className="inline-block rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-background transition-opacity hover:opacity-90"
               >
-                Create your Atlas
+                Get Started
               </Link>
+              <Link
+                href="/atlas"
+                className="inline-block rounded-lg border border-gold/60 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:border-gold"
+              >
+                Request a Demo
+              </Link>
+            </div>
+            <div className="text-left">
+              <SharedRoomCard />
             </div>
           </div>
         </section>

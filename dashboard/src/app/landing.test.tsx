@@ -28,6 +28,10 @@ describe("landing page", () => {
     expect(screen.getByText(/The room, not the queue/i)).toBeInTheDocument();
     expect(screen.getByText(/Session activity, recorded for review/i)).toBeInTheDocument();
     expect(screen.getByText(/Hand it to the room/i)).toBeInTheDocument();
+    expect(screen.getByText(/Live Shared Room/i)).toBeInTheDocument();
+    expect(screen.getByText(/Session History/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Get Started" }).getAttribute("href")).toBe("/login");
+    expect(screen.getByRole("link", { name: "Request a Demo" }).getAttribute("href")).toBe("/atlas");
     expect(screen.queryByText(/specialized members/i)).toBeNull();
     expect(screen.queryByText(/Meet the team/i)).toBeNull();
     expect(screen.queryByText(/How it works/i)).toBeNull();
@@ -71,21 +75,15 @@ describe("LandingCanvas choreography", () => {
 });
 
 
-describe("AskTerminal", () => {
-  it("types the command and reveals the session outcome lines, looping", async () => {
-    vi.useFakeTimers();
-    const AskTerminal = (await import("@/components/AskTerminal")).default;
-    render(<AskTerminal />);
-    expect(screen.getByTestId("ask-terminal")).toBeInTheDocument();
-    // typing completes for the first example (~54 chars * 26ms)
-    act(() => { vi.advanceTimersByTime(1600); });
-    expect(screen.getByText(/fix issue #42/i)).toBeInTheDocument();
-    // outcome lines reveal
-    act(() => { vi.advanceTimersByTime(1200); });
-    expect(screen.getByText(/session\.succeeded/i)).toBeInTheDocument();
-    // next example cycles in and types its command
-    act(() => { vi.advanceTimersByTime(4200); });
-    expect(screen.getByText(/review my PR for security holes/i)).toBeInTheDocument();
-    vi.useRealTimers();
+describe("SharedRoomCard", () => {
+  it("storyboards a PR review: agents flank the chat, approval gates the history", async () => {
+    const SharedRoomCard = (await import("@/components/SharedRoomCard")).default;
+    render(<SharedRoomCard />);
+    expect(screen.getByLabelText(/resolving a PR security review/i)).toBeInTheDocument();
+    expect(screen.getByText("Agent: triage")).toBeInTheDocument();
+    expect(screen.getByText("Agent: implementer")).toBeInTheDocument();
+    expect(screen.getByText(/Vulnerability no longer detected/i)).toBeInTheDocument();
+    expect(screen.getByText("approval")).toBeInTheDocument();
+    expect(screen.getByText("Vulnerability resolved")).toBeInTheDocument();
   });
 });
