@@ -115,7 +115,7 @@ export default function CostPage() {
     <div className="mx-auto max-w-7xl px-6 py-8">
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Cost</h1>
-        <p className="mt-2 text-sm leading-6 text-muted">Honest costs — LLM spend rolled up per agent, per day, in the open.</p>
+        <p className="mt-2 text-sm leading-6 text-muted">LLM spend by agent and day.</p>
       </header>
       <Link href="/" className="text-sm text-muted underline hover:text-foreground">
         ← Back to diagram

@@ -1,6 +1,13 @@
 # Atlaslink
 
-> Multi-agent orchestration with a live diagram-flow UI. Humans and agents solve it in one room — chat, delegate, steer, approve — every step on the record.
+### One shared room for human-guided AI work.
+
+Atlaslink is an experimental shared workspace where people and AI agents
+work through tasks together. Built on [Agenthood](https://github.com/fworks-tech/agenthood),
+it brings coordination, live progress, human decisions, and agent activity
+into one session.
+
+**[Try the live demo](https://atlas.flabs.tech) · [Read the docs](docs/architecture/README.md) · [Explore Agenthood](https://github.com/fworks-tech/agenthood)**
 
 [![CI](https://github.com/fworks-tech/atlaslink/actions/workflows/ci.yml/badge.svg)](https://github.com/fworks-tech/atlaslink/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
@@ -14,7 +21,7 @@
 
 ## What is Atlaslink?
 
-Atlaslink is a product-oriented multi-agent orchestrator built on **[Agenthood](https://github.com/fworks-tech/agenthood)**, an agent-team runtime. It turns a black-box pipeline into a live, visual flow you can read, debug, and steer — and it gives you a REST + event surface to drive everything programmatically.
+Atlaslink is an experimental shared workspace built on **[Agenthood](https://github.com/fworks-tech/agenthood)**, an agent-team runtime: Agenthood is the core/runtime agents run on; Atlaslink is the shared room where people follow, steer, and decide that work. It turns a black-box pipeline into a live, visual flow you can read, debug, and steer — and it gives you a REST + event surface to drive everything programmatically.
 
 ## Features
 
@@ -23,7 +30,7 @@ Atlaslink is a product-oriented multi-agent orchestrator built on **[Agenthood](
 - **Human-in-the-loop collaboration** — agents ask single questions via `ask_human`, park the session, and resume from your reply. A per-session WebSocket room lets multiple people observe and steer together.
 - **Task, project & GraphQL APIs** — create, list, cancel, reply to, and steer sessions over a bearer-gated REST surface, plus a federated GraphQL plane (`session`, `task`, `insights`, `files`) behind the same auth. Projects group sessions; the event feed is addressable per session or per project.
 - **Event-sourced sessions** — every state change is appended to a durable event store: embedded SQLite by default, Postgres in production (same SQL on both). Sessions survive deploys and cold starts.
-- **Your providers, honest costs** — per-session provider and model picks, fast-failed when unknown. LLM spend is rolled up per agent, per day, in the open.
+- **LLM spend by agent and day** — per-session provider and model picks, fast-failed when unknown. Spend is rolled up per agent, per day.
 - **Auth & tenancy** — JWT sessions (7-day expiry), SHA-256-hashed API keys, tenant isolation, fail-closed non-loopback binding, and per-user rate limiting.
 
 ## Tech stack
@@ -32,7 +39,7 @@ Atlaslink is a product-oriented multi-agent orchestrator built on **[Agenthood](
 |-------|------------|
 | Runtime | Node.js >= 22.14, TypeScript 5.9, tsx |
 | HTTP server | Fastify 5, `@fastify/cors`, `@fastify/rate-limit`, `@fastify/websocket` |
-| Database | SQLite default via `better-sqlite3`, Postgres production via `pg`, `pglite` in CI/tests — same SQL on both |
+| Database | SQLite default via `better-sqlite3`, Postgres production via `pg`, `pglite` in CI/tests |
 | Event store | Append-only `session_events` (source of truth, ADR-010) + NDJSON agent-run provenance log |
 | Frontend | Next.js 16, React 19, Mantine 9, Tailwind CSS v4, React Flow 12, dagre layout |
 | Auth | JWT (HS256), API keys (SHA-256 hashed), scrypt passwords |

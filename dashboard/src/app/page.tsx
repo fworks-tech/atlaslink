@@ -22,8 +22,8 @@ const collab = [
     body: "Redirect a running session without killing it, rewrite a queued prompt, or interrupt entirely. The room reacts instantly.",
   },
   {
-    title: "Nothing acts unapproved",
-    body: "When Atlas asks — apply the fix? call this tool? — the room waits on you. Approve, reject, or reply in place.",
+    title: "Approval gates keep you in the loop",
+    body: "When a decision is required — apply the fix? call this tool? — the room waits on you. Approve, reject, or reply in place.",
   },
 ];
 
@@ -31,7 +31,7 @@ const evidence = [
   { icon: IconEye, label: "Live DAG", desc: "sessions, members, reasoning and tools as one diagram" },
   { icon: IconShieldCheck, label: "Human-in-the-loop", desc: "approval gates are part of the protocol, not a plugin" },
   { icon: IconGitFork, label: "Your providers", desc: "per-session provider and model picks, fast-failed if unknown" },
-  { icon: IconWallet, label: "Honest costs", desc: "LLM spend rolled up per agent, per day — in the open" },
+  { icon: IconWallet, label: "Costs by agent and day", desc: "LLM spend rolled up per agent, per day" },
 ];
 
 export default function LandingPage() {
@@ -54,9 +54,21 @@ export default function LandingPage() {
                 <span className="text-muted">Together, live.</span>
               </h1>
               <p className="mt-5 max-w-md text-lg leading-relaxed text-muted">
-                See how agents and humans solve it — in the same room, in real
-                time. Chat, delegate, steer, approve. Every step visible the
-                moment it happens.
+                Bring people and AI agents into one shared session.
+                Delegate work, follow what happens, steer a run, and make decisions
+                together — without losing sight of the process.
+              </p>
+              <p className="mt-3 max-w-md text-sm leading-relaxed text-muted">
+                An experimental proof of concept built on{" "}
+                <Link
+                  href="https://github.com/fworks-tech/agenthood"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-accent/50 underline-offset-2 hover:text-foreground"
+                >
+                  Agenthood
+                </Link>
+                .
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <Link
@@ -92,9 +104,8 @@ export default function LandingPage() {
               The room, not the queue.
             </h2>
             <p className="mb-10 max-w-2xl leading-relaxed text-muted">
-              You don&apos;t file a ticket and wait. You&apos;re in the room while it
-              runs — presence, typing, receipts, and the steering wheel when
-              you want it.
+              Work alongside agents in a shared live session. See activity as it
+              happens and step in when a decision is needed.
             </p>
             <div className="grid gap-5 md:grid-cols-3">
               {collab.map((c) => (
@@ -118,7 +129,7 @@ export default function LandingPage() {
             className="mb-3 text-3xl font-semibold text-foreground"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            Every step, on the record.
+            Session activity, recorded for review.
           </h2>
           <p className="mb-10 max-w-2xl leading-relaxed text-muted">
             Sessions are durable events, not chat scrollback. Reasoning,

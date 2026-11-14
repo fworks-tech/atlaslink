@@ -26,7 +26,7 @@ describe("landing page", () => {
   it("renders the room band, evidence band and final CTA — and none of the copied agenthood sections", () => {
     render(<LandingPage />);
     expect(screen.getByText(/The room, not the queue/i)).toBeInTheDocument();
-    expect(screen.getByText(/Every step, on the record/i)).toBeInTheDocument();
+    expect(screen.getByText(/Session activity, recorded for review/i)).toBeInTheDocument();
     expect(screen.getByText(/Hand it to the room/i)).toBeInTheDocument();
     expect(screen.queryByText(/specialized members/i)).toBeNull();
     expect(screen.queryByText(/Meet the team/i)).toBeNull();

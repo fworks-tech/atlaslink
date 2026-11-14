@@ -20,7 +20,7 @@ const display = Space_Grotesk({
 export const metadata: Metadata = {
   title: "Atlaslink — Ask Atlas. Together, live.",
   description:
-    "Multi-agent orchestration with a live diagram-flow UI. Humans and agents solve it in one room — chat, delegate, steer, approve — every step on the record.",
+    "Atlaslink is an experimental shared workspace where people and AI agents work through tasks together. Built on Agenthood — ask Atlas, together, live.",
 };
 
 // runs before first paint: stored theme wins, else system preference —
