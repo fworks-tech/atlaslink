@@ -88,4 +88,44 @@ describe("useEvents", () => {
       expect(types.has(type), `subscribed to ${type}`).toBe(true);
     }
   });
+
+  it("connects direct with a BFF ticket when a public API URL is configured", async () => {
+    process.env.NEXT_PUBLIC_ATLASLINK_API_URL = "https://api.atlas.flabs.tech";
+    const fetchMock = vi.fn(async () => Response.json({ ok: true, ticket: "tkt.jwt.sig", expiresAt: new Date().toISOString() }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      renderHook(() => useEvents());
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(fetchMock).toHaveBeenCalledWith("/api/auth/stream-ticket", { method: "POST" });
+      expect(MockEventSource.instances).toHaveLength(1);
+      expect(MockEventSource.instances[0].url.startsWith("https://api.atlas.flabs.tech/v1/events?ticket=tkt.jwt.sig")).toBe(true);
+    } finally {
+      delete process.env.NEXT_PUBLIC_ATLASLINK_API_URL;
+    }
+  });
+
+  it("forwards the browser bearer when fetching the stream ticket", async () => {
+    process.env.NEXT_PUBLIC_ATLASLINK_API_URL = "https://api.atlas.flabs.tech";
+    window.localStorage.setItem(
+      "atlaslink:auth:jwt",
+      JSON.stringify({ jwt: "user.jwt.sig", email: "u@x.com", userId: "u-1" })
+    );
+    const fetchMock = vi.fn(async () => Response.json({ ok: true, ticket: "tkt.jwt.sig", expiresAt: new Date().toISOString() }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      renderHook(() => useEvents());
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(fetchMock).toHaveBeenCalledWith("/api/auth/stream-ticket", {
+        method: "POST",
+        headers: { Authorization: "Bearer user.jwt.sig" },
+      });
+    } finally {
+      window.localStorage.removeItem("atlaslink:auth:jwt");
+      delete process.env.NEXT_PUBLIC_ATLASLINK_API_URL;
+    }
+  });
 });

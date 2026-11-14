@@ -165,12 +165,12 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
         const query = (request.query ?? {}) as Record<string, unknown>
         const sessionId = request.params.id
 
-        // Browsers cannot set upgrade headers: same bearer via ?token=.
+        // Browsers cannot set upgrade headers: same bearer via ?ticket=/?token=.
         // The preHandler gate may already have enforced the header — this
         // check is idempotent with it, never weaker.
         // A JWT/API-key session already passed the upgrade gate; the legacy
         // bearer check only applies when the gate left `request.auth` unset.
-        if (!request.auth && !checkBearer(request.headers.authorization, firstQuery(query.token), expectedToken)) {
+        if (!request.auth && !checkBearer(request.headers.authorization, firstQuery(query.ticket) ?? firstQuery(query.token), expectedToken)) {
           socket.close(ROOM_CLOSE_UNAUTHORIZED, 'unauthorized')
           return
         }
