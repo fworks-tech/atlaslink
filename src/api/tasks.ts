@@ -6,8 +6,22 @@ import type { SseHandler } from '../bridge/sseEndpoint'
 import type { TaskRegistry } from '../tasks/taskRegistry'
 import type { ProviderChoice } from '../config'
 import { tenantBackendForRequest } from './tenant'
+import { canReadProject, canWriteProject } from './projectAcl'
 import { appendChatMessage, askFollowup, replyToParked, steerSession } from './sessionActions'
 import { cancelSessionAction, createSessionAction, validateCreateEdge } from './sessionLifecycle'
+
+/** Sessions inherit project ACL: unknown project reads as 404 (no oracle).
+ * Missing project rows (pre-ACL sessions like proj-1 in dev) are legacy
+ * tenant-wide — allowed so old tests and unmigrated data keep working. */
+async function projectReadGuard(
+  backend: SessionBackend,
+  projectId: string | undefined,
+  userId: string | undefined
+): Promise<{ code: 404 } | null> {
+  if (!projectId) return null
+  if (!(await canReadProject(backend, projectId, userId))) return { code: 404 }
+  return null
+}
 
 export interface TaskDeps {
   backend: SessionBackend
@@ -75,6 +89,16 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       const { member, prompt, projectId, tweaks } = request.body
       const edgeError = validateCreateEdge(deps.providers, tweaks)
       if (edgeError !== null) return reply.code(400).send({ ok: false, error: edgeError })
+      // missing project rows are legacy (pre-ACL sessions) — enforce only when the project exists
+      const project = await tenantCtx.backend.getProject(projectId)
+      if (project) {
+        if (!(await canReadProject(tenantCtx.backend, projectId, request.auth?.userId))) {
+          return reply.code(404).send({ ok: false, error: 'unknown project' })
+        }
+        if (!(await canWriteProject(tenantCtx.backend, projectId, request.auth?.userId))) {
+          return reply.code(403).send({ ok: false, error: 'viewer cannot create sessions' })
+        }
+      }
       const result = await createSessionAction(
         { backend: tenantCtx.backend, registry: deps.registry, queue: deps.queue, broadcaster: deps.sse.broadcaster },
         {
@@ -125,11 +149,21 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
         limit: query.limit ?? 50,
         offset: query.offset ?? 0,
       }
+      if (filter.projectId) {
+        if (await projectReadGuard(backend, filter.projectId, request.auth?.userId)) {
+          return reply.code(404).send({ ok: false, error: 'unknown project' })
+        }
+      }
       const { sessions, total } = await backend.list(filter)
+      // selective sharing: hide sessions in invited-only projects from non-members
+      const userId = request.auth?.userId
+      const visible = userId
+        ? (await Promise.all(sessions.map(async (s) => ((await canReadProject(backend, s.projectId ?? '', userId)) ? s : null)))).filter((s): s is AggregateSession => s !== null)
+        : sessions
       return reply.send({
         ok: true,
-        sessions: sessions.map(sessionToWire),
-        total,
+        sessions: visible.map(sessionToWire),
+        total: userId ? visible.length : total,
         limit: filter.limit,
         offset: filter.offset,
       })
@@ -141,12 +175,23 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
     const aggregate = await tenantCtx.backend.get(request.params.sessionId)
     if (!aggregate) return reply.code(404).send({ ok: false, error: 'unknown session' })
+    if (await projectReadGuard(tenantCtx.backend, aggregate.projectId, request.auth?.userId)) {
+      return reply.code(404).send({ ok: false, error: 'unknown session' })
+    }
     return reply.send({ ok: true, session: sessionToWire(aggregate) })
   })
 
   app.post<{ Params: { sessionId: string } }>('/tasks/:sessionId/cancel', async (request, reply) => {
     const tenantCtx = tenantBackendForRequest(request, deps.backend)
     if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+    const pre = await tenantCtx.backend.get(request.params.sessionId)
+    if (!pre) return reply.code(404).send({ ok: false, error: 'unknown session' })
+    if (await projectReadGuard(tenantCtx.backend, pre.projectId, request.auth?.userId)) {
+      return reply.code(404).send({ ok: false, error: 'unknown session' })
+    }
+    if (pre.projectId && !(await canWriteProject(tenantCtx.backend, pre.projectId, request.auth?.userId))) {
+      return reply.code(403).send({ ok: false, error: 'viewer cannot cancel session' })
+    }
     const result = await cancelSessionAction(
       { backend: tenantCtx.backend, registry: deps.registry, broadcaster: deps.sse.broadcaster },
       request.params.sessionId
@@ -183,6 +228,14 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       const backend = tenantCtx.backend
       const tenantId = tenantCtx.tenantId!
       const sessionId = request.params.sessionId
+      const pre = await backend.get(sessionId)
+      if (!pre) return reply.code(404).send({ ok: false, error: 'unknown session' })
+      if (await projectReadGuard(backend, pre.projectId, request.auth?.userId)) {
+        return reply.code(404).send({ ok: false, error: 'unknown session' })
+      }
+      if (pre.projectId && !(await canWriteProject(backend, pre.projectId, request.auth?.userId))) {
+        return reply.code(403).send({ ok: false, error: 'viewer cannot reply' })
+      }
       // shared with the WS room channel — the route only adapts codes to HTTP
       const result = await replyToParked(
         { backend, registry: deps.registry, queue: deps.queue, broadcaster: deps.sse.broadcaster },
@@ -219,6 +272,14 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     async (request, reply) => {
       const tenantCtx = tenantBackendForRequest(request, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const pre = await tenantCtx.backend.get(request.params.sessionId)
+      if (!pre) return reply.code(404).send({ ok: false, error: 'unknown session' })
+      if (await projectReadGuard(tenantCtx.backend, pre.projectId, request.auth?.userId)) {
+        return reply.code(404).send({ ok: false, error: 'unknown session' })
+      }
+      if (pre.projectId && !(await canWriteProject(tenantCtx.backend, pre.projectId, request.auth?.userId))) {
+        return reply.code(403).send({ ok: false, error: 'viewer cannot steer' })
+      }
       // shared with the WS room channel — the route only adapts codes to HTTP
       const result = await steerSession(
         {
@@ -262,6 +323,14 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       const backend = tenantCtx.backend
       const tenantId = tenantCtx.tenantId!
       const sessionId = request.params.sessionId
+      const pre = await backend.get(sessionId)
+      if (!pre) return reply.code(404).send({ ok: false, error: 'unknown session' })
+      if (await projectReadGuard(backend, pre.projectId, request.auth?.userId)) {
+        return reply.code(404).send({ ok: false, error: 'unknown session' })
+      }
+      if (pre.projectId && !(await canWriteProject(backend, pre.projectId, request.auth?.userId))) {
+        return reply.code(403).send({ ok: false, error: 'viewer cannot ask follow-up' })
+      }
       const result = await askFollowup(
         { backend, registry: deps.registry, queue: deps.queue, broadcaster: deps.sse.broadcaster },
         { sessionId, tenantId, content: request.body.content }
@@ -297,6 +366,14 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     async (request, reply) => {
       const tenantCtx = tenantBackendForRequest(request, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
+      const pre = await tenantCtx.backend.get(request.params.sessionId)
+      if (!pre) return reply.code(404).send({ ok: false, error: 'unknown session' })
+      if (await projectReadGuard(tenantCtx.backend, pre.projectId, request.auth?.userId)) {
+        return reply.code(404).send({ ok: false, error: 'unknown session' })
+      }
+      if (pre.projectId && !(await canWriteProject(tenantCtx.backend, pre.projectId, request.auth?.userId))) {
+        return reply.code(403).send({ ok: false, error: 'viewer cannot chat' })
+      }
       // shared with the WS room channel — the route only adapts codes to HTTP.
       // authorId is server-stamped from identity, never client-supplied.
       const result = await appendChatMessage(
@@ -352,6 +429,9 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       const { diagram } = request.body
       const current = await backend.get(sessionId)
       if (!current) return reply.code(404).send({ ok: false, error: 'unknown session' })
+      if (await projectReadGuard(backend, current.projectId, request.auth?.userId)) {
+        return reply.code(404).send({ ok: false, error: 'unknown session' })
+      }
       // ephemeral: frontend localStorage is truth for drag positions; backend echoes for now
       // until diagram persistence migrates to event-sourced overlay (not swallowing success as durable)
       return reply.send({ ok: true, diagram, persisted: false })
@@ -365,6 +445,9 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
     const aggregate = await tenantCtx.backend.get(request.params.sessionId)
     if (!aggregate) return reply.code(404).send({ ok: false, error: 'unknown session' })
+    if (await projectReadGuard(tenantCtx.backend, aggregate.projectId, request.auth?.userId)) {
+      return reply.code(404).send({ ok: false, error: 'unknown session' })
+    }
     reply.hijack()
     deps.sse.handleForSession(request.raw, reply.raw, aggregate.correlationId)
   })
@@ -379,6 +462,9 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     const tenantId = tenantCtx.tenantId!
     const project = await backend.getProject(request.params.projectId)
     if (!project) return reply.code(404).send({ ok: false, error: 'unknown project' })
+    if (!(await canReadProject(backend, project.id, request.auth?.userId))) {
+      return reply.code(404).send({ ok: false, error: 'unknown project' })
+    }
     const { sessions } = await backend.list({ projectId: request.params.projectId, tenantId, limit: 500, offset: 0 })
     const correlationIds = new Set(sessions.map((s) => s.correlationId))
     reply.hijack()

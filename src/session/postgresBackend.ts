@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, DurabilityMode } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, ProjectInvite, ProjectMember, ProjectRole, DurabilityMode } from './types'
 import { VersionConflictError } from './types'
 import { rehydrate } from './sessionStore'
 import { deepFreeze } from './deepFreeze'
@@ -415,6 +415,8 @@ export class PostgresBackend implements SessionBackend {
         [this.#tenantId, id]
       )
       if (rows.length === 0) return false
+      await tx.query(`DELETE FROM project_members WHERE tenant_id = $1 AND project_id = $2`, [this.#tenantId, id])
+      await tx.query(`DELETE FROM project_invites WHERE tenant_id = $1 AND project_id = $2`, [this.#tenantId, id])
       // Delete events by session_id — projectId only lives on session.created, so direct
       // event->>'projectId' leaves orphans. Collect session_ids first, then delete events, then directory.
       await tx.query(
@@ -427,6 +429,73 @@ export class PostgresBackend implements SessionBackend {
       ])
       return true
     })
+  }
+
+  async listProjectMembers(projectId: string): Promise<ProjectMember[]> {
+    const { rows } = await this.db.query<{ project_id: string; user_id: string; role: string }>(
+      `SELECT project_id, user_id, role FROM project_members WHERE tenant_id = $1 AND project_id = $2`,
+      [this.#tenantId, projectId]
+    )
+    return rows.map((r) => ({ projectId: r.project_id, userId: r.user_id, role: r.role as ProjectRole, tenantId: this.#tenantId }))
+  }
+
+  async getProjectMember(projectId: string, userId: string): Promise<ProjectMember | null> {
+    const { rows } = await this.db.query<{ project_id: string; user_id: string; role: string }>(
+      `SELECT project_id, user_id, role FROM project_members WHERE tenant_id = $1 AND project_id = $2 AND user_id = $3`,
+      [this.#tenantId, projectId, userId]
+    )
+    if (rows.length === 0) return null
+    return { projectId: rows[0].project_id, userId: rows[0].user_id, role: rows[0].role as ProjectRole, tenantId: this.#tenantId }
+  }
+
+  async setProjectMember(projectId: string, userId: string, role: ProjectRole): Promise<ProjectMember> {
+    const dialect = this.#db.dialect
+    if (dialect === 'postgres') {
+      await this.db.query(
+        `INSERT INTO project_members (tenant_id, project_id, user_id, role) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (tenant_id, project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+        [this.#tenantId, projectId, userId, role]
+      )
+    } else {
+      await this.db.query(`DELETE FROM project_members WHERE tenant_id = $1 AND project_id = $2 AND user_id = $3`, [this.#tenantId, projectId, userId])
+      await this.db.query(`INSERT INTO project_members (tenant_id, project_id, user_id, role) VALUES ($1, $2, $3, $4)`, [this.#tenantId, projectId, userId, role])
+    }
+    return { projectId, userId, role, tenantId: this.#tenantId }
+  }
+
+  async removeProjectMember(projectId: string, userId: string): Promise<boolean> {
+    const { rows } = await this.db.query<{ user_id: string }>(
+      `DELETE FROM project_members WHERE tenant_id = $1 AND project_id = $2 AND user_id = $3 RETURNING user_id`,
+      [this.#tenantId, projectId, userId]
+    )
+    return rows.length > 0
+  }
+
+  async createProjectInvite(invite: ProjectInvite): Promise<ProjectInvite> {
+    await this.db.query(
+      `INSERT INTO project_invites (tenant_id, id, project_id, role, token_hash, expires_at, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [this.#tenantId, invite.id, invite.projectId, invite.role, invite.tokenHash, invite.expiresAt, invite.createdBy ?? '']
+    )
+    return { ...invite, tenantId: this.#tenantId }
+  }
+
+  async getProjectInviteByTokenHash(tokenHash: string): Promise<ProjectInvite | null> {
+    const { rows } = await this.db.query<{ id: string; project_id: string; role: string; token_hash: string; expires_at: string | Date; created_by: string }>(
+      `SELECT id, project_id, role, token_hash, expires_at, created_by FROM project_invites WHERE tenant_id = $1 AND token_hash = $2`,
+      [this.#tenantId, tokenHash]
+    )
+    if (rows.length === 0) return null
+    const r = rows[0]
+    const expiresAt = r.expires_at instanceof Date ? r.expires_at.toISOString() : String(r.expires_at)
+    return { id: r.id, projectId: r.project_id, role: r.role as ProjectRole, tokenHash: r.token_hash, expiresAt, createdBy: r.created_by, tenantId: this.#tenantId }
+  }
+
+  async deleteProjectInvite(id: string, projectId: string): Promise<boolean> {
+    const { rows } = await this.db.query<{ id: string }>(
+      `DELETE FROM project_invites WHERE tenant_id = $1 AND id = $2 AND project_id = $3 RETURNING id`,
+      [this.#tenantId, id, projectId]
+    )
+    return rows.length > 0
   }
 
   async deleteSession(sessionId: string): Promise<void> {

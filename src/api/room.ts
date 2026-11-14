@@ -9,6 +9,7 @@ import type { EventLogStore } from '../bridge/EventLogStore'
 import type { SessionQueue } from '../bridge/SessionQueue'
 import type { TaskRegistry } from '../tasks/taskRegistry'
 import { tenantBackendForRequest } from './tenant'
+import { canReadProject, canWriteProject } from './projectAcl'
 import { checkBearer } from './auth'
 import {
   MAX_MESSAGE_ANCHOR_LENGTH,
@@ -131,6 +132,9 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
       if (!aggregate || aggregate.tenantId !== tenantCtx.tenantId) {
         return reply.code(404).send({ ok: false, error: 'unknown session' })
       }
+      if (aggregate.projectId && !(await canReadProject(tenantCtx.backend, aggregate.projectId, request.auth?.userId))) {
+        return reply.code(404).send({ ok: false, error: 'unknown session' })
+      }
       return { ok: true, members: rosterOf(request.params.id) }
     }
   )
@@ -146,6 +150,9 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
       const aggregate = await tenantCtx.backend.get(request.params.id)
       if (!aggregate || aggregate.tenantId !== tenantCtx.tenantId) {
+        return reply.code(404).send({ ok: false, error: 'unknown session' })
+      }
+      if (aggregate.projectId && !(await canReadProject(tenantCtx.backend, aggregate.projectId, request.auth?.userId))) {
         return reply.code(404).send({ ok: false, error: 'unknown session' })
       }
       const body = (request.body ?? {}) as Record<string, unknown>
@@ -192,6 +199,15 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
         const aggregate = await backend.get(sessionId)
         // no existence oracle across tenants: wrong tenant reads as unknown
         if (!aggregate || aggregate.tenantId !== tenantId) {
+          try {
+            socket.send(JSON.stringify({ type: 'error', error: 'unknown session' }))
+          } catch {
+            // closing anyway
+          }
+          socket.close(ROOM_CLOSE_UNKNOWN_SESSION, 'unknown session')
+          return
+        }
+        if (aggregate.projectId && !(await canReadProject(backend, aggregate.projectId, request.auth?.userId))) {
           try {
             socket.send(JSON.stringify({ type: 'error', error: 'unknown session' }))
           } catch {
@@ -320,6 +336,10 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
             }
             if (typeof frame.content !== 'string' || frame.content.length > MAX_ROOM_CONTENT_LENGTH) {
               send({ type: 'ack', id, ok: false, code: 400, error: 'content must be a string up to 10000 chars' })
+              return
+            }
+            if (aggregate.projectId && !(await canWriteProject(backend, aggregate.projectId, request.auth?.userId))) {
+              send({ type: 'ack', id, ok: false, code: 403, error: 'viewer cannot write' })
               return
             }
             // A2 thread fields: same caps as the POST route, server-stamped author

@@ -232,7 +232,9 @@ export async function createAppServer(params: {
     app.register(async (unauth) => {
       registerAuthRoutes(unauth, params.authStore!, params.authDeps ?? {
         createInbox: async (user) => {
-          await backendForTenant(backend, user.tenant_id).createProject(`proj-inbox-${user.id}`, 'inbox')
+          const tb = backendForTenant(backend, user.tenant_id)
+          await tb.createProject(`proj-inbox-${user.id}`, 'inbox')
+          await tb.setProjectMember(`proj-inbox-${user.id}`, user.id, 'owner')
         },
       })
     }, { prefix: '/v1' })
