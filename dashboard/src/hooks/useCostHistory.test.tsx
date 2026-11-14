@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { renderHook, waitFor, cleanup, act } from "@testing-library/react";
+import { renderHook, cleanup, act } from "@testing-library/react";
 import { useCostHistory } from "./useCostHistory";
 
 describe("useCostHistory", () => {

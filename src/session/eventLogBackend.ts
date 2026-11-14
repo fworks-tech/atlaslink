@@ -2,7 +2,7 @@ import { EventLogStore } from '../bridge/EventLogStore'
 import { rehydrate, filterSessions } from './sessionStore'
 import { deepFreeze } from './deepFreeze'
 import type { SessionBackend, SessionFilter, SessionList, CostUsageRow, DailyCostFilter } from './sessionBackend'
-import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, ProjectInvite, ProjectMember, ProjectRole } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, ProjectInvite, ProjectMember, ProjectRole, Notification, NotificationInput } from './types'
 import { VersionConflictError } from './types'
 import { DEFAULT_TENANT_ID } from './migrations'
 import { reconstructRows, type CheckpointRow } from './deltaChannel'
@@ -49,12 +49,13 @@ export class EventLogBackend implements SessionBackend {
   private readonly _members: Map<string, ProjectMember>
   private readonly _invites: Map<string, ProjectInvite>
   private readonly _invitesByHash: Map<string, ProjectInvite>
+  private readonly _notifications: Map<string, Notification>
   /** Checkpoints ride in memory only — same durability as this backend's projects. */
   private readonly _checkpoints: Map<string, { sessionId: string; rows: CheckpointRow[] }>
   /** Cost counters ride in memory only — same durability as this backend's projects. */
   private readonly _costUsage: Map<string, CostUsageRow & { tenant: string }>
 
-  constructor(log: EventLogStore, tenantId: string = DEFAULT_TENANT_ID, shared?: { snapshots: Map<string, SessionSnapshot>; versions: Map<string, number>; projects: Map<string, Project>; deletedProjects: Set<string>; members: Map<string, ProjectMember>; invites: Map<string, ProjectInvite>; invitesByHash: Map<string, ProjectInvite>; checkpoints: Map<string, { sessionId: string; rows: CheckpointRow[] }>; costUsage: Map<string, CostUsageRow & { tenant: string }> }) {
+  constructor(log: EventLogStore, tenantId: string = DEFAULT_TENANT_ID, shared?: { snapshots: Map<string, SessionSnapshot>; versions: Map<string, number>; projects: Map<string, Project>; deletedProjects: Set<string>; members: Map<string, ProjectMember>; invites: Map<string, ProjectInvite>; invitesByHash: Map<string, ProjectInvite>; notifications: Map<string, Notification>; checkpoints: Map<string, { sessionId: string; rows: CheckpointRow[] }>; costUsage: Map<string, CostUsageRow & { tenant: string }> }) {
     this.log = log
     this._tenantId = tenantId
     if (shared) {
@@ -65,6 +66,7 @@ export class EventLogBackend implements SessionBackend {
       this._members = shared.members
       this._invites = shared.invites
       this._invitesByHash = shared.invitesByHash
+      this._notifications = shared.notifications
       this._checkpoints = shared.checkpoints
       this._costUsage = shared.costUsage
     } else {
@@ -75,6 +77,7 @@ export class EventLogBackend implements SessionBackend {
       this._members = new Map<string, ProjectMember>()
       this._invites = new Map<string, ProjectInvite>()
       this._invitesByHash = new Map<string, ProjectInvite>()
+      this._notifications = new Map<string, Notification>()
       this._checkpoints = new Map<string, { sessionId: string; rows: CheckpointRow[] }>()
       this._costUsage = new Map<string, CostUsageRow & { tenant: string }>()
     }
@@ -90,6 +93,7 @@ export class EventLogBackend implements SessionBackend {
       members: this._members,
       invites: this._invites,
       invitesByHash: this._invitesByHash,
+      notifications: this._notifications,
       checkpoints: this._checkpoints,
       costUsage: this._costUsage,
     })
@@ -241,6 +245,9 @@ export class EventLogBackend implements SessionBackend {
       if (snap.session.projectId === id && tenantOfSession(snap.session) === this._tenantId) {
         this._snapshots.delete(sessionId)
         this._versions.delete(sessionId)
+        for (const [key, n] of this._notifications.entries()) {
+          if (n.tenantId === this._tenantId && n.sessionId === sessionId) this._notifications.delete(key)
+        }
       }
     }
     return existed
@@ -331,6 +338,50 @@ export class EventLogBackend implements SessionBackend {
     if (!row || row.projectId !== projectId) return false
     this._invites.delete(`${this._tenantId}:${id}`)
     this._invitesByHash.delete(row.tokenHash)
+    return true
+  }
+
+  async createNotification(input: NotificationInput): Promise<Notification> {
+    const row: Notification = {
+      ...input,
+      excerpt: input.excerpt.slice(0, 280),
+      readAt: null,
+      createdAt: new Date().toISOString(),
+      tenantId: this._tenantId,
+    }
+    this._notifications.set(`${this._tenantId}:${input.id}`, row)
+    return row
+  }
+
+  async listNotifications(userId: string, filter: { unreadOnly?: boolean; limit: number; offset: number }): Promise<{ notifications: Notification[]; total: number }> {
+    const all = [...this._notifications.values()]
+      .filter((n) => n.tenantId === this._tenantId && n.userId === userId && (!filter.unreadOnly || n.readAt === null))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    return { notifications: all.slice(filter.offset, filter.offset + filter.limit), total: all.length }
+  }
+
+  async countUnread(userId: string): Promise<number> {
+    let count = 0
+    for (const n of this._notifications.values()) {
+      if (n.tenantId === this._tenantId && n.userId === userId && n.readAt === null) count++
+    }
+    return count
+  }
+
+  async countUnreadBySession(userId: string): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {}
+    for (const n of this._notifications.values()) {
+      if (n.tenantId === this._tenantId && n.userId === userId && n.readAt === null) {
+        counts[n.sessionId] = (counts[n.sessionId] ?? 0) + 1
+      }
+    }
+    return counts
+  }
+
+  async markNotificationRead(id: string, userId: string): Promise<boolean> {
+    const row = this._notifications.get(`${this._tenantId}:${id}`)
+    if (!row || row.userId !== userId) return false
+    if (row.readAt === null) row.readAt = new Date().toISOString()
     return true
   }
 

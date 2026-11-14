@@ -14,7 +14,7 @@ export interface Session {
   output?: string;
   error?: string;
   durationMs?: number;
-  interaction?: { role: "user" | "atlas" | "member"; member?: string; at: string; content: string }[];
+  interaction?: { role: "user" | "atlas" | "member"; member?: string; at: string; content: string; authorId?: string; parentId?: string; mentions?: string[]; anchor?: string }[];
   // raw RunEvents hydrated from the store for past/failed sessions
   memberEvents?: Record<string, unknown>[];
   nextStep?: { awaiting_input: boolean; prompt?: string; member?: string } | null;
@@ -55,4 +55,32 @@ export interface BridgeEvent {
   correlationId?: string;
   at?: string;
   [key: string]: unknown;
+}
+
+export type NotificationKind = "mention" | "reply" | "approval";
+
+export interface Notification {
+  id: string;
+  userId: string;
+  sessionId: string;
+  kind: NotificationKind;
+  excerpt: string;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationListResponse {
+  ok: boolean;
+  notifications: Notification[];
+  total: number;
+  unreadCount: number;
+  unreadBySession: Record<string, number>;
+  limit: number;
+  offset: number;
+}
+
+export interface MemberDirectoryEntry {
+  id: string;
+  email: string;
+  displayName: string;
 }

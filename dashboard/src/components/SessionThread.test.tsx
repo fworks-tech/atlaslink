@@ -77,6 +77,52 @@ describe("SessionThread presence", () => {
     render(<SessionThread session={s} events={[]} members={[]} />);
     expect(screen.getByRole("alert").textContent).toContain("kaput");
   });
+
+  it("renders stored markup as inert text, never as elements (stored XSS)", () => {
+    const s = session();
+    s.interaction = [
+      { role: "user", content: "<img src=x onerror=alert(1)> hi", at: "2026-09-15T12:00:01.000Z" },
+    ] as unknown as NonNullable<Session["interaction"]>;
+    const { container } = render(<SessionThread session={s} events={[]} members={[]} />);
+    expect(container.textContent).toContain("<img src=x onerror=alert(1)>");
+    expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("nests a parentId reply under its quoted parent with a Reply button", () => {
+    const s = session();
+    s.interaction = [
+      { role: "user", content: "kickoff plan", at: "2026-09-15T12:00:01.000Z" },
+      { role: "user", content: "ack", at: "2026-09-15T12:00:02.000Z", parentId: "m-0" },
+    ] as unknown as NonNullable<Session["interaction"]>;
+    const onReply = (...args: unknown[]): void => {
+      void args;
+    };
+    render(<SessionThread session={s} events={[]} members={[]} onReply={onReply} />);
+    // parent turn and quoted reply line are distinct text nodes
+    expect(screen.getByText("kickoff plan").tagName).toBe("P");
+    expect(screen.getByText("↳ kickoff plan")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Reply to message 1" })).toBeDefined();
+  });
+
+  it("fires onReply with the full-list turn index", () => {
+    const s = session();
+    s.interaction = [
+      { role: "user", content: "first", at: "2026-09-15T12:00:01.000Z" },
+    ] as unknown as NonNullable<Session["interaction"]>;
+    let target: { index: number; excerpt: string } | null = null;
+    render(
+      <SessionThread
+        session={s}
+        events={[]}
+        members={[]}
+        onReply={(t) => {
+          target = t;
+        }}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Reply to message 1" }));
+    expect(target).toEqual({ index: 0, excerpt: "first" });
+  });
 });
 
 describe("SessionThread receipts", () => {

@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, ProjectInvite, ProjectMember, ProjectRole, DurabilityMode } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, ProjectInvite, ProjectMember, ProjectRole, DurabilityMode, Notification, NotificationInput } from './types'
 import { VersionConflictError } from './types'
 import { rehydrate } from './sessionStore'
 import { deepFreeze } from './deepFreeze'
@@ -439,6 +439,7 @@ export class PostgresBackend implements SessionBackend {
       if (rows.length === 0) return false
       await tx.query(`DELETE FROM project_members WHERE tenant_id = $1 AND project_id = $2`, [this.#tenantId, id])
       await tx.query(`DELETE FROM project_invites WHERE tenant_id = $1 AND project_id = $2`, [this.#tenantId, id])
+      await tx.query(`DELETE FROM notifications WHERE tenant_id = $1 AND session_id IN (SELECT session_id FROM sessions WHERE tenant_id = $1 AND project_id = $2)`, [this.#tenantId, id])
       // Delete events by session_id — projectId only lives on session.created, so direct
       // event->>'projectId' leaves orphans. Collect session_ids first, then delete events, then directory.
       await tx.query(
@@ -571,6 +572,71 @@ export class PostgresBackend implements SessionBackend {
       await upsertProjectMember(tx, tx.dialect, this.#tenantId, rows[0].project_id, userId, role)
       return { projectId: rows[0].project_id, role }
     })
+  }
+
+  async createNotification(input: NotificationInput): Promise<Notification> {
+    const createdAt = new Date().toISOString()
+    await this.db.query(
+      `INSERT INTO notifications (tenant_id, id, user_id, session_id, kind, excerpt, read_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, NULL, $7)`,
+      [this.#tenantId, input.id, input.userId, input.sessionId, input.kind, input.excerpt.slice(0, 280), createdAt]
+    )
+    return { ...input, excerpt: input.excerpt.slice(0, 280), readAt: null, createdAt, tenantId: this.#tenantId }
+  }
+
+  async listNotifications(userId: string, filter: { unreadOnly?: boolean; limit: number; offset: number }): Promise<{ notifications: Notification[]; total: number }> {
+    const cond = filter.unreadOnly ? 'AND read_at IS NULL' : ''
+    const { rows } = await this.db.query<{ id: string; user_id: string; session_id: string; kind: string; excerpt: string; read_at: string | Date | null; created_at: string | Date }>(
+      `SELECT id, user_id, session_id, kind, excerpt, read_at, created_at FROM notifications WHERE tenant_id = $1 AND user_id = $2 ${cond} ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+      [this.#tenantId, userId, filter.limit, filter.offset]
+    )
+    const { rows: totalRows } = await this.db.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM notifications WHERE tenant_id = $1 AND user_id = $2 ${cond}`,
+      [this.#tenantId, userId]
+    )
+    return {
+      notifications: rows.map((r) => ({
+        id: r.id,
+        userId: r.user_id,
+        sessionId: r.session_id,
+        kind: r.kind as Notification['kind'],
+        excerpt: r.excerpt,
+        readAt: r.read_at === null ? null : (r.read_at instanceof Date ? r.read_at.toISOString() : String(r.read_at)),
+        createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+        tenantId: this.#tenantId,
+      })),
+      total: Number(totalRows[0]?.count ?? 0),
+    }
+  }
+
+  async countUnread(userId: string): Promise<number> {
+    const { rows } = await this.db.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM notifications WHERE tenant_id = $1 AND user_id = $2 AND read_at IS NULL`,
+      [this.#tenantId, userId]
+    )
+    return Number(rows[0]?.count ?? 0)
+  }
+
+  async countUnreadBySession(userId: string): Promise<Record<string, number>> {
+    const { rows } = await this.db.query<{ session_id: string; count: string }>(
+      `SELECT session_id, COUNT(*) AS count FROM notifications WHERE tenant_id = $1 AND user_id = $2 AND read_at IS NULL GROUP BY session_id`,
+      [this.#tenantId, userId]
+    )
+    const counts: Record<string, number> = {}
+    for (const r of rows) counts[r.session_id] = Number(r.count)
+    return counts
+  }
+
+  async markNotificationRead(id: string, userId: string): Promise<boolean> {
+    const { rows } = await this.db.query<{ id: string }>(
+      `SELECT id FROM notifications WHERE tenant_id = $1 AND id = $2 AND user_id = $3`,
+      [this.#tenantId, id, userId]
+    )
+    if (rows.length === 0) return false
+    await this.db.query(
+      `UPDATE notifications SET read_at = $1 WHERE tenant_id = $2 AND id = $3 AND read_at IS NULL`,
+      [new Date().toISOString(), this.#tenantId, id]
+    )
+    return true
   }
 
   async deleteSession(sessionId: string): Promise<void> {

@@ -480,6 +480,30 @@ export async function backendContract(name: string, create: () => Promise<Sessio
       assert.equal(await store.getProjectInviteByTokenHash('hash-old'), null)
       // unknown hash stays null
       assert.equal(await store.acceptProjectInvite('hash-nope', 'mallory'), null)
+    await test('notifications: create/list/read/counts stay user- and tenant-scoped', async () => {
+      const store = await create()
+      const n = await store.createNotification({ id: 'notif-1', userId: 'u-1', sessionId: 'ses-1', kind: 'mention', excerpt: 'hi' })
+      assert.equal(n.id, 'notif-1')
+      assert.equal(n.readAt, null)
+
+      const list = await store.listNotifications('u-1', { limit: 50, offset: 0 })
+      assert.equal(list.total, 1)
+      assert.equal(list.notifications[0].kind, 'mention')
+      assert.equal(await store.countUnread('u-1'), 1)
+      assert.deepEqual(await store.countUnreadBySession('u-1'), { 'ses-1': 1 })
+
+      assert.equal(await store.markNotificationRead('notif-1', 'u-1'), true)
+      assert.equal(await store.countUnread('u-1'), 0)
+      assert.deepEqual((await store.listNotifications('u-1', { unreadOnly: true, limit: 50, offset: 0 })).total, 0)
+
+      // another user's row is invisible: no oracle, no cross-read
+      assert.equal(await store.markNotificationRead('notif-1', 'u-2'), false)
+      assert.deepEqual(await store.listNotifications('u-2', { limit: 50, offset: 0 }), { notifications: [], total: 0 })
+
+      // cross-tenant invisible
+      const other = store.withTenant('other-tenant')
+      assert.deepEqual(await other.listNotifications('u-1', { limit: 50, offset: 0 }), { notifications: [], total: 0 })
+      assert.equal(await other.countUnread('u-1'), 0)
     })
   })
 }

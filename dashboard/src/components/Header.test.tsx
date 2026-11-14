@@ -38,6 +38,12 @@ vi.mock("@/hooks/useCost", () => ({
   useCost: (opts?: { poll?: boolean }) => costMock(opts),
 }));
 
+const notificationsMock = vi.fn(() => ({ notifications: [], unreadCount: 0, unreadBySession: {}, error: null, refresh: vi.fn(), markRead: vi.fn() }));
+
+vi.mock("@/hooks/useNotifications", () => ({
+  useNotifications: () => notificationsMock(),
+}));
+
 function seed(pathname: string, stepCost: number) {
   pathnameMock.mockReturnValue(pathname);
   costMock.mockReturnValue({

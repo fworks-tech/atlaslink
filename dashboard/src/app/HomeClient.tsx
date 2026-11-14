@@ -19,7 +19,9 @@ import { useEvents } from "@/hooks/useEvents";
 import { decodeShareLink, encodeShareLink, canonicalUrl } from "@/lib/shareLink";
 import { hasStoredSidebarOpen, loadSidebarOpen, saveSidebarOpen } from "@/lib/sidebarState";
 import { clearLastSession, isDiagramMode, loadDiagramMode, loadLastSession, saveDiagramMode, saveLastSession } from "@/lib/uiPrefs";
-import { replyToSession, steerSession, cancelSession, createTask, askFollowup, ApiError } from "@/lib/api";
+import { replyToSession, steerSession, cancelSession, createTask, askFollowup, getMembers, ApiError } from "@/lib/api";
+import { ChatComposer, type ReplyTarget } from "@/components/ChatComposer";
+import type { MemberDirectoryEntry } from "@/lib/types";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
 import { useDeliveryReceipts } from "@/hooks/useDeliveryReceipts";
 import type { GraphMode } from "@/lib/graph";
@@ -121,6 +123,28 @@ function HomeInner() {
   const [steerContent, setSteerContent] = useState("");
   const [steerBusy, setSteerBusy] = useState(false);
   const [steerError, setSteerError] = useState<string | null>(null);
+  // room chat reply target + tenant directory for @mentions (Phase B); the
+  // target carries its session so a stale pick from a previous room is
+  // ignored, never cleared in an effect
+  const [reply, setReply] = useState<{ sid: string | undefined; target: ReplyTarget | null }>({ sid: undefined, target: null });
+  const replyTo = reply.sid === selectedSessionId ? reply.target : null;
+  const [directory, setDirectory] = useState<MemberDirectoryEntry[]>([]);
+  useEffect(() => {
+    // directory only matters with a session open; failures leave it empty
+    // (mentions degrade to plain text, never block the send)
+    if (!selectedSessionId) return;
+    let cancelled = false;
+    void getMembers()
+      .then((res) => {
+        if (!cancelled) setDirectory(res.members);
+      })
+      .catch(() => {
+        if (!cancelled) setDirectory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSessionId]);
 
   const selectedSession = useMemo(() => sessions.find((s) => s.sessionId === selectedSessionId) ?? null, [sessions, selectedSessionId]);
   // Live status sync: the list loads once, so lifecycle transitions arriving
@@ -562,7 +586,12 @@ function HomeInner() {
               ) : null}
               <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
                 <SessionList onSelect={handleSelectSession} />
-                <SessionThread session={selectedSession} events={mergedEvents} members={members} onJump={(id) => handleNodeClick(id, "thread", {})} assignReceipts={selectedSession ? (turns) => assign(selectedSession.sessionId, selectedSession.correlationId, turns) : undefined} />
+                <div className="min-w-0 space-y-4">
+                  <SessionThread session={selectedSession} events={mergedEvents} members={members} onJump={(id) => handleNodeClick(id, "thread", {})} onReply={(t) => setReply({ sid: selectedSessionId, target: t })} assignReceipts={selectedSession ? (turns) => assign(selectedSession.sessionId, selectedSession.correlationId, turns) : undefined} />
+                  {selectedSession && (selectedSession.status === "queued" || selectedSession.status === "running") ? (
+                    <ChatComposer sessionId={selectedSession.sessionId} directory={directory} replyTo={replyTo} onClearReply={() => setReply({ sid: selectedSessionId, target: null })} onSent={() => void refreshSessions()} />
+                  ) : null}
+                </div>
               </div>
               {composerMode === "reply" && awaitingQuestion ? (
                 <div className="rounded-xl border border-accent/30 bg-accent/10 p-4">

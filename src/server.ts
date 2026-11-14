@@ -27,6 +27,8 @@ import { VersionConflictError } from './session/types'
 import { registerTaskRoutes } from './api/tasks'
 import { registerCostRoutes } from './api/cost'
 import { registerProjectRoutes } from './api/projects'
+import { registerNotificationRoutes } from './api/notifications'
+import type { MentionDirectory } from './api/notify'
 import { registerRoomRoutes } from './api/room'
 import { registerSessionSubgraph } from './subgraphs/session/resolvers'
 import { registerTaskSubgraph } from './subgraphs/task/resolvers'
@@ -198,7 +200,7 @@ export async function createAppServer(params: {
   app.addHook('onResponse', (request, reply, done) => {
     // long-lived SSE streams do not emit a request envelope (same as pre-Fastify)
     const route = request.routeOptions.url
-    if (route !== '/v1/events' && route !== '/v1/events/:sessionId') {
+    if (route !== '/v1/events' && route !== '/v1/events/:sessionId' && route !== '/v1/notifications/stream') {
       logger.info('request', {
         method: request.method,
         url: request.url,
@@ -303,13 +305,27 @@ export async function createAppServer(params: {
     // --- M3 Task API (spec §3/§7): token-gated, store-backed, queue-driven ---
     // providers: the session-creation pick list, precomputed once from the
     // agenthood config (tests inject their own roster)
-    registerTaskRoutes(api, { backend, registry, queue, sse, providers: params.providers ?? [] })
+    // Mention directory for notification bells: tenant users matched by id or
+    // email (case-insensitive); unknown mentions resolve to null (dropped).
+    const directory: MentionDirectory | undefined = params.authStore
+      ? {
+          resolveUserId: async (tenantId, mention) => {
+            const users = await params.authStore!.listUsersByTenant(tenantId)
+            const lowered = mention.toLowerCase()
+            return users.find((u) => u.id === mention || u.email.toLowerCase() === lowered)?.id ?? null
+          },
+        }
+      : undefined
+    registerTaskRoutes(api, { backend, registry, queue, sse, providers: params.providers ?? [], ...(directory !== undefined ? { directory } : {}) })
+
+    // --- Phase B notifications (#175/#176): per-user bells + live stream ---
+    registerNotificationRoutes(api, { backend, sse })
 
     // --- Cost rollup (#168): derived from full-text reasoning mirrors ---
     registerCostRoutes(api, { backend })
 
     // --- M5 room channel (spec §5): WS per-session room, same gate ---
-    const { rosterOf } = registerRoomRoutes(api, { backend, registry, queue, broadcaster: sse.broadcaster, log })
+    const { rosterOf } = registerRoomRoutes(api, { backend, registry, queue, broadcaster: sse.broadcaster, log, ...(directory !== undefined ? { directory } : {}) })
 
     // --- M5 session subgraph (#293): graph surface over the same handlers ---
     registerSessionSubgraph(api, { backend, registry, queue, sse, eventLog: log, rosterOf })

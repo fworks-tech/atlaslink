@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta, SessionStatus, Project, ProjectMember, ProjectRole, ProjectInvite } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionStatus, Project, ProjectMember, ProjectRole, ProjectInvite, Notification, NotificationInput } from './types'
 
 /**
  * Query surface for the task-rest list endpoint. Filters are applied by the
@@ -85,6 +85,12 @@ export interface SessionBackend {
     tokenHash: string,
     userId: string
   ): Promise<{ projectId: string; role: ProjectRole } | null>
+  /** In-app notifications (Phase B): per-user, tenant-scoped, never cross-tenant. */
+  createNotification(input: NotificationInput): Promise<Notification>
+  listNotifications(userId: string, filter: { unreadOnly?: boolean; limit: number; offset: number }): Promise<{ notifications: Notification[]; total: number }>
+  countUnread(userId: string): Promise<number>
+  countUnreadBySession(userId: string): Promise<Record<string, number>>
+  markNotificationRead(id: string, userId: string): Promise<boolean>
   deleteSession(sessionId: string): Promise<void>
   withTenant(tenantId: string): SessionBackend
   /**

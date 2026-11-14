@@ -8,6 +8,7 @@ import type { TaskRegistry } from '../tasks/taskRegistry'
 import { log } from '../log'
 import { checkpointIdFor } from '../session/checkpointStore'
 import { ASK_HUMAN_MAX_CONTEXT_LENGTH, ASK_HUMAN_MAX_QUESTION_LENGTH } from 'agenthood/dist/tools/human/AskHumanTool.js'
+import { fanoutNotifications, recipientsForMessage, threadParticipantIds, type MentionDirectory } from './notify'
 
 /**
  * Session ingress actions shared by the HTTP task routes and the WS room
@@ -22,6 +23,8 @@ export interface IngressDeps {
   registry: TaskRegistry
   queue: SessionQueue
   broadcaster: { emit: (envelope: BridgeEnvelope) => void }
+  /** Mention → user-id resolution for notification fan-out; absent = mentions stay opaque. */
+  directory?: MentionDirectory
 }
 
 export type ActionOk = { code: 201; session: AggregateSession }
@@ -302,7 +305,14 @@ export async function askFollowup(
     return { code: 500, error: 'follow-up failed after commit; follow-up cancelled' }
   }
   const after = await deps.backend.get(sessionId)
-  return { code: 201, session: after ?? original, followupId }
+  const settled = after ?? original
+  // approval inbox: parked questions need a human — notify prior thread
+  // participants so the ask does not sit unseen (best-effort, never 500s)
+  const approvers = new Map(threadParticipantIds(settled).map((id) => [id, 'approval' as const]))
+  if (approvers.size > 0) {
+    await fanoutNotifications(deps, { session: settled, userIds: approvers, excerpt: content })
+  }
+  return { code: 201, session: settled, followupId }
 }
 
 function rejectBlank(content: string): ActionError | null {
@@ -389,6 +399,18 @@ export async function appendChatMessage(
       ...(current.tenantId !== undefined ? { tenantId: current.tenantId } : {}),
     }),
   })
+  if (result.code === 201) {
+    // mention/thread-reply bells: best-effort, the chat commit already won
+    const recipients = await recipientsForMessage(deps.backend, result.session, {
+      ...(opts.authorId !== undefined ? { authorId: opts.authorId } : {}),
+      ...(opts.mentions !== undefined ? { mentions: opts.mentions } : {}),
+      ...(opts.parentId !== undefined ? { parentId: opts.parentId } : {}),
+      ...(deps.directory !== undefined ? { directory: deps.directory } : {}),
+    })
+    if (recipients.size > 0) {
+      await fanoutNotifications(deps, { session: result.session, userIds: recipients, excerpt: content })
+    }
+  }
   return result
 }
 

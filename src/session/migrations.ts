@@ -200,6 +200,25 @@ export const migrations: Migration[] = [
     `,
     down: `DROP TABLE project_invites; DROP TABLE project_members;`,
   },
+  {
+    version: 9,
+    name: 'notifications',
+    up: `
+      CREATE TABLE notifications (
+        tenant_id TEXT NOT NULL,
+        id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        excerpt TEXT NOT NULL DEFAULT '',
+        read_at TIMESTAMPTZ NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY (tenant_id, id)
+      );
+      CREATE INDEX notifications_user_idx ON notifications (tenant_id, user_id, created_at DESC);
+    `,
+    down: `DROP TABLE notifications;`,
+  },
 ]
 
 // Advisory lock key serializing the migrate loop across processes; two daemons

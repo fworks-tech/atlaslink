@@ -52,7 +52,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   // An aborted stream would force EventSource into a reconnect loop that
   // fights Last-Event-ID resume. Direct browser streams (A3 ticket) bypass
   // the BFF entirely; this fallback path must not cut them either.
-  const isEventStream = path.includes("events");
+  const isEventStream = path.includes("events") || path.includes("stream");
   const signal = isEventStream ? undefined : AbortSignal.timeout(30000);
 
   let upstream: Response;

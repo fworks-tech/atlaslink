@@ -10,6 +10,7 @@ import type { SessionQueue } from '../bridge/SessionQueue'
 import type { TaskRegistry } from '../tasks/taskRegistry'
 import { tenantBackendForRequest } from './tenant'
 import { canReadProject, canWriteProject } from './projectAcl'
+import type { MentionDirectory } from './notify'
 import { checkBearer } from './auth'
 import {
   MAX_MESSAGE_ANCHOR_LENGTH,
@@ -39,6 +40,8 @@ export interface RoomDeps {
   queue: SessionQueue
   broadcaster: EventBroadcaster
   log: EventLogStore
+  /** Mention → user-id resolution for notification bells; absent = mentions stay opaque. */
+  directory?: MentionDirectory
 }
 
 /** Close codes (ws application range): auth, bad tenant, unknown session. */
@@ -369,7 +372,13 @@ export function registerRoomRoutes(app: FastifyInstance, deps: RoomDeps): { rost
               }
               if (request.auth?.userId !== undefined) chatOpts.authorId = request.auth.userId
             }
-            const ingress = { backend, registry: deps.registry, queue: deps.queue, broadcaster: deps.broadcaster }
+            const ingress = {
+              backend,
+              registry: deps.registry,
+              queue: deps.queue,
+              broadcaster: deps.broadcaster,
+              ...(deps.directory !== undefined ? { directory: deps.directory } : {}),
+            }
             if (frame.type === 'chat') {
               const result = await appendChatMessage(ingress, sessionId, frame.content, chatOpts)
               send(result.code === 201

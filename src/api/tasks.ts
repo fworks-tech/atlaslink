@@ -7,6 +7,7 @@ import type { TaskRegistry } from '../tasks/taskRegistry'
 import type { ProviderChoice } from '../config'
 import { tenantBackendForRequest } from './tenant'
 import { canReadProject, canWriteProject } from './projectAcl'
+import type { MentionDirectory } from './notify'
 import { appendChatMessage, askFollowup, replyToParked, steerSession } from './sessionActions'
 import { cancelSessionAction, createSessionAction, validateCreateEdge } from './sessionLifecycle'
 
@@ -29,6 +30,8 @@ export interface TaskDeps {
   queue: SessionQueue
   sse: SseHandler
   providers: ProviderChoice[]
+  /** Mention → user-id resolution for notification bells; absent = mentions stay opaque. */
+  directory?: MentionDirectory
 }
 
 interface PostBody {
@@ -406,6 +409,7 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
           registry: deps.registry,
           queue: deps.queue,
           broadcaster: deps.sse.broadcaster,
+          ...(deps.directory !== undefined ? { directory: deps.directory } : {}),
         },
         request.params.sessionId,
         request.body.content,
