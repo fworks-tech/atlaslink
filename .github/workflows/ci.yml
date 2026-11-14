@@ -47,6 +47,16 @@ jobs:
       - name: Coverage
         run: npm run test:coverage
 
+  # The AWS Caddyfile routes production traffic and is bind-mounted, so a typo
+  # would only surface at `caddy reload` after merge. Validate it pre-merge.
+  caddy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate the AWS Caddyfile
+        run: docker run --rm -v "$PWD/deploy/aws/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
+
   # Dashboard (M4) quality gates. The dashboard is a separate package with its
   # own lockfile; lint + typecheck are the per-branch gates the milestone
   # breakdown (docs/tasks/m4-live-dashboard.md) commits to.
