@@ -102,7 +102,7 @@ curl -N http://127.0.0.1:3000/v1/events \
 Atlaslink enforces a fail-closed auth model:
 
 - **JWT sessions** (HS256, 7-day expiry) for dashboard users; **API keys** (`ak_`-prefixed, SHA-256 hashed) for programmatic access.
-- **Tenant isolation** — every request is scoped by `request.auth.tenantId`; the `x-tenant-id` header is rejected when auth is present.
+- **Tenant scoping** — every request is scoped by `request.auth.tenantId`; the `x-tenant-id` header is rejected when auth is present. Self-service signups all land in `default`, so accounts on one deployment see each other's data — set `ATLASLINK_ALLOW_SIGNUP=false` until per-user tenants land (ADR-008).
 - **Fail-closed binding** — the daemon refuses to bind a non-loopback address without auth configured.
 - **Rate limiting** — 100 requests per minute, keyed by user ID or IP.
 - **Secret scanning** via Gitleaks in CI; no secrets in code or logs.
