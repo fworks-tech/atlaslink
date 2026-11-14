@@ -21,7 +21,7 @@ Atlaslink is a product-oriented multi-agent orchestrator built on **[Agenthood](
 - **Live diagram-flow composer** — drag agents onto a canvas, wire them together, and watch the execution unfold in real time. The full DAG renders as a society of nodes: reasoning hexagons, tool parallelograms, diamond decisions, and terminal states.
 - **Real-time event bridge** — every agent decision and action streams to the browser over Server-Sent Events with `Last-Event-ID` resume, gap detection, and 15-second pings.
 - **Human-in-the-loop collaboration** — agents ask single questions via `ask_human`, park the session, and resume from your reply. A per-session WebSocket room lets multiple people observe and steer together.
-- **Task, project & GraphQL APIs** — create, list, cancel, reply to, and steer sessions over a bearer-gated REST surface, plus a federated GraphQL plane (`files`, `sessions`, `tasks`, `insights`) behind the same auth. Projects group sessions; the event feed is addressable per session or per project.
+- **Task, project & GraphQL APIs** — create, list, cancel, reply to, and steer sessions over a bearer-gated REST surface, plus a federated GraphQL plane (`session`, `task`, `insights`, `files`) behind the same auth. Projects group sessions; the event feed is addressable per session or per project.
 - **Event-sourced sessions** — every state change is appended to a durable event store: embedded SQLite by default, Postgres in production (same SQL on both). Sessions survive deploys and cold starts.
 - **Your providers, honest costs** — per-session provider and model picks, fast-failed when unknown. LLM spend is rolled up per agent, per day, in the open.
 - **Auth & tenancy** — JWT sessions (7-day expiry), SHA-256-hashed API keys, tenant isolation, fail-closed non-loopback binding, and per-user rate limiting.
@@ -79,7 +79,7 @@ All API routes are prefixed with `/v1`; `GET /health` is the only unprefixed rou
 | `GET` | `/v1/projects` | List projects |
 | `GET` | `/v1/projects/:projectId` | Get one project |
 | `GET` | `/v1/auth/me` | Current user |
-| `DELETE` | `/v1/auth/keys/:id` | Revoke an API key |
+| `DELETE` | `/v1/auth/keys/:keyId` | Revoke an API key |
 | `WS` | `/v1/sessions/:id/room` | WebSocket room channel |
 | `POST` | `/v1/auth/register` | Register account, returns JWT |
 | `POST` | `/v1/auth/login` | Login, returns JWT |
@@ -87,7 +87,7 @@ All API routes are prefixed with `/v1`; `GET /health` is the only unprefixed rou
 
 Full spec: [`docs/spec/m3-task-api.md`](docs/spec/m3-task-api.md) · [`docs/spec/auth-api.md`](docs/spec/auth-api.md) · [`docs/spec/m5-federation-workspace.md`](docs/spec/m5-federation-workspace.md) · [OpenAPI](docs/api/openapi.yaml)
 
-GraphQL (`/v1/graphql/files`, `/sessions`, `/tasks`, `/insights`) federates over the same daemon via the Cosmo router — same bearer auth, `Authorization` propagated to subgraphs.
+GraphQL (`/v1/graphql/session`, `/v1/graphql/task`, `/v1/graphql/insights`, `/v1/graphql/files`) federates over the same daemon via the Cosmo router — same bearer auth, `Authorization` propagated to subgraphs.
 
 ### Example
 
@@ -156,7 +156,7 @@ guide is [`docs/archive/deploy-oracle-free-tier.md`](docs/archive/deploy-oracle-
 | **M4 — Live Dashboard** | `SocietyDiagram` (`chain\|fanout\|full` DAG), `SessionInspector`, `awaiting_input` ↔ `user_reply` loop, deep-links, composer overlay | Shipped — [tasks](docs/tasks/m4-live-dashboard.md) |
 | **M5 — HITL Room** | Single-question `ask_human` → park → reply → linked resume, WS room, steer/interrupt, approval inbox | Shipped — [spec](docs/spec/m5-hitl-room.md) |
 | **P0 — Auth & Tenancy** | JWT sessions + `ak_` API keys, per-tenant isolation, fail-closed bind | Shipped — [ADR-008](docs/adr/ADR-008-auth-and-tenancy.md) |
-| **M5 — Federation & Workspace** | Cosmo router + `files/sessions/tasks/insights` subgraphs, git-backed workspaces | Shipped — [spec](docs/spec/m5-federation-workspace.md) |
+| **M5 — Federation & Workspace** | Cosmo router + `session/task/insights/files` subgraphs, git-backed workspaces | Shipped — [spec](docs/spec/m5-federation-workspace.md) |
 
 Milestones M1–M5, Auth and Federation are shipped on `main`. The backlog focuses on analytics and session export.
 
