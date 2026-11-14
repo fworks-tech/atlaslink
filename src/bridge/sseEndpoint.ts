@@ -93,6 +93,19 @@ export class SseHandler {
     })
   }
 
+  /**
+   * Per-user variant: live bells only (`notification.created` carries userId).
+   * Ephemeral by design — no replay, so connecting late misses nothing
+   * durable (the rows are the truth; GET /v1/notifications catches up).
+   */
+  handleForUser(req: IncomingMessage, res: ServerResponse, tenantId: string, userId: string): void {
+    this.#handle(
+      req,
+      res,
+      (envelope) => envelope.tenantId === tenantId && (envelope as { userId?: string }).userId === userId
+    )
+  }
+
   #handle(req: IncomingMessage, res: ServerResponse, filter?: (envelope: BridgeEnvelope) => boolean): void {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',

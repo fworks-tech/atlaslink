@@ -24,7 +24,7 @@ const RECEIPT_LABEL: Record<ReceiptState, string> = {
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function SessionThread({ session, events, members, onJump, assignReceipts }: { session: Session | null; events: BridgeEvent[]; members?: Array<{ name: string }>; onJump?: (nodeId: string) => void; assignReceipts?: (turns: Array<{ content: string; at?: string }>) => Map<number, ReceiptState> }) {
+export function SessionThread({ session, events, members, onJump, onReply, assignReceipts }: { session: Session | null; events: BridgeEvent[]; members?: Array<{ name: string }>; onJump?: (nodeId: string) => void; onReply?: (target: { index: number; excerpt: string }) => void; assignReceipts?: (turns: Array<{ content: string; at?: string }>) => Map<number, ReceiptState> }) {
   const artifacts = useMemo(() => (session ? artifactsFor(session.correlationId, events) : null), [session, events]);
   const listRef = useRef<HTMLDivElement>(null);
   // stick-to-bottom chat behavior: follow new turns until the reader scrolls up
@@ -98,15 +98,41 @@ export function SessionThread({ session, events, members, onJump, assignReceipts
         {turns.length === 0 && <div className="text-xs text-muted">No turns yet.</div>}
         {turns.map((t, i) => {
           const receipt = t.role === "user" ? receipts.get(i) : undefined;
+          // thread view: parentId `m-{n}` addresses the n-th turn of the full
+          // list (the server treats it as opaque; this is the client
+          // convention). Replies nest one level with a quoted parent line.
+          const fullIndex = allTurns.length - turns.length + i;
+          const parentMatch = typeof t.parentId === "string" ? /^m-(\d+)$/.exec(t.parentId) : null;
+          const parentIdx = parentMatch ? parseInt(parentMatch[1], 10) : null;
+          const parent = parentIdx !== null && parentIdx >= 0 && parentIdx < allTurns.length && parentIdx !== fullIndex
+            ? allTurns[parentIdx]
+            : undefined;
           return (
-            <div key={i} data-testid="turn" className={`max-w-[85%] min-w-0 rounded-lg px-3 py-2 text-sm break-words ${t.role === "user" ? "bg-raised ml-auto" : t.role === "atlas" ? "bg-accent/10 border border-accent/30" : "bg-line"}`}>
-              <div className="text-[10px] uppercase tracking-widest text-muted">{t.role}{t.member ? ` · ${t.member}` : ""}{t.at && <span className="font-normal lowercase tracking-normal"> · {new Date(t.at).toLocaleTimeString()}</span>}</div>
-              <Markdown text={t.content} className="mt-1 text-sm leading-snug" />
-              {receipt ? (
-                <div className={`mt-1 text-right text-[11px] ${receipt === "failed" ? "text-danger" : "text-muted"}`}>
-                  <span aria-label={`message ${RECEIPT_LABEL[receipt]}`}>{RECEIPT_TICK[receipt]}</span>
+            <div key={i} data-testid="turn" className={`max-w-[85%] min-w-0 rounded-lg px-3 py-2 text-sm break-words ${t.role === "user" ? "bg-raised ml-auto" : t.role === "atlas" ? "bg-accent/10 border border-accent/30" : "bg-line"} ${parent ? "ml-6 border-l-2 border-accent/50" : ""}`}>
+              <div className="text-[10px] uppercase tracking-widest text-muted">{t.role}{t.member ? ` · ${t.member}` : ""}{t.authorId ? ` · ${t.authorId.slice(0, 8)}` : ""}{t.at && <span className="font-normal lowercase tracking-normal"> · {new Date(t.at).toLocaleTimeString()}</span>}</div>
+              {parent && (
+                <div className="mt-1 truncate rounded bg-line/60 px-2 py-0.5 text-[11px] text-muted" title={String(parent.content ?? "")}>
+                  ↳ {String(parent.content ?? "").slice(0, 80)}
                 </div>
-              ) : null}
+              )}
+              <Markdown text={t.content} className="mt-1 text-sm leading-snug" />
+              <div className="mt-1 flex items-center gap-2">
+                {onReply && t.role === "user" ? (
+                  <button
+                    type="button"
+                    onClick={() => onReply({ index: fullIndex, excerpt: String(t.content ?? "").slice(0, 80) })}
+                    aria-label={`Reply to message ${fullIndex + 1}`}
+                    className="text-[11px] text-muted transition-colors hover:text-accent"
+                  >
+                    ↳ reply
+                  </button>
+                ) : null}
+                {receipt ? (
+                  <div className={`ml-auto text-right text-[11px] ${receipt === "failed" ? "text-danger" : "text-muted"}`}>
+                    <span aria-label={`message ${RECEIPT_LABEL[receipt]}`}>{RECEIPT_TICK[receipt]}</span>
+                  </div>
+                ) : null}
+              </div>
             </div>
           );
         })}

@@ -1,4 +1,4 @@
-import type { Session, TaskListResponse, Project, ProjectListResponse } from "./types";
+import type { Session, TaskListResponse, Project, ProjectListResponse, MemberDirectoryEntry, NotificationListResponse } from "./types";
 import { loadAuth, clearAuth, saveAuth } from "./auth";
 
 export class ApiError extends Error {
@@ -206,10 +206,19 @@ export interface ChatMessageResponse {
 }
 
 /** Anytime human↔human chat: appends to interaction[] without moving the lifecycle. */
-export function sendChatMessage(sessionId: string, content: string): Promise<ChatMessageResponse> {
+export function sendChatMessage(
+  sessionId: string,
+  content: string,
+  opts?: { parentId?: string; mentions?: string[]; anchor?: string }
+): Promise<ChatMessageResponse> {
   return fetchJSON<ChatMessageResponse>(`/tasks/${encodeURIComponent(sessionId)}/message`, {
     method: "POST",
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({
+      content,
+      ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}),
+      ...(opts?.mentions !== undefined ? { mentions: opts.mentions } : {}),
+      ...(opts?.anchor !== undefined ? { anchor: opts.anchor } : {}),
+    }),
   });
 }
 
@@ -267,6 +276,23 @@ export interface RoomMember {
  */
 export function getRoomMembers(sessionId: string): Promise<{ ok: boolean; members: RoomMember[] }> {
   return fetchJSON<{ ok: boolean; members: RoomMember[] }>(`/sessions/${encodeURIComponent(sessionId)}/room/members`);
+}
+
+/** Tenant-scoped member directory for @mention autocomplete — id/email only, never credential material. */
+export function getMembers(): Promise<{ ok: boolean; members: MemberDirectoryEntry[] }> {
+  return fetchJSON<{ ok: boolean; members: MemberDirectoryEntry[] }>("/members");
+}
+
+/** In-app bells for the signed-in user: mentions, thread replies, approval asks. */
+export function getNotifications(unreadOnly = false): Promise<NotificationListResponse> {
+  const params = new URLSearchParams({ limit: "50", offset: "0" });
+  if (unreadOnly) params.set("unreadOnly", "true");
+  return fetchJSON<NotificationListResponse>(`/notifications?${params.toString()}`);
+}
+
+/** Dismiss one bell — 404 when the id belongs to another user (no oracle). */
+export function markNotificationRead(id: string): Promise<{ ok: boolean }> {
+  return fetchJSON<{ ok: boolean }>(`/notifications/${encodeURIComponent(id)}/read`, { method: "PUT" });
 }
 export interface AuthResponse {
   ok: boolean;

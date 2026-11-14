@@ -57,6 +57,7 @@ vi.mock("@/lib/api", () => ({
   cancelSession: (...args: unknown[]) => cancelMock(...args),
   createTask: (...args: unknown[]) => createMock(...args),
   askFollowup: (...args: unknown[]) => followupMock(...args),
+  getMembers: async () => ({ ok: true, members: [] }),
 }));
 
 vi.mock("@/components/ApprovalInbox", () => ({

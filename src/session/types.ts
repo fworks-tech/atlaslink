@@ -119,6 +119,28 @@ export interface ProjectInvite {
   tenantId?: string
 }
 
+/** In-app notification kinds: @mention, thread reply, agent approval request. */
+export type NotificationKind = 'mention' | 'reply' | 'approval'
+
+export interface Notification {
+  id: string
+  userId: string
+  sessionId: string
+  kind: NotificationKind
+  excerpt: string
+  readAt: string | null
+  createdAt: string
+  tenantId?: string
+}
+
+export interface NotificationInput {
+  id: string
+  userId: string
+  sessionId: string
+  kind: NotificationKind
+  excerpt: string
+}
+
 export class VersionConflictError extends Error {
   constructor(
     public readonly sessionId: string,

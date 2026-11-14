@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import Header from "./Header";
+import type { Notification } from "@/lib/types";
 
 // jsdom has no matchMedia — stub for MantineProvider color-scheme detection
 if (typeof window.matchMedia === "undefined") {
@@ -21,10 +22,13 @@ if (typeof window.matchMedia === "undefined") {
 }
 
 const pathnameMock = vi.fn();
+const pushFn = vi.fn();
+const pushMock = vi.fn(() => pushFn);
 const costMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   usePathname: () => pathnameMock(),
+  useRouter: () => ({ push: pushMock() }),
 }));
 
 vi.mock("@/hooks/useAuth", () => ({
@@ -36,6 +40,12 @@ const authMock = vi.fn<(session?: { jwt: string; email: string; userId: string }
 
 vi.mock("@/hooks/useCost", () => ({
   useCost: (opts?: { poll?: boolean }) => costMock(opts),
+}));
+
+const notificationsMock = vi.fn((): { notifications: Notification[]; unreadCount: number; unreadBySession: Record<string, number>; error: null; refresh: () => void; markRead: (id: string) => void } => ({ notifications: [], unreadCount: 0, unreadBySession: {}, error: null, refresh: vi.fn(), markRead: vi.fn() }));
+
+vi.mock("@/hooks/useNotifications", () => ({
+  useNotifications: () => notificationsMock(),
 }));
 
 function seed(pathname: string, stepCost: number) {
@@ -124,5 +134,24 @@ describe("Header My Atlas / identity", () => {
     expect(screen.getByRole("button", { name: /a@b\.c/ }).textContent).toMatch(/sign out/);
     fireEvent.click(screen.getByRole("button", { name: /a@b\.c/ }));
     expect(signOut).toHaveBeenCalled();
+  });
+});
+
+describe("Header notification bell", () => {
+  it("selecting a bell navigates to the session", () => {
+    seed("/", 0);
+    authMock.mockReturnValue({ session: { jwt: "j", email: "a@b.c", userId: "u" }, signOut });
+    notificationsMock.mockReturnValue({
+      notifications: [{ id: "n-1", userId: "u", sessionId: "ses-1", kind: "mention", excerpt: "hey you", readAt: null, createdAt: "2026-11-14T10:00:00Z" }],
+      unreadCount: 1,
+      unreadBySession: { "ses-1": 1 },
+      error: null,
+      refresh: vi.fn(),
+      markRead: vi.fn(),
+    });
+    renderHeader();
+    fireEvent.click(screen.getByRole("button", { name: /notifications, 1 unread/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /hey you/ }));
+    expect(pushFn).toHaveBeenCalledWith("/?session=ses-1");
   });
 });

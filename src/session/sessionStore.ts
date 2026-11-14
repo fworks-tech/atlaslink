@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, ProjectInvite, ProjectMember, ProjectRole } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, ProjectInvite, ProjectMember, ProjectRole, Notification, NotificationInput } from './types'
 import { StreamIntegrityError, VersionConflictError, firstQuestionLabel } from './types'
 import type { SessionBackend, SessionFilter, SessionList, CostUsageRow, DailyCostFilter } from './sessionBackend'
 import { deepFreeze } from './deepFreeze'
@@ -23,6 +23,7 @@ interface SharedStore {
   projectMembers: Map<string, ProjectMember>
   projectInvites: Map<string, ProjectInvite>
   projectInvitesByHash: Map<string, ProjectInvite>
+  notifications: Map<string, Notification>
   checkpoints: Map<string, { sessionId: string; rows: CheckpointRow[] }>
   costUsage: Map<string, CostUsageRow & { tenant: string }>
 }
@@ -188,6 +189,7 @@ export class SessionStore implements SessionBackend {
   private readonly _members: Map<string, ProjectMember>
   private readonly _invites: Map<string, ProjectInvite>
   private readonly _invitesByHash: Map<string, ProjectInvite>
+  private readonly _notifications: Map<string, Notification>
   private readonly _checkpoints: Map<string, { sessionId: string; rows: CheckpointRow[] }>
   private readonly _costUsage: Map<string, CostUsageRow & { tenant: string }>
   private readonly _tenantId: string
@@ -202,6 +204,7 @@ export class SessionStore implements SessionBackend {
       this._members = shared.projectMembers
       this._invites = shared.projectInvites
       this._invitesByHash = shared.projectInvitesByHash
+      this._notifications = shared.notifications
       this._checkpoints = shared.checkpoints
       this._costUsage = shared.costUsage
     } else {
@@ -212,6 +215,7 @@ export class SessionStore implements SessionBackend {
       this._members = new Map<string, ProjectMember>()
       this._invites = new Map<string, ProjectInvite>()
       this._invitesByHash = new Map<string, ProjectInvite>()
+      this._notifications = new Map<string, Notification>()
       this._checkpoints = new Map<string, { sessionId: string; rows: CheckpointRow[] }>()
       this._costUsage = new Map<string, CostUsageRow & { tenant: string }>()
     }
@@ -227,6 +231,7 @@ export class SessionStore implements SessionBackend {
       projectMembers: this._members,
       projectInvites: this._invites,
       projectInvitesByHash: this._invitesByHash,
+      notifications: this._notifications,
       checkpoints: this._checkpoints,
       costUsage: this._costUsage,
     })
@@ -343,6 +348,9 @@ export class SessionStore implements SessionBackend {
         this._events.delete(sessionId)
         this._versions.delete(sessionId)
         this._snapshots.delete(sessionId)
+        for (const [key, n] of this._notifications.entries()) {
+          if (n.tenantId === this._tenantId && n.sessionId === sessionId) this._notifications.delete(key)
+        }
       }
     }
     return existed
@@ -433,6 +441,51 @@ export class SessionStore implements SessionBackend {
     if (!row || row.projectId !== projectId) return false
     this._invites.delete(`${this._tenantId}:${id}`)
     this._invitesByHash.delete(row.tokenHash)
+    return true
+  }
+
+  async createNotification(input: NotificationInput): Promise<Notification> {
+    const row: Notification = {
+      ...input,
+      excerpt: input.excerpt.slice(0, 280),
+      readAt: null,
+      createdAt: new Date().toISOString(),
+      tenantId: this._tenantId,
+    }
+    this._notifications.set(`${this._tenantId}:${input.id}`, row)
+    return row
+  }
+
+  async listNotifications(userId: string, filter: { unreadOnly?: boolean; limit: number; offset: number }): Promise<{ notifications: Notification[]; total: number }> {
+    const all = [...this._notifications.values()]
+      .filter((n) => n.tenantId === this._tenantId && n.userId === userId && (!filter.unreadOnly || n.readAt === null))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+    return { notifications: all.slice(filter.offset, filter.offset + filter.limit), total: all.length }
+  }
+
+  async countUnread(userId: string): Promise<number> {
+    let count = 0
+    for (const n of this._notifications.values()) {
+      if (n.tenantId === this._tenantId && n.userId === userId && n.readAt === null) count++
+    }
+    return count
+  }
+
+  async countUnreadBySession(userId: string): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {}
+    for (const n of this._notifications.values()) {
+      if (n.tenantId === this._tenantId && n.userId === userId && n.readAt === null) {
+        counts[n.sessionId] = (counts[n.sessionId] ?? 0) + 1
+      }
+    }
+    return counts
+  }
+
+  async markNotificationRead(id: string, userId: string): Promise<boolean> {
+    const row = this._notifications.get(`${this._tenantId}:${id}`)
+    if (!row || row.userId !== userId) return false
+    // idempotent: re-reading an owned row stays true, never throws
+    if (row.readAt === null) row.readAt = new Date().toISOString()
     return true
   }
 

@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useCallback, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { track } from "@vercel/analytics";
 import { Burger, Drawer, Group, Stack } from "@mantine/core";
 import ThemeToggle from "@/components/ThemeToggle";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/hooks/useAuth";
 import { useCost } from "@/hooks/useCost";
+import { useNotifications } from "@/hooks/useNotifications";
 
 interface NavLink {
   href: string;
@@ -31,7 +33,10 @@ export default function Header() {
   }, []);
 
   const pathname = usePathname();
+  const router = useRouter();
   const { session, signOut } = useAuth();
+  // bells poll only when signed in — anonymous visitors get no badge
+  const { notifications, unreadCount, markRead } = useNotifications({ poll: session !== null });
   // the /cost page already polls useCost + useCostHistory — skip a second
   // interval there so the header never duplicates pollers on that route
   const { total, error } = useCost({ poll: pathname !== "/cost" });
@@ -53,6 +58,9 @@ export default function Header() {
 
         <div className="flex items-center gap-2">
           <ThemeToggle className="hidden sm:block" />
+          {session ? (
+            <NotificationBell notifications={notifications} unreadCount={unreadCount} onMarkRead={(id) => void markRead(id)} onSelectSession={(sessionId) => router.push(`/?session=${encodeURIComponent(sessionId)}`)} />
+          ) : null}
           <Group visibleFrom="md" gap="lg" c="dimmed" fz="sm">
           {session ? (
             <button
