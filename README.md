@@ -36,7 +36,7 @@ Atlaslink is a product-oriented multi-agent orchestrator built on **[Agenthood](
 | Frontend | Next.js 16, React 19, Mantine 9, Tailwind CSS v4, React Flow 12, dagre layout |
 | Auth | JWT (HS256), API keys (SHA-256 hashed), scrypt passwords |
 | Testing | Node built-in test runner (backend), Vitest (dashboard), c8 coverage |
-| CI/CD | GitHub Actions, auto-deploy to AWS (Render legacy), semantic-release |
+| CI/CD | GitHub Actions, auto-deploy to EC2 + RDS, semantic-release |
 
 ## Quick start
 
@@ -123,11 +123,6 @@ echo 'ATLASLINK_API_URL=https://api.atlas.flabs.tech' >> dashboard/.env.local
 echo 'ATLASLINK_API_TOKEN=<from SSM>' >> dashboard/.env.local
 ```
 
-### Render (legacy)
-
-Kept as the rollback target until the #329 soak ends. The old
-`atlaslink-daemon.onrender.com` hostname is no longer served; do not use it.
-
 ### Docker
 
 ```bash
@@ -139,9 +134,11 @@ docker run -p 3000:3000 --env-file .env atlaslink
 
 The dashboard at [atlas.flabs.tech](https://atlas.flabs.tech) is a Next.js app with a BFF proxy (`/api/*` → backend). Set `ATLASLINK_API_URL` and `ATLASLINK_API_TOKEN` as server-side env vars; changing them requires a redeploy.
 
-### Oracle Cloud Always Free (legacy)
+### Oracle Cloud Always Free (retired)
 
-A zero-cost option kept for reference: VM + Caddy + Docker Compose. Being retired after the AWS cutover — see [#329](https://github.com/fworks-tech/atlaslink/issues/329). See [`docs/tasks/deploy-oracle-free-tier.md`](docs/tasks/deploy-oracle-free-tier.md).
+A zero-cost option kept for reference only: VM + Caddy + Docker Compose. Retired
+in [#329](https://github.com/fworks-tech/atlaslink/issues/329); the archived
+guide is [`docs/archive/deploy-oracle-free-tier.md`](docs/archive/deploy-oracle-free-tier.md).
 
 ## Roadmap
 

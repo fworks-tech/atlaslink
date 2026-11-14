@@ -1,8 +1,8 @@
 # Runbook: AWS deployment (EC2 + RDS + Cosmo Router)
 
 Deploys the full stack to the AWS 12-month free tier (ADR-013, issue #328).
-Staging is proven on `staging.atlas.flabs.tech` before any production DNS
-move; Render and Oracle are retired afterwards in #329.
+Production and staging both front this stack; Render and Oracle are retired
+(#329).
 
 ```
 Vercel dashboard ──BFF──▶ Caddy (:80/:443, EC2)
@@ -215,40 +215,26 @@ staging and production health markers.
 ## 9. Cutover (issue #329)
 
 `api.atlas.flabs.tech` and `staging.atlas.flabs.tech` front the same EC2 stack,
-so the cutover is DNS plus a Vercel env swap, not a second deployment. Staging
+so the cutover was DNS plus a Vercel env swap, not a second deployment. Staging
 and production share the RDS store: do not run destructive tests on staging.
 
-1. Add the `api.atlas` A record pointing at the Elastic IP.
-2. Before touching Vercel, copy the current Render service URL and its
-   `ATLASLINK_API_TOKEN` value into the cutover issue (#329) or the team
-   password manager. The Vercel values are Sensitive (write-only), and Hobby
-   can only roll back to the immediately previous deployment.
-3. Merge the address change in `deploy/aws/Caddyfile`; the deploy recreates
-   Caddy and Let's Encrypt obtains the certificate. Verify the API directly before
-   pointing the dashboard at it:
-   `curl -fsS https://api.atlas.flabs.tech/health` (`"providers"` >= 1),
-   `/health/ready` → `OK`, and a tokenless `/graphql` → `401`.
-4. Set the Vercel dashboard's `ATLASLINK_API_URL` to
-   `https://api.atlas.flabs.tech` and `ATLASLINK_API_TOKEN` to the value of
-   `/atlaslink/ATLASLINK_API_TOKEN`; keep both Sensitive, then redeploy.
-5. Verify `https://atlas.flabs.tech/api/health` reports `"providers"` >= 1 and
-   `api/tasks` lists the RDS sessions.
-6. The swap does not migrate accounts or API keys from the Render store.
-   Recreate the production login and any API keys after the swap. The JWT
-   secret also changes, so browsers holding an old JWT get `401` and must log
-   in again.
+Done on 2026-11-13:
 
-Remaining for #329, after the soak:
+1. `api.atlas` A record points at the Elastic IP.
+2. The Caddyfile serves both hostnames and Let's Encrypt issued the certificate.
+3. Vercel's `ATLASLINK_API_URL` is `https://api.atlas.flabs.tech` and
+   `ATLASLINK_API_TOKEN` is the value of `/atlaslink/ATLASLINK_API_TOKEN`.
+4. The swap did not migrate accounts or API keys from the retired Render store,
+   and the JWT secret changed — old logins get `401` and were recreated.
 
-1. Delete the Render service and remove `render.yaml` and
-   `.github/workflows/deploy-render.yml`; remove any Render secrets if present.
-2. Rewrite `docs/runbooks/disaster-recovery.md` around EC2 + RDS only.
-3. Archive `docs/tasks/deploy-oracle-free-tier.md`.
+Render is decommissioned: `render.yaml`, `deploy-render.yml`, and the service
+itself are gone. `docs/runbooks/disaster-recovery.md` is the recovery path.
 
-Rollback: on Hobby only the immediately previous production deployment is
-eligible, so the captured Render URL and token are the durable fallback — set
-`ATLASLINK_API_URL` and `ATLASLINK_API_TOKEN` back to the Render values and
-redeploy. Render sleeps when idle; expect a 30–60s cold start.
+Rollback after the cutover is a Vercel redeploy, not an env swap: both env
+values are Sensitive (write-only), so Hobby can only roll back to deployments
+that already carry the current values. To revert bad code, `git revert` on
+`main` and let `Deploy AWS` run; to revert a bad env value, re-set it and
+redeploy.
 
 ## Troubleshooting
 

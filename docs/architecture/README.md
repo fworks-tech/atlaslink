@@ -46,9 +46,9 @@ GET /events (SSE) ──► dashboard: live DAG + WebSocket room (HITL ask_human
   `sessions` (directory projection), `projects`, `users`, `api_keys`
   (SHA-256 hashes), `daily_cost_buckets`, `run_checkpoints` — same SQL runs
   on `pglite` in CI and managed Postgres in production.
-- **Deployment:** one runtime image; Render serves production today, AWS EC2 +
-  RDS serves staging via the compose overlay (ADR-013), and both are driven by
-  the same post-CI deploy workflows. Tests are hermetic — offline, no LLM,
+- **Deployment:** one runtime image; AWS EC2 + RDS serves production and staging
+  via the compose overlay (ADR-013), driven by the same post-CI deploy workflow.
+  Tests are hermetic — offline, no LLM,
   no network.
 
 ## What this is
@@ -229,13 +229,11 @@ One image, two planes, both gated on green CI:
 - **Image** — multi-stage Dockerfile: a `router` stage bakes the pinned Cosmo
   router binary, its config, and the composed execution config (hermetic — no
   network at boot); the `runtime` stage ships the daemon (Node 22, `git` for
-  the files subgraph) and is always the last stage so
-  `render.yaml` builds the right target. `docker-compose.yml` pins
-  `target: runtime` explicitly.
-- **Render (production today)** — `render.yaml` + `deploy-render.yml`: after CI
-  passes on `main`, the workflow builds and rolls the service.
-- **AWS (staging, ADR-013)** — `docker-compose.aws.yml` overlays the router +
-  AWS Caddyfile (`staging.atlas.flabs.tech`) on the base compose file;
+  the files subgraph) and is always the last stage.
+  `docker-compose.yml` pins `target: runtime` explicitly.
+- **AWS (production, ADR-013)** — `docker-compose.aws.yml` overlays the router +
+  AWS Caddyfile (`staging.atlas.flabs.tech, api.atlas.flabs.tech`) on the base
+  compose file;
   `deploy-aws.yml` runs after green CI, SSHes to the EC2 host and runs
   `docker compose up -d --build`, then polls `/health` for the provider-count
   marker. Secrets: `AWS_DEPLOY_HOST`, `AWS_DEPLOY_KEY`. Provisioning, DNS,
@@ -243,7 +241,7 @@ One image, two planes, both gated on green CI:
   [`docs/runbooks/aws-deploy.md`](../runbooks/aws-deploy.md); the decision in
   [`docs/adr/ADR-013-aws-deployment-target.md`](../adr/ADR-013-aws-deployment-target.md);
   the spec in [`docs/spec/aws-deployment.md`](../spec/aws-deployment.md).
-  Retiring Render/Oracle after the soak is tracked in #329.
+  Render was retired in #329.
 
 ## Logging (ADR-005)
 

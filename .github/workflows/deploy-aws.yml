@@ -1,8 +1,7 @@
 name: Deploy AWS
 
-# Same discipline as the Render deploy: only what passed CI on main reaches
-# the EC2 stack (#328). Skips silently while the AWS secrets are unconfigured
-# (fresh forks) — the Render hook keeps working in parallel until #329.
+# Only what passed CI on main reaches the EC2 stack (#328). Skips silently
+# while the AWS secrets are unconfigured (fresh forks). Render is retired.
 on:
   workflow_run:
     workflows: ["CI"]
@@ -58,9 +57,9 @@ jobs:
           echo "Compose accepted the new build — waiting for it to serve."
 
       - name: Wait for the service to come back with the new build
-        # Same build marker as the Render gate: "providers":N with N >= 1 means
-        # the current build is live — /health ok:true alone also passes a stale
-        # release, which must fail the workflow instead of the users finding it.
+        # "providers":N with N >= 1 means the current build is live — /health
+        # ok:true alone also passes a stale release, which must fail the workflow
+        # instead of the users finding it.
         if: env.AWS_DEPLOY_HOST != ''
         env:
           AWS_STAGING_URL: ${{ vars.AWS_STAGING_URL || 'https://staging.atlas.flabs.tech' }}
