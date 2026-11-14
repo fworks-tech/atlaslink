@@ -18,13 +18,15 @@ info:
     name: Atlaslink
     url: https://github.com/fworks-tech/atlaslink
   license:
-    name: MIT
+    name: Apache-2.0
 
 servers:
   - url: http://localhost:3000
     description: Local development
-  - url: https://atlas.flabs.tech
-    description: Production
+  - url: https://api.atlas.flabs.tech
+    description: Production API (EC2)
+  - url: https://atlas.flabs.tech/api
+    description: Dashboard BFF proxy (Vercel) — same Task API via /api/*
 
 tags:
   - name: Health

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { IconEye, IconGitFork, IconShieldCheck, IconWallet } from "@tabler/icons-react";
 import FadeIn from "@/components/FadeIn";
 import LandingCanvas from "@/components/LandingCanvas";
-import AskTerminal from "@/components/AskTerminal";
+import SharedRoomCard from "@/components/SharedRoomCard";
 
 /**
  * Marketing surface for visitors — the app lives at /atlas (spec:
@@ -22,8 +22,8 @@ const collab = [
     body: "Redirect a running session without killing it, rewrite a queued prompt, or interrupt entirely. The room reacts instantly.",
   },
   {
-    title: "Nothing acts unapproved",
-    body: "When Atlas asks — apply the fix? call this tool? — the room waits on you. Approve, reject, or reply in place.",
+    title: "Approval gates keep you in the loop",
+    body: "When a decision is required — apply the fix? call this tool? — the room waits on you. Approve, reject, or reply in place.",
   },
 ];
 
@@ -31,7 +31,7 @@ const evidence = [
   { icon: IconEye, label: "Live DAG", desc: "sessions, members, reasoning and tools as one diagram" },
   { icon: IconShieldCheck, label: "Human-in-the-loop", desc: "approval gates are part of the protocol, not a plugin" },
   { icon: IconGitFork, label: "Your providers", desc: "per-session provider and model picks, fast-failed if unknown" },
-  { icon: IconWallet, label: "Honest costs", desc: "LLM spend rolled up per agent, per day — in the open" },
+  { icon: IconWallet, label: "Costs by agent and day", desc: "LLM spend rolled up per agent, per day" },
 ];
 
 export default function LandingPage() {
@@ -54,9 +54,21 @@ export default function LandingPage() {
                 <span className="text-muted">Together, live.</span>
               </h1>
               <p className="mt-5 max-w-md text-lg leading-relaxed text-muted">
-                See how agents and humans solve it — in the same room, in real
-                time. Chat, delegate, steer, approve. Every step visible the
-                moment it happens.
+                Bring people and AI agents into one shared session.
+                Delegate work, follow what happens, steer a run, and make decisions
+                together — without losing sight of the process.
+              </p>
+              <p className="mt-3 max-w-md text-sm leading-relaxed text-muted">
+                An experimental proof of concept built on{" "}
+                <Link
+                  href="https://github.com/fworks-tech/agenthood"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline decoration-accent/50 underline-offset-2 hover:text-foreground"
+                >
+                  Agenthood
+                </Link>
+                .
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <Link
@@ -92,9 +104,8 @@ export default function LandingPage() {
               The room, not the queue.
             </h2>
             <p className="mb-10 max-w-2xl leading-relaxed text-muted">
-              You don&apos;t file a ticket and wait. You&apos;re in the room while it
-              runs — presence, typing, receipts, and the steering wheel when
-              you want it.
+              Work alongside agents in a shared live session. See activity as it
+              happens and step in when a decision is needed.
             </p>
             <div className="grid gap-5 md:grid-cols-3">
               {collab.map((c) => (
@@ -118,7 +129,7 @@ export default function LandingPage() {
             className="mb-3 text-3xl font-semibold text-foreground"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            Every step, on the record.
+            Session activity, recorded for review.
           </h2>
           <p className="mb-10 max-w-2xl leading-relaxed text-muted">
             Sessions are durable events, not chat scrollback. Reasoning,
@@ -137,36 +148,36 @@ export default function LandingPage() {
         </section>
       </FadeIn>
 
-      {/* Final CTA — the terminal speaks for itself */}
+      {/* Final CTA — hand the work to a shared room */}
       <FadeIn>
         <section>
           <div className="mx-auto max-w-6xl px-6 pb-24 pt-12 text-center">
             <h2
-              className="mb-4 text-4xl font-semibold text-foreground"
+              className="mb-4 text-4xl font-semibold text-foreground sm:text-5xl"
               style={{ fontFamily: "var(--font-display)" }}
             >
               Hand it to the room.
             </h2>
-            <p className="mx-auto mb-8 max-w-lg text-muted">
-              Watch the room earn it — live — or claim your own Atlas with
-              your projects, your sessions, your costs.
+            <p className="mx-auto mb-8 max-w-2xl text-lg leading-relaxed text-muted">
+              Hand a PR review to the room — humans and agents triage, fix, and
+              verify together, with an approval gate at every decision.
             </p>
-            <div className="mx-auto mb-10 max-w-2xl">
-              <AskTerminal />
-            </div>
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <Link
-                href="/atlas"
-                className="inline-block rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-background transition-opacity hover:opacity-90"
-              >
-                Open Atlas
-              </Link>
+            <div className="mb-10 flex flex-wrap items-center justify-center gap-3">
               <Link
                 href="/login"
-                className="inline-block rounded-lg border border-line px-6 py-3 text-sm font-medium text-foreground transition-colors hover:border-accent/40"
+                className="inline-block rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-background transition-opacity hover:opacity-90"
               >
-                Create your Atlas
+                Get Started
               </Link>
+              <Link
+                href="/atlas"
+                className="inline-block rounded-lg border border-gold/60 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:border-gold"
+              >
+                Request a Demo
+              </Link>
+            </div>
+            <div className="text-left">
+              <SharedRoomCard />
             </div>
           </div>
         </section>

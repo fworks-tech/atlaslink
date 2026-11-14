@@ -1,4 +1,6 @@
-# Atlaslink — Live Dashboard (M4)
+# Atlaslink — Live Dashboard
+
+Ask Atlas. Together, live — the Next.js front room for an experimental shared workspace where people and AI agents work through tasks together, built on Agenthood: live sessions, human approvals, costs by agent and day.
 
 Next.js 16 (App Router) frontend for the Atlaslink daemon. Renders the live
 society diagram — Atlas as the root node, sessions as delegation graphs — from
@@ -25,11 +27,11 @@ headers, hence the route handler). SSE streams back through it verbatim.
 `ATLASLINK_API_URL` and `ATLASLINK_API_TOKEN` configure the proxy (see
 `.env.example`). The loopback default is unauthenticated per the auth gate
 contract (`src/api/auth.ts`). In production on Vercel (`atlas.flabs.tech`)
-`ATLASLINK_API_URL` points at the Render backend; the BFF proxy forwards
+`ATLASLINK_API_URL` points at the production API
+(`https://api.atlas.flabs.tech`); the BFF proxy forwards
 `ATLASLINK_API_TOKEN` server-side.
 
-Render free tier sleeps after ~15m idle (cold start 15–30s). The dashboard
-polls `GET /api/health` (`hooks/useBackendHealth.ts`, 7s timeout, 1.5s while
+The dashboard polls `GET /api/health` (`hooks/useBackendHealth.ts`, 7s timeout, 1.5s while
 waking / 15s while healthy) and shows a blocking overlay
 (`components/BackendWakingOverlay.tsx`) until the backend is healthy. The BFF
 `src/app/api/[...path]/route.ts` upstream `fetch` has a 30s timeout and maps
