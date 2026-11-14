@@ -105,4 +105,27 @@ describe("useEvents", () => {
       delete process.env.NEXT_PUBLIC_ATLASLINK_API_URL;
     }
   });
+
+  it("forwards the browser bearer when fetching the stream ticket", async () => {
+    process.env.NEXT_PUBLIC_ATLASLINK_API_URL = "https://api.atlas.flabs.tech";
+    window.localStorage.setItem(
+      "atlaslink:auth:jwt",
+      JSON.stringify({ jwt: "user.jwt.sig", email: "u@x.com", userId: "u-1" })
+    );
+    const fetchMock = vi.fn(async () => Response.json({ ok: true, ticket: "tkt.jwt.sig", expiresAt: new Date().toISOString() }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      renderHook(() => useEvents());
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(fetchMock).toHaveBeenCalledWith("/api/auth/stream-ticket", {
+        method: "POST",
+        headers: { Authorization: "Bearer user.jwt.sig" },
+      });
+    } finally {
+      window.localStorage.removeItem("atlaslink:auth:jwt");
+      delete process.env.NEXT_PUBLIC_ATLASLINK_API_URL;
+    }
+  });
 });

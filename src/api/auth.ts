@@ -68,7 +68,7 @@ const ROOM_UPGRADE_PATTERN = /^\/v1\/sessions\/[^/]+\/room$/
 /** SSE streams browsers read with EventSource (no header support): ticket only here. */
 const SSE_TICKET_PATTERN = /^\/v1\/(events(\/[^/]+)?|projects\/[^/]+\/events)$/
 
-function queryToken(query: unknown): string | undefined {
+function queryBearer(query: unknown): string | undefined {
   const q = query as { ticket?: unknown; token?: unknown } | undefined
   const ticket = q?.ticket
   if (typeof ticket === 'string' && ticket.length > 0) return ticket
@@ -88,7 +88,7 @@ function roomUpgradeToken(request: {
     return undefined
   }
   if (!ROOM_UPGRADE_PATTERN.test(request.url.split('?')[0] ?? '')) return undefined
-  return queryToken(request.query)
+  return queryBearer(request.query)
 }
 
 function sseTicketToken(request: {
@@ -99,7 +99,7 @@ function sseTicketToken(request: {
 }): string | undefined {
   if (request.method !== 'GET') return undefined
   if (!SSE_TICKET_PATTERN.test(request.url.split('?')[0] ?? '')) return undefined
-  return queryToken(request.query)
+  return queryBearer(request.query)
 }
 
 /**
@@ -225,9 +225,9 @@ export function registerAuthGate(
       // WS room upgrade may carry the bearer as ?ticket=/?token=, and SSE
       // streams (EventSource cannot set headers) as ?ticket=/?token= — and
       // only there. Every other route stays header-only.
-      const queryToken = roomUpgradeToken(request) ?? sseTicketToken(request)
-      if (queryToken) {
-        const ctx = await resolveAuth(queryToken, authStore)
+      const queryBearerToken = roomUpgradeToken(request) ?? sseTicketToken(request)
+      if (queryBearerToken) {
+        const ctx = await resolveAuth(queryBearerToken, authStore)
         if (ctx) {
           request.auth = ctx
           return
