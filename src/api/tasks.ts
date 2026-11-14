@@ -360,7 +360,7 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
       }
       const result = await askFollowup(
         { backend, registry: deps.registry, queue: deps.queue, broadcaster: deps.sse.broadcaster },
-        { sessionId, tenantId, content: request.body.content }
+        { sessionId, tenantId, content: request.body.content, ...(request.auth?.userId !== undefined ? { excludeUserId: request.auth.userId } : {}) }
       )
       if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
       const followup = await backend.get(result.followupId)

@@ -356,7 +356,7 @@ export class EventLogBackend implements SessionBackend {
   async listNotifications(userId: string, filter: { unreadOnly?: boolean; limit: number; offset: number }): Promise<{ notifications: Notification[]; total: number }> {
     const all = [...this._notifications.values()]
       .filter((n) => n.tenantId === this._tenantId && n.userId === userId && (!filter.unreadOnly || n.readAt === null))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
     return { notifications: all.slice(filter.offset, filter.offset + filter.limit), total: all.length }
   }
 

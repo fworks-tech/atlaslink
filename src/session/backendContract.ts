@@ -480,6 +480,8 @@ export async function backendContract(name: string, create: () => Promise<Sessio
       assert.equal(await store.getProjectInviteByTokenHash('hash-old'), null)
       // unknown hash stays null
       assert.equal(await store.acceptProjectInvite('hash-nope', 'mallory'), null)
+    })
+
     await test('notifications: create/list/read/counts stay user- and tenant-scoped', async () => {
       const store = await create()
       const n = await store.createNotification({ id: 'notif-1', userId: 'u-1', sessionId: 'ses-1', kind: 'mention', excerpt: 'hi' })

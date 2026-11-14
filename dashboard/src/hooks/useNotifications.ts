@@ -27,6 +27,7 @@ export function useNotifications({ poll = true }: { poll?: boolean } = {}) {
   }, [notifications]);
 
   const applySnapshot = useCallback((res: { notifications: Notification[]; unreadCount: number; unreadBySession: Record<string, number> }) => {
+    notificationsRef.current = res.notifications;
     setNotifications(res.notifications);
     setUnreadCount(res.unreadCount);
     setUnreadBySession(res.unreadBySession);
@@ -62,8 +63,12 @@ export function useNotifications({ poll = true }: { poll?: boolean } = {}) {
     };
   }, [poll, refresh, applySnapshot]);
 
-  // live bells: prepend + bump counts without a REST round-trip
+  // live bells: prepend + bump counts without a REST round-trip.
+  // The stream follows the signed-in identity: sign-out closes it, sign-in
+  // reconnects, and anonymous visitors never open a doomed 401 stream.
+  const identity = loadAuth()?.jwt ?? null;
   useEffect(() => {
+    if (!poll || !identity) return;
     let cancelled = false;
     const url = (ticket?: string): string => {
       const directBase = process.env.NEXT_PUBLIC_ATLASLINK_API_URL?.replace(/\/$/, "");
@@ -79,7 +84,10 @@ export function useNotifications({ poll = true }: { poll?: boolean } = {}) {
           const body = JSON.parse(msg.data) as { notification?: Notification };
           if (body.notification && typeof body.notification.id === "string") {
             const n = body.notification;
-            setNotifications((prev) => (prev.some((p) => p.id === n.id) ? prev : [n, ...prev].slice(0, 50)));
+            // redelivered frames must not double-count: bump only new ids
+            if (notificationsRef.current.some((p) => p.id === n.id)) return;
+            notificationsRef.current = [n, ...notificationsRef.current].slice(0, 50);
+            setNotifications(notificationsRef.current);
             setUnreadCount((c) => c + 1);
             setUnreadBySession((prev) => ({ ...prev, [n.sessionId]: (prev[n.sessionId] ?? 0) + 1 }));
           }
@@ -118,7 +126,7 @@ export function useNotifications({ poll = true }: { poll?: boolean } = {}) {
       esRef.current?.close();
       esRef.current = null;
     };
-  }, []);
+  }, [poll, identity]);
 
   const markRead = useCallback(async (id: string) => {
     try {

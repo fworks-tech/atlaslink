@@ -129,17 +129,21 @@ test('Phase B: agent ask notifies thread participants (approval bell)', async ()
   const { authStore, close: closeAuth } = await createAuthStore()
   const srv = await startServer(dir, { authStore, jwtSecret: JWT_SECRET })
   try {
-    const { alice, sessionId, correlationId } = await setupRoom(srv.port)
+    const { alice, bob, sessionId, correlationId } = await setupRoom(srv.port)
     await jsonRequest(srv.port, 'POST', `/v1/tasks/${sessionId}/message`, { content: 'go' }, auth(alice.token))
+    await jsonRequest(srv.port, 'POST', `/v1/tasks/${sessionId}/message`, { content: 'noted' }, auth(bob.token))
 
-    // force terminal, then the agent asks a follow-up question
+    // force terminal, then alice asks a follow-up question
     const tb = backendForTenant(srv.backend, alice.tenantId)
     await tb.append({ type: 'session.failed', sessionId, correlationId, at: new Date().toISOString(), error: 'boom' })
     const followup = await jsonRequest(srv.port, 'POST', `/v1/tasks/${sessionId}/followup`, { content: 'retry?' }, auth(alice.token))
     assert.equal(followup.status, 201)
 
-    const list = JSON.parse((await jsonRequest(srv.port, 'GET', '/v1/notifications', undefined, auth(alice.token))).body)
-    assert.ok(list.notifications.some((n: { kind: string }) => n.kind === 'approval'))
+    // bob (prior participant) gets the approval bell; the asker never self-pings
+    const bobList = JSON.parse((await jsonRequest(srv.port, 'GET', '/v1/notifications', undefined, auth(bob.token))).body)
+    assert.ok(bobList.notifications.some((n: { kind: string }) => n.kind === 'approval'))
+    const aliceList = JSON.parse((await jsonRequest(srv.port, 'GET', '/v1/notifications', undefined, auth(alice.token))).body)
+    assert.ok(!aliceList.notifications.some((n: { kind: string }) => n.kind === 'approval'))
   } finally {
     await srv.close()
     closeAuth()
@@ -213,4 +217,60 @@ test('notify helpers: recipientsForMessage resolves mentions, skips self, adds r
   })
   // bob mentioned; self-mention dropped; ghost unknown; parentId adds u-1's... excluded (author) → only bob
   assert.deepEqual([...recipients.entries()], [['u-2', 'mention']])
+})
+
+test('Phase B: malformed parentIds are rejected at commit, valid ones nest', async () => {
+  const dir = tmpDataDir()
+  const { authStore, close: closeAuth } = await createAuthStore()
+  const srv = await startServer(dir, { authStore, jwtSecret: JWT_SECRET })
+  try {
+    const { alice, sessionId } = await setupRoom(srv.port)
+    await jsonRequest(srv.port, 'POST', `/v1/tasks/${sessionId}/message`, { content: 'root' }, auth(alice.token))
+    // turns: m-0 is the session prompt, m-1 is 'root'. Out-of-range,
+    // non-numeric, and cross-session-shaped ids fail.
+    for (const parentId of ['m-x', '../../x']) {
+      const bad = await jsonRequest(srv.port, 'POST', `/v1/tasks/${sessionId}/message`, { content: 'dangling', parentId }, auth(alice.token))
+      assert.equal(bad.status, 400, parentId)
+    }
+    for (const parentId of ['m-9', 'm-2']) {
+      const dangling = await jsonRequest(srv.port, 'POST', `/v1/tasks/${sessionId}/message`, { content: 'dangling', parentId }, auth(alice.token))
+      assert.equal(dangling.status, 409, parentId)
+    }
+    // m-1 addresses 'root'
+    const good = await jsonRequest(srv.port, 'POST', `/v1/tasks/${sessionId}/message`, { content: 'nested', parentId: 'm-1' }, auth(alice.token))
+    assert.equal(good.status, 201)
+  } finally {
+    await srv.close()
+    closeAuth()
+    cleanup(dir)
+  }
+})
+
+test('notify helpers: bulk directory resolves a message with one fetch', async () => {
+  const { SessionStore } = await import('../session/sessionStore')
+  const backend = new SessionStore()
+  const session = {
+    sessionId: 'ses-1',
+    tenantId: 'default',
+    interaction: [],
+  } as unknown as Parameters<typeof recipientsForMessage>[1]
+  let fetches = 0
+  const users = [{ id: 'u-2', email: 'bob@example.com' }]
+  const directory = {
+    resolveUserId: async (_t: string, m: string) => {
+      fetches += 1
+      return users.find((u) => u.id === m || u.email === m)?.id ?? null
+    },
+    resolveUserIds: async (_t: string, mentions: string[]) => {
+      fetches += 1
+      return mentions.map((m) => users.find((u) => u.id === m || u.email === m)?.id ?? null)
+    },
+  }
+  const recipients = await recipientsForMessage(backend, session, {
+    authorId: 'u-1',
+    mentions: ['bob@example.com', 'u-2', 'ghost'],
+    directory,
+  })
+  assert.deepEqual([...recipients.keys()], ['u-2'])
+  assert.equal(fetches, 1)
 })

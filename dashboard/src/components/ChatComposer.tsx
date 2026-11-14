@@ -68,11 +68,23 @@ export function ChatComposer({
     e.preventDefault();
     const trimmed = content.trim();
     if (!trimmed || busy) return;
-    // mentions are directory emails referenced as @email in the text
+    // mentions are directory emails referenced as @email in the text.
+    // Boundary-aware: `@bob@example.com` must not fire inside
+    // `@bob@example.com.evil.com`.
     const mentioned = new Set<string>();
+    const boundary = (text: string, token: string): boolean => {
+      let from = 0;
+      for (;;) {
+        const at = text.indexOf(token, from);
+        if (at < 0) return false;
+        const after = text[at + token.length];
+        if (after === undefined || /[\s,;:!?)\]}>]/.test(after)) return true;
+        from = at + token.length;
+      }
+    };
     for (const m of directory) {
-      if (trimmed.includes(`@${m.email}`)) mentioned.add(m.email);
-      else if (trimmed.includes(`@${m.id}`)) mentioned.add(m.id);
+      if (boundary(trimmed, `@${m.email}`)) mentioned.add(m.email);
+      else if (boundary(trimmed, `@${m.id}`)) mentioned.add(m.id);
     }
     setBusy(true);
     setError(null);

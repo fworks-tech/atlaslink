@@ -16,14 +16,19 @@ vi.mock("@/lib/api", () => ({
   markNotificationRead: apiMock.markNotificationRead,
 }));
 
+const authMock = vi.hoisted(() => ({
+  session: null as null | { jwt: string; email: string; userId: string },
+}));
+
 vi.mock("@/lib/auth", () => ({
-  loadAuth: () => null,
+  loadAuth: () => authMock.session,
 }));
 
 type Listener = (msg: { data: string }) => void;
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
+  closed = false;
   listeners = new Map<string, Listener[]>();
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
@@ -38,12 +43,15 @@ class FakeEventSource {
   emit(type: string, data: unknown): void {
     for (const fn of this.listeners.get(type) ?? []) fn({ data: JSON.stringify(data) });
   }
-  close(): void {}
+  close(): void {
+    this.closed = true;
+  }
 }
 
 describe("useNotifications", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    authMock.session = { jwt: "test-jwt", email: "t@e.com", userId: "u-1" };
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
     apiMock.getNotifications.mockResolvedValue({
@@ -89,5 +97,74 @@ describe("useNotifications", () => {
     expect(apiMock.markNotificationRead).toHaveBeenCalledWith("n-2");
     expect(result.current.unreadCount).toBe(1);
     expect(result.current.unreadBySession).toEqual({ "ses-a": 1 });
+  });
+});
+
+describe("useNotifications stream robustness", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    authMock.session = { jwt: "test-jwt", email: "t@e.com", userId: "u-1" };
+    apiMock.getNotifications.mockResolvedValue({
+      ok: true,
+      notifications: NOTIFS,
+      total: 1,
+      unreadCount: 1,
+      unreadBySession: { "ses-a": 1 },
+      limit: 50,
+      offset: 0,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("ignores redelivered frames instead of double-counting", async () => {
+    const { result } = renderHook(() => useNotifications());
+    await waitFor(() => expect(result.current.unreadCount).toBe(1));
+    const es = FakeEventSource.instances[0];
+    const bell = {
+      notification: { id: "n-2", userId: "u-1", sessionId: "ses-b", kind: "reply", excerpt: "ack", readAt: null, createdAt: "2026-11-14T10:01:00Z" },
+    };
+    act(() => {
+      es.emit("notification.created", bell);
+    });
+    expect(result.current.unreadCount).toBe(2);
+    act(() => {
+      es.emit("notification.created", bell);
+    });
+    // same id twice: list and counts stay put until the poller heals
+    expect(result.current.unreadCount).toBe(2);
+    expect(result.current.notifications).toHaveLength(2);
+    expect(result.current.unreadBySession).toEqual({ "ses-a": 1, "ses-b": 1 });
+  });
+
+  it("opens no stream when anonymous or polling is off", async () => {
+    authMock.session = null;
+    const { unmount } = renderHook(() => useNotifications());
+    await act(async () => {});
+    expect(FakeEventSource.instances).toHaveLength(0);
+    unmount();
+    authMock.session = { jwt: "test-jwt", email: "t@e.com", userId: "u-1" };
+    const off = renderHook(() => useNotifications({ poll: false }));
+    await act(async () => {});
+    expect(FakeEventSource.instances).toHaveLength(0);
+    off.unmount();
+  });
+
+  it("tears down the stream on sign-out and reconnects on sign-in", async () => {
+    const { rerender, unmount } = renderHook(() => useNotifications());
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const first = FakeEventSource.instances[0];
+    authMock.session = null;
+    rerender();
+    expect(first.closed).toBe(true);
+    authMock.session = { jwt: "other-jwt", email: "o@e.com", userId: "u-2" };
+    rerender();
+    await waitFor(() => expect(FakeEventSource.instances).toHaveLength(2));
+    expect(FakeEventSource.instances[1].closed).toBe(false);
+    unmount();
   });
 });

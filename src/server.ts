@@ -314,6 +314,13 @@ export async function createAppServer(params: {
             const lowered = mention.toLowerCase()
             return users.find((u) => u.id === mention || u.email.toLowerCase() === lowered)?.id ?? null
           },
+          resolveUserIds: async (tenantId, mentions) => {
+            const users = await params.authStore!.listUsersByTenant(tenantId)
+            return mentions.map((mention) => {
+              const lowered = mention.toLowerCase()
+              return users.find((u) => u.id === mention || u.email.toLowerCase() === lowered)?.id ?? null
+            })
+          },
         }
       : undefined
     registerTaskRoutes(api, { backend, registry, queue, sse, providers: params.providers ?? [], ...(directory !== undefined ? { directory } : {}) })

@@ -51,8 +51,11 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   // SSE streams are long-lived by design — the 30s timeout is for REST only.
   // An aborted stream would force EventSource into a reconnect loop that
   // fights Last-Event-ID resume. Direct browser streams (A3 ticket) bypass
-  // the BFF entirely; this fallback path must not cut them either.
-  const isEventStream = path.includes("events") || path.includes("stream");
+  // the BFF entirely; this fallback path must not cut them either. Match
+  // exact trailing segments so a future `streaming-*` REST route keeps its
+  // timeout.
+  const tail = path.slice(-2).join("/");
+  const isEventStream = path.at(-1) === "events" || tail === "notifications/stream";
   const signal = isEventStream ? undefined : AbortSignal.timeout(30000);
 
   let upstream: Response;

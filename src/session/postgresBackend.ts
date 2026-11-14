@@ -586,7 +586,7 @@ export class PostgresBackend implements SessionBackend {
   async listNotifications(userId: string, filter: { unreadOnly?: boolean; limit: number; offset: number }): Promise<{ notifications: Notification[]; total: number }> {
     const cond = filter.unreadOnly ? 'AND read_at IS NULL' : ''
     const { rows } = await this.db.query<{ id: string; user_id: string; session_id: string; kind: string; excerpt: string; read_at: string | Date | null; created_at: string | Date }>(
-      `SELECT id, user_id, session_id, kind, excerpt, read_at, created_at FROM notifications WHERE tenant_id = $1 AND user_id = $2 ${cond} ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+      `SELECT id, user_id, session_id, kind, excerpt, read_at, created_at FROM notifications WHERE tenant_id = $1 AND user_id = $2 ${cond} ORDER BY created_at DESC, id DESC LIMIT $3 OFFSET $4`,
       [this.#tenantId, userId, filter.limit, filter.offset]
     )
     const { rows: totalRows } = await this.db.query<{ count: string }>(

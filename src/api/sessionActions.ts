@@ -246,7 +246,7 @@ export function foldFollowupPrompt(originalPrompt: string, status: string, error
  */
 export async function askFollowup(
   deps: IngressDeps,
-  args: { sessionId: string; tenantId: string; content: string }
+  args: { sessionId: string; tenantId: string; content: string; excludeUserId?: string }
 ): Promise<FollowupResult> {
   const { sessionId, tenantId, content } = args
   const blank = rejectBlank(content)
@@ -307,8 +307,9 @@ export async function askFollowup(
   const after = await deps.backend.get(sessionId)
   const settled = after ?? original
   // approval inbox: parked questions need a human — notify prior thread
-  // participants so the ask does not sit unseen (best-effort, never 500s)
-  const approvers = new Map(threadParticipantIds(settled).map((id) => [id, 'approval' as const]))
+  // participants so the ask does not sit unseen (best-effort, never 500s).
+  // The asker is excluded: no self-nag for solo follow-ups.
+  const approvers = new Map(threadParticipantIds(settled, args.excludeUserId).map((id) => [id, 'approval' as const]))
   if (approvers.size > 0) {
     await fanoutNotifications(deps, { session: settled, userIds: approvers, excerpt: content })
   }
@@ -338,8 +339,13 @@ export interface ChatMessageOpts {
 }
 
 function invalidChatOpts(opts: ChatMessageOpts): string | null {
-  if (opts.parentId !== undefined && (opts.parentId.length === 0 || opts.parentId.length > MAX_MESSAGE_PARENT_ID_LENGTH)) {
-    return 'parentId must be 1..200 chars'
+  if (opts.parentId !== undefined) {
+    if (opts.parentId.length === 0 || opts.parentId.length > MAX_MESSAGE_PARENT_ID_LENGTH) {
+      return 'parentId must be 1..200 chars'
+    }
+    // thread replies address the n-th turn (`m-{n}`) — malformed ids fail
+    // fast; dangling indexes are caught against the session at commit
+    if (!/^m-\d+$/.test(opts.parentId)) return 'parentId must look like m-{n}'
   }
   if (opts.anchor !== undefined && (opts.anchor.length === 0 || opts.anchor.length > MAX_MESSAGE_ANCHOR_LENGTH)) {
     return 'anchor must be 1..500 chars'
@@ -371,6 +377,14 @@ export async function appendChatMessage(
     guard: (current) => {
       if (isTerminal(current.status)) return 'session already terminated'
       if (current.interaction.length >= MAX_SESSION_MESSAGES) return 'message log full'
+      // thread replies address the n-th turn (`m-{n}`): reject dangling or
+      // cross-session ids at commit so they cannot store silently flat
+      if (opts.parentId !== undefined) {
+        const parentIdx = /^m-(\d+)$/.exec(opts.parentId)?.[1]
+        if (parentIdx === undefined || Number(parentIdx) >= current.interaction.length) {
+          return 'unknown parent message'
+        }
+      }
       return null
     },
     deltas: (current, at) => [

@@ -53,3 +53,15 @@ describe("ChatComposer", () => {
     expect(onClearReply).toHaveBeenCalled();
   });
 });
+
+describe("ChatComposer mention boundaries", () => {
+  it("does not bell an address that merely extends a mention", async () => {
+    const onSent = vi.fn();
+    render(<ChatComposer sessionId="ses-1" directory={DIRECTORY} replyTo={null} onClearReply={() => {}} onSent={onSent} />);
+    const box = screen.getByLabelText("Room chat message");
+    fireEvent.change(box, { target: { value: "cc @bob@example.com.evil.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(onSent).toHaveBeenCalled());
+    expect(sendChatMessage).not.toHaveBeenCalledWith("ses-1", expect.anything(), expect.objectContaining({ mentions: expect.anything() }));
+  });
+});

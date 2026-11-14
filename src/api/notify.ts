@@ -7,6 +7,8 @@ import { canReadProject } from './projectAcl'
 /** Mention → user-id resolution, tenant-scoped by the caller. Best-effort: unknown mentions are dropped, never errors. */
 export interface MentionDirectory {
   resolveUserId(tenantId: string, mention: string): Promise<string | null>
+  /** Bulk lookup: one tenant user-list fetch per message instead of N. Optional; falls back to per-mention. */
+  resolveUserIds?(tenantId: string, mentions: string[]): Promise<Array<string | null>>
 }
 
 /** Distinct human authors already present in a session's interaction. */
@@ -67,13 +69,18 @@ export async function recipientsForMessage(
   opts: { authorId?: string; mentions?: string[]; parentId?: string; directory?: MentionDirectory }
 ): Promise<Map<string, NotificationKind>> {
   const recipients = new Map<string, NotificationKind>()
-  if (opts.mentions !== undefined && opts.directory !== undefined) {
+  const mentions = opts.directory !== undefined ? opts.mentions : undefined
+  if (mentions !== undefined && mentions.length > 0 && opts.directory !== undefined) {
     const tenantId = session.tenantId
-    for (const mention of opts.mentions) {
-      if (tenantId === undefined) break
-      const userId = await opts.directory.resolveUserId(tenantId, mention).catch(() => null)
-      if (userId === null || userId === opts.authorId || recipients.has(userId)) continue
-      recipients.set(userId, 'mention')
+    if (tenantId !== undefined) {
+      // one directory fetch per message: N mentions must not cost N table scans
+      const resolved: Array<string | null> = opts.directory.resolveUserIds
+        ? await opts.directory.resolveUserIds(tenantId, mentions).catch(() => mentions.map(() => null))
+        : await Promise.all(mentions.map((m) => opts.directory!.resolveUserId(tenantId, m).catch(() => null)))
+      for (const userId of resolved) {
+        if (userId === null || userId === opts.authorId || recipients.has(userId)) continue
+        recipients.set(userId, 'mention')
+      }
     }
   }
   if (opts.parentId !== undefined) {
