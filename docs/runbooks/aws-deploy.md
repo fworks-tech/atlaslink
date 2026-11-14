@@ -203,15 +203,29 @@ from a trusted network and keep it (the workflow uses
 deploy key, and a build-sha health marker are tracked in #329).
 
 Push to `main` → green CI → `deploy-aws.yml` pulls, rebuilds, and polls the
-staging health marker. Until these secrets exist the workflow skips silently
-and Render keeps deploying (parallel running is intentional).
+staging health marker.
 
 ## 9. Cutover (issue #329)
 
-After a soak period on staging: point `api.atlas.flabs.tech` at the EC2 IP,
-uncomment the api block in `deploy/aws/Caddyfile`, update the Vercel
-dashboard's `ATLASLINK_API_URL`, then decommission Render and this runbook's
-Oracle sibling per #329.
+`api.atlas.flabs.tech` and `staging.atlas.flabs.tech` front the same EC2 stack.
+
+1. Add the `api.atlas` A record pointing at the Elastic IP.
+2. Merge the `api.atlas.flabs.tech` block in `deploy/aws/Caddyfile`; the deploy
+   reloads Caddy and Let's Encrypt issues the certificate on the first request.
+3. Set the Vercel dashboard's `ATLASLINK_API_URL` to
+   `https://api.atlas.flabs.tech` and `ATLASLINK_API_TOKEN` to the value of
+   `/atlaslink/ATLASLINK_API_TOKEN`, then redeploy production.
+4. Verify `https://atlas.flabs.tech/api/health` reports `"providers":1`.
+
+Remaining for #329, after the soak:
+
+1. Remove `render.yaml`, `.github/workflows/deploy-render.yml`, and the Render
+   deploy-hook secrets.
+2. Rewrite `docs/runbooks/disaster-recovery.md` around EC2 + RDS only.
+3. Archive `docs/tasks/deploy-oracle-free-tier.md`.
+
+Vercel keeps the old deployments, so an instant rollback to the pre-cutover
+Render API is one click in the dashboard if the soak goes wrong.
 
 ## Troubleshooting
 
