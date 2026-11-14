@@ -24,6 +24,14 @@ export interface UserRow {
   updated_at: Date
 }
 
+export interface MemberDirectoryEntry {
+  id: string
+  email: string
+  tenant_id: string
+  created_at: Date
+  updated_at: Date
+}
+
 export interface ApiKeyRow {
   id: string
   user_id: string
@@ -93,9 +101,9 @@ export class AuthStore {
     return rows[0] ?? null
   }
 
-  async listUsersByTenant(tenantId: string): Promise<UserRow[]> {
-    const { rows } = await this.db.query<UserRow>(
-      `SELECT id, email, password_hash, tenant_id, created_at, updated_at
+  async listUsersByTenant(tenantId: string): Promise<MemberDirectoryEntry[]> {
+    const { rows } = await this.db.query<MemberDirectoryEntry>(
+      `SELECT id, email, tenant_id, created_at, updated_at
        FROM users WHERE tenant_id = $1 ORDER BY email ASC`,
       [tenantId]
     )
