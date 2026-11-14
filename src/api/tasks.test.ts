@@ -1242,3 +1242,28 @@ test('POST /tasks accepts a known provider+model tweak and persists it', async (
     cleanup(dir)
   }
 })
+
+test('POST /tasks/:id/message stores thread fields and projects them', async () => {
+  const dir = tmpDataDir()
+  const srv = await startServer(dir)
+  try {
+    const created = JSON.parse((await jsonRequest(srv.port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-1' })).body).session
+    const res = await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/message`, {
+      content: 'reply here', parentId: 'm-0', mentions: ['someone@example.com'], anchor: 'L12',
+    })
+    assert.equal(res.status, 201)
+    const session = JSON.parse(res.body).session
+    const last = session.interaction.at(-1)
+    assert.equal(last.content, 'reply here')
+    assert.equal(last.parentId, 'm-0')
+    assert.deepEqual(last.mentions, ['someone@example.com'])
+    assert.equal(last.anchor, 'L12')
+    const bad = await jsonRequest(srv.port, 'POST', `/v1/tasks/${created.sessionId}/message`, {
+      content: 'x', mentions: Array.from({ length: 21 }, (_, i) => `u${i}@x.com`),
+    })
+    assert.equal(bad.status, 400)
+  } finally {
+    await srv.close()
+    cleanup(dir)
+  }
+})

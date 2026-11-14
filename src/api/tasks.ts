@@ -277,7 +277,7 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
   // lifecycle (no awaiting_input gate — allowed in any non-terminal state).
   // Contract: store raw, escape at render — the thread path must never use
   // dangerouslySetInnerHTML (stored XSS would fire for every viewer).
-  app.post<{ Params: { sessionId: string }; Body: { content: string } }>(
+  app.post<{ Params: { sessionId: string }; Body: { content: string; parentId?: string; mentions?: string[]; anchor?: string } }>(
     '/tasks/:sessionId/message',
     {
       schema: {
@@ -287,6 +287,9 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
           required: ['content'],
           properties: {
             content: { type: 'string', minLength: 1, maxLength: 10000 },
+            parentId: { type: 'string', minLength: 1, maxLength: 200 },
+            mentions: { type: 'array', maxItems: 20, items: { type: 'string', minLength: 1, maxLength: 254 } },
+            anchor: { type: 'string', minLength: 1, maxLength: 500 },
           },
         },
       },
@@ -294,7 +297,8 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
     async (request, reply) => {
       const tenantCtx = tenantBackendForRequest(request, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
-      // shared with the WS room channel — the route only adapts codes to HTTP
+      // shared with the WS room channel — the route only adapts codes to HTTP.
+      // authorId is server-stamped from identity, never client-supplied.
       const result = await appendChatMessage(
         {
           backend: tenantCtx.backend,
@@ -303,7 +307,13 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskDeps): void {
           broadcaster: deps.sse.broadcaster,
         },
         request.params.sessionId,
-        request.body.content
+        request.body.content,
+        {
+          ...(request.auth?.userId !== undefined ? { authorId: request.auth.userId } : {}),
+          ...(request.body.parentId !== undefined ? { parentId: request.body.parentId } : {}),
+          ...(request.body.mentions !== undefined ? { mentions: request.body.mentions } : {}),
+          ...(request.body.anchor !== undefined ? { anchor: request.body.anchor } : {}),
+        }
       )
       if (result.code !== 201) return reply.code(result.code).send({ ok: false, error: result.error })
       return reply.code(201).send({ ok: true, session: sessionToWire(result.session) })
