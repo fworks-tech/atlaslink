@@ -21,17 +21,17 @@ into one session.
 
 ## What is Atlaslink?
 
-Atlaslink is an experimental shared workspace built on **[Agenthood](https://github.com/fworks-tech/agenthood)**, an agent-team runtime: Agenthood is the core/runtime agents run on; Atlaslink is the shared room where people follow, steer, and decide that work. It turns a black-box pipeline into a live, visual flow you can read, debug, and steer — and it gives you a REST + event surface to drive everything programmatically.
+Atlaslink is an experimental shared workspace built on **[Agenthood](https://github.com/fworks-tech/agenthood)**, an agent-team runtime: Agenthood is the core/runtime agents run on; Atlaslink is the shared room where people follow, steer, and decide that work. It turns a black-box pipeline into a live, visual flow you can read, debug, and steer. It also gives you a REST + event surface to drive everything programmatically.
 
 ## Features
 
-- **Live diagram-flow composer** — drag agents onto a canvas, wire them together, and watch the execution unfold in real time. The full DAG renders as a society of nodes: reasoning hexagons, tool parallelograms, diamond decisions, and terminal states.
-- **Real-time event bridge** — every agent decision and action streams to the browser over Server-Sent Events with `Last-Event-ID` resume, gap detection, and 15-second pings.
-- **Human-in-the-loop collaboration** — agents ask single questions via `ask_human`, park the session, and resume from your reply. A per-session WebSocket room lets multiple people observe and steer together.
-- **Task, project & GraphQL APIs** — create, list, cancel, reply to, and steer sessions over a bearer-gated REST surface, plus a federated GraphQL plane (`session`, `task`, `insights`, `files`) behind the same auth. Projects group sessions; the event feed is addressable per session or per project.
-- **Event-sourced sessions** — every state change is appended to a durable event store: embedded SQLite by default, Postgres in production (same SQL on both). Sessions survive deploys and cold starts.
-- **LLM spend by agent and day** — per-session provider and model picks, fast-failed when unknown. Spend is rolled up per agent, per day.
-- **Auth & tenancy** — JWT sessions (7-day expiry), SHA-256-hashed API keys, tenant isolation, fail-closed non-loopback binding, and per-user rate limiting.
+- **Live diagram-flow composer**: drag agents onto a canvas, wire them together, and watch the execution unfold in real time. The full DAG renders as a society of nodes: reasoning hexagons, tool parallelograms, diamond decisions, and terminal states.
+- **Real-time event bridge**: every agent decision and action streams to the browser over Server-Sent Events with `Last-Event-ID` resume, gap detection, and 15-second pings.
+- **Human-in-the-loop collaboration**: agents ask single questions via `ask_human`, park the session, and resume from your reply. A per-session WebSocket room lets multiple people observe and steer together.
+- **Task, project & GraphQL APIs**: create, list, cancel, reply to, and steer sessions over a bearer-gated REST surface, plus a federated GraphQL plane (`session`, `task`, `insights`, `files`) behind the same auth. Projects group sessions; the event feed is addressable per session or per project.
+- **Event-sourced sessions**: every state change is appended to a durable event store: embedded SQLite by default, Postgres in production (same SQL on both). Sessions survive deploys and cold starts.
+- **LLM spend by agent and day**: per-session provider and model picks, fast-failed when unknown. Spend is rolled up per agent, per day.
+- **Auth & tenancy**: JWT sessions (7-day expiry), SHA-256-hashed API keys, tenant isolation, fail-closed non-loopback binding, and per-user rate limiting.
 
 ## Tech stack
 
@@ -61,7 +61,7 @@ npm --prefix dashboard run dev   # dashboard on :3001 → http://127.0.0.1:3001
 Visit <http://127.0.0.1:3001> and create your first session. Or skip local setup and open the hosted dashboard at **[atlas.flabs.tech](https://atlas.flabs.tech)**.
 
 > **No LLM key?** `OPENCODE_API_KEY` is the only configured provider
-> (`.agenthood/config.json`). Add another provider entry there — Ollama needs no
+> (`.agenthood/config.json`). Add another provider entry there. Ollama needs no
 > key and runs fully offline.
 
 ## API reference
@@ -94,7 +94,7 @@ All API routes are prefixed with `/v1`; `GET /health` is the only unprefixed rou
 
 Full spec: [`docs/spec/m3-task-api.md`](docs/spec/m3-task-api.md) · [`docs/spec/auth-api.md`](docs/spec/auth-api.md) · [`docs/spec/m5-federation-workspace.md`](docs/spec/m5-federation-workspace.md) · [OpenAPI](docs/api/openapi.yaml)
 
-GraphQL (`/v1/graphql/session`, `/v1/graphql/task`, `/v1/graphql/insights`, `/v1/graphql/files`) federates over the same daemon via the Cosmo router — same bearer auth, `Authorization` propagated to subgraphs.
+GraphQL (`/v1/graphql/session`, `/v1/graphql/task`, `/v1/graphql/insights`, `/v1/graphql/files`) federates over the same daemon via the Cosmo router. Same bearer auth, `Authorization` propagated to subgraphs.
 
 ### Example
 
@@ -115,9 +115,9 @@ curl -N http://127.0.0.1:3000/v1/events \
 Atlaslink enforces a fail-closed auth model:
 
 - **JWT sessions** (HS256, 7-day expiry) for dashboard users; **API keys** (`ak_`-prefixed, SHA-256 hashed) for programmatic access.
-- **Tenant scoping** — every request is scoped by `request.auth.tenantId`; the `x-tenant-id` header is rejected when auth is present. Self-service signups all land in `default`, so accounts on one deployment see each other's data — set `ATLASLINK_ALLOW_SIGNUP=false` until per-user tenants land (ADR-008).
-- **Fail-closed binding** — the daemon refuses to bind a non-loopback address without auth configured.
-- **Rate limiting** — 100 requests per minute, keyed by user ID or IP.
+- **Tenant scoping**: every request is scoped by `request.auth.tenantId`; the `x-tenant-id` header is rejected when auth is present. Self-service signups all land in `default`, so accounts on one deployment see each other's data. Set `ATLASLINK_ALLOW_SIGNUP=false` until per-user tenants land (ADR-008).
+- **Fail-closed binding**: the daemon refuses to bind a non-loopback address without auth configured.
+- **Rate limiting**: 100 requests per minute, keyed by user ID or IP.
 - **Secret scanning** via Gitleaks in CI; no secrets in code or logs.
 
 Details: [ADR-008](docs/adr/ADR-008-auth-and-tenancy.md)
@@ -157,13 +157,13 @@ guide is [`docs/archive/deploy-oracle-free-tier.md`](docs/archive/deploy-oracle-
 
 | Milestone | Scope | Status |
 |-----------|-------|--------|
-| **M1 — Daemon Core** | Long-running Fastify server, per-task `ApplicationContext`, `RunEventBus` subscription | Shipped |
-| **M2 — Event Bridge** | NDJSON `EventLogStore` → `EventBroadcaster` → SSE with resume, gap detection, 15 s ping | Shipped |
-| **M3 — Task API** | Bearer-gated `POST/GET /tasks`, cancel, per-session/project SSE, Postgres-backed | Shipped — [spec](docs/spec/m3-task-api.md) |
-| **M4 — Live Dashboard** | `SocietyDiagram` (`chain\|fanout\|full` DAG), `SessionInspector`, `awaiting_input` ↔ `user_reply` loop, deep-links, composer overlay | Shipped — [tasks](docs/tasks/m4-live-dashboard.md) |
-| **M5 — HITL Room** | Single-question `ask_human` → park → reply → linked resume, WS room, steer/interrupt, approval inbox | Shipped — [spec](docs/spec/m5-hitl-room.md) |
-| **P0 — Auth & Tenancy** | JWT sessions + `ak_` API keys, per-tenant isolation, fail-closed bind | Shipped — [ADR-008](docs/adr/ADR-008-auth-and-tenancy.md) |
-| **M5 — Federation & Workspace** | Cosmo router + `session/task/insights/files` subgraphs, git-backed workspaces | Shipped — [spec](docs/spec/m5-federation-workspace.md) |
+| **M1: Daemon Core** | Long-running Fastify server, per-task `ApplicationContext`, `RunEventBus` subscription | Shipped |
+| **M2: Event Bridge** | NDJSON `EventLogStore` → `EventBroadcaster` → SSE with resume, gap detection, 15 s ping | Shipped |
+| **M3: Task API** | Bearer-gated `POST/GET /tasks`, cancel, per-session/project SSE, Postgres-backed | Shipped: [spec](docs/spec/m3-task-api.md) |
+| **M4: Live Dashboard** | `SocietyDiagram` (`chain\|fanout\|full` DAG), `SessionInspector`, `awaiting_input` ↔ `user_reply` loop, deep-links, composer overlay | Shipped: [tasks](docs/tasks/m4-live-dashboard.md) |
+| **M5: HITL Room** | Single-question `ask_human` → park → reply → linked resume, WS room, steer/interrupt, approval inbox | Shipped: [spec](docs/spec/m5-hitl-room.md) |
+| **P0: Auth & Tenancy** | JWT sessions + `ak_` API keys, per-tenant isolation, fail-closed bind | Shipped: [ADR-008](docs/adr/ADR-008-auth-and-tenancy.md) |
+| **M5: Federation & Workspace** | Cosmo router + `session/task/insights/files` subgraphs, git-backed workspaces | Shipped: [spec](docs/spec/m5-federation-workspace.md) |
 
 Milestones M1–M5, Auth and Federation are shipped on `main`. The backlog focuses on analytics and session export.
 
