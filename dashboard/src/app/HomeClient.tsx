@@ -242,9 +242,9 @@ function HomeInner() {
   // list page, so fetch the single row instead of leaving context empty.
   // hydrateSession records failures in the sessions error state, which the
   // banner below renders while no session is selected.
-  // A 404 means the shared id no longer exists (Render's ephemeral disk
-  // wipes SQLite on every restart) — the page must say so once instead of
-  // letting hydrate failures bounce generic reload hints forever.
+  // A 404 means the shared id no longer exists (demo storage resets on
+  // restart) — the page must say so once instead of letting hydrate failures
+  // bounce generic reload hints forever.
   const [dismissedSessionsError, setDismissedSessionsError] = useState(false);
   const [sharedSessionGoneId, setSharedSessionGoneId] = useState<string | null>(null);
   useEffect(() => {
@@ -555,7 +555,7 @@ function HomeInner() {
             ) : sessionsError && !selectedSession && !dismissedSessionsError ? (
               <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
                 <span className="flex flex-wrap items-center gap-2">
-                  {sessionsError.includes("Server is starting") ? "Backend is waking. Retrying…" : `Couldn't load sessions (${sessionsError}).`}
+                  {`Couldn't load sessions (${sessionsError}).`}
                 </span>
                 <button type="button" onClick={() => void refreshSessions()} className="underline hover:text-danger">Retry</button>
                 <button type="button" onClick={() => setDismissedSessionsError(true)} className="ml-2 underline hover:text-green-400">Dismiss</button>

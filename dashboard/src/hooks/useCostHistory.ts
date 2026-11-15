@@ -6,9 +6,9 @@ import { getCostHistory, type CostBucket } from "@/lib/api";
 const POLL_INTERVAL_MS = 5000;
 
 /**
- * Daily spend buckets from GET /cost/history. Same cold-start contract as
- * useSessions: the Render free tier answers wake-class failures while
- * spinning, so retry those instead of dead-ending on the first blip. Polls
+ * Daily spend buckets from GET /cost/history. Same retry contract as
+ * useSessions: transient edge failures are retried instead of dead-ending
+ * on the first blip. Polls
  * every 5s while the tab is visible so a session finishing in another window
  * surfaces without a reload; a failed poll keeps the last good data instead
  * of blanking the chart.

@@ -8,7 +8,6 @@ import "./globals.css";
 import theme from "../../mantine-theme.mjs";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import { BackendWakingOverlay } from "@/components/BackendWakingOverlay";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // display face for the Atlas identity — hero, watermark, section titles
@@ -56,7 +55,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               </main>
               <Footer />
             </div>
-            <BackendWakingOverlay />
           </ErrorBoundary>
         </MantineProvider>
         <Analytics />

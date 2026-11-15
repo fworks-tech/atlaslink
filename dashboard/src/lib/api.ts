@@ -56,10 +56,10 @@ export async function fetchJSON<T>(
   try {
     res = await fetch(`${API_BASE}${path}`, { ...rest, headers, signal });
   } catch (err) {
-    // only our own timeout means "backend unreachable or waking" — a caller
+    // only our own timeout means "backend unreachable" — a caller
     // abort or a network failure propagates unchanged for the caller to handle
     if (err instanceof DOMException && err.name === "TimeoutError") {
-      throw new ApiError(504, "Server is starting — please wait");
+      throw new ApiError(504, "daemon request timed out");
     }
     throw err;
   }
