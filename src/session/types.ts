@@ -141,6 +141,26 @@ export interface NotificationInput {
   excerpt: string
 }
 
+/** Tenant-owned custom agent: a persona overlay executed as a built-in base member. */
+export interface CustomAgent {
+  name: string
+  displayName: string
+  persona: string
+  baseMember: string
+  provider?: string
+  model?: string
+  tenantId?: string
+}
+
+export interface CustomAgentInput {
+  name: string
+  displayName?: string
+  persona: string
+  baseMember: string
+  provider?: string
+  model?: string
+}
+
 export class VersionConflictError extends Error {
   constructor(
     public readonly sessionId: string,

@@ -10,6 +10,7 @@ test('workspace module exposes only the safe surface', () => {
     'ensureWorkspace',
     'isSafeRepoPath',
     'listAt',
+    'logCommits',
     'readAt',
     'withWorkspaceLock',
     'workspacePathFor',

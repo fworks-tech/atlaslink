@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createTask, getProviders, ApiError } from "@/lib/api";
+import { createTask, getProviders, getAgents, ApiError } from "@/lib/api";
 import type { ProviderChoice } from "@/lib/api";
 import type { Project } from "@/lib/types";
 import FadeIn from "./FadeIn";
@@ -38,6 +38,34 @@ export function SessionComposer({
   const [toast, setToast] = useState<{ message: string; kind: "success" | "error" } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [cycleIdx, setCycleIdx] = useState(0);
+  // Agent pick (#C): canonical built-ins plus tenant customs from /v1/agents;
+  // a failed catalog keeps the mediator default — the server validates names.
+  const [agent, setAgent] = useState("the-mediator");
+  const [agentOptions, setAgentOptions] = useState<Array<{ name: string; custom: boolean }>>([
+    { name: "the-mediator", custom: false },
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getAgents()
+      .then((res) => {
+        if (cancelled) return;
+        const options = [
+          ...res.builtIn.map((name) => ({ name, custom: false })),
+          ...res.agents.map((a) => ({ name: a.name, custom: true })),
+        ];
+        if (options.length > 0) {
+          setAgentOptions(options);
+          if (!options.some((o) => o.name === "the-mediator")) setAgent(options[0].name);
+        }
+      })
+      .catch(() => {
+        // catalog down — mediator default still submits; server has final say
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // Provider pick (#145): options from the daemon's roster, model prefilled
   // from the selected provider's default and reset when the pick changes.
   // Bad provider input 400s server-side too — this is just a nicer snapshot.
@@ -101,7 +129,7 @@ export function SessionComposer({
     setError(null);
     try {
       const res = await createTask({
-        member: "the-mediator",
+        member: agent,
         prompt: trimmed,
         ...(projectId ? { projectId } : {}),
         ...(provider ? { tweaks: { provider, member: model ? { model } : {} } } : {}),
@@ -163,6 +191,22 @@ export function SessionComposer({
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs text-muted">
+                agent
+                <select
+                  aria-label="agent"
+                  value={agent}
+                  onChange={(e) => setAgent(e.target.value)}
+                  className="min-h-[44px] max-w-44 rounded-lg border border-line bg-raised px-2.5 py-1.5 text-base text-foreground outline-none focus:border-accent/50 sm:text-sm"
+                >
+                  {agentOptions.map((o) => (
+                    <option key={o.name} value={o.name}>
+                      {o.name}
+                      {o.custom ? " ✦" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {providers && providers.length > 0 ? (
                 <>
                   <label className="flex items-center gap-1.5 text-xs text-muted">

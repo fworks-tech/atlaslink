@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/re
 import { SessionComposer } from "./SessionComposer";
 
 const getProvidersMock = vi.fn();
+const getAgentsMock = vi.fn();
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
@@ -10,6 +11,7 @@ vi.mock("@/lib/api", async () => {
     ...actual,
     createTask: vi.fn(async () => ({ ok: true, session: { sessionId: "ses-123", correlationId: "cor-1", status: "queued", version: 1, task: { member: "the-mediator", prompt: "hi" } } })),
     getProviders: (...args: unknown[]) => getProvidersMock(...args),
+    getAgents: (...args: unknown[]) => getAgentsMock(...args),
   };
 });
 
@@ -26,6 +28,11 @@ const PROVIDERS = {
 
 beforeEach(() => {
   getProvidersMock.mockResolvedValue(PROVIDERS);
+  getAgentsMock.mockResolvedValue({
+    ok: true,
+    builtIn: ["the-mediator", "the-builder"],
+    agents: [{ name: "reviewer", displayName: "reviewer", persona: "you review", baseMember: "the-reviewer" }],
+  });
 });
 
 afterEach(() => {
@@ -94,6 +101,21 @@ describe("SessionComposer provider selector", () => {
     const select = await screen.findByLabelText("provider");
     expect(select.className).toMatch(/min-h-\[44px\]/);
     expect((screen.getByLabelText("model") as HTMLElement).className).toMatch(/min-h-\[44px\]/);
+  });
+
+  it("lists built-ins plus tenant customs and submits the chosen member", async () => {
+    const projects = [{ id: "proj-1", name: "alpha", createdAt: new Date().toISOString() }];
+    render(<SessionComposer projects={projects} onCreateSession={vi.fn()} />);
+    const agent = await screen.findByLabelText("agent");
+    const options = Array.from((agent as HTMLSelectElement).options).map((o) => o.textContent);
+    expect(options).toEqual(["the-mediator", "the-builder", "reviewer ✦"]);
+    fireEvent.change(agent, { target: { value: "reviewer" } });
+    fireEvent.change(screen.getByLabelText("project"), { target: { value: "proj-1" } });
+    fireEvent.change(screen.getByPlaceholderText(/review my pull request/i), { target: { value: "review this" } });
+    fireEvent.click(screen.getByRole("button", { name: /ask atlas/i }));
+    await waitFor(() =>
+      expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ member: "reviewer", prompt: "review this" })),
+    );
   });
 });
 

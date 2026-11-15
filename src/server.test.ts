@@ -9,7 +9,7 @@ import { createAppServer, asAskHumanQuestion } from './server'
 import { ASK_HUMAN_MAX_CONTEXT_LENGTH, ASK_HUMAN_MAX_QUESTION_LENGTH } from 'agenthood/dist/tools/human/AskHumanTool.js'
 import { TaskRegistry } from './tasks/taskRegistry'
 import { log as logger } from './log'
-import { tmpDataDir, runEnv, startServer, collectStream, cleanup } from './test/serverHarness'
+import { tmpDataDir, runEnv, startServer, jsonRequest, collectStream, cleanup } from './test/serverHarness'
 
 test('formatSse emits id/event/data framing per spec §4 with newline terminator', () => {
   const frame = formatSse(runEnv(12, { type: 'tool.called', step: 1, name: 'read_file', args: {} }))
@@ -171,6 +171,22 @@ test('POST /runs rejects non-string member or prompt with the error envelope', a
     const parsed = JSON.parse(res.body)
     assert.equal(parsed.ok, false)
     assert.equal(typeof parsed.error, 'string')
+    await srv.close()
+  } finally {
+    cleanup(dir)
+  }
+})
+
+test('POST /runs rejects unknown members at submit, accepts custom agents', async () => {
+  const dir = tmpDataDir()
+  try {
+    const srv = await startServer(dir)
+    const unknown = await jsonRequest(srv.port, 'POST', '/v1/runs', { member: 'nobody', prompt: 'hi' })
+    assert.equal(unknown.status, 400)
+    assert.match(JSON.parse(unknown.body).error, /unknown member/)
+    await srv.backend.createAgent({ name: 'reviewer', persona: 'you review', baseMember: 'the-reviewer' })
+    const custom = await jsonRequest(srv.port, 'POST', '/v1/runs', { member: 'reviewer', prompt: 'hi' })
+    assert.equal(custom.status, 202)
     await srv.close()
   } finally {
     cleanup(dir)

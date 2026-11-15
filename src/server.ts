@@ -27,6 +27,8 @@ import { VersionConflictError } from './session/types'
 import { registerTaskRoutes } from './api/tasks'
 import { registerCostRoutes } from './api/cost'
 import { registerProjectRoutes } from './api/projects'
+import { registerAgentRoutes } from './api/agents'
+import { registerWorkspaceRoutes } from './api/workspace'
 import { registerNotificationRoutes } from './api/notifications'
 import type { MentionDirectory } from './api/notify'
 import { registerRoomRoutes } from './api/room'
@@ -42,6 +44,7 @@ import rateLimit from '@fastify/rate-limit'
 import websocket from '@fastify/websocket'
 import cors from '@fastify/cors'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
+import { getMemberNames } from 'agenthood'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
 import { ASK_HUMAN_MAX_CONTEXT_LENGTH, ASK_HUMAN_MAX_QUESTION_LENGTH } from 'agenthood/dist/tools/human/AskHumanTool.js'
 
@@ -257,6 +260,9 @@ export async function createAppServer(params: {
     // --- M4 Project API: project-scoped session workspace ---
     registerProjectRoutes(api, { backend, authStore: params.authStore ?? null })
 
+    // --- Phase C custom agents: tenant-owned persona overlays ---
+    registerAgentRoutes(api, { backend })
+
     // --- Auth key management (requires authentication) ---
     if (params.authStore) {
       registerAuthKeyRoutes(api, params.authStore)
@@ -282,6 +288,13 @@ export async function createAppServer(params: {
         const { member, prompt } = request.body as { member: string; prompt: string }
         const { tenantId, error } = resolveTenantIdFromAuth(request.auth?.tenantId, request.headers)
         if (error) return reply.code(400).send({ ok: false, error })
+        // same member gate as session creation: unknown names 400 here, not at runtime.
+        // getAgent throws on infra failure (500 via Fastify) and returns null
+        // for unknown names (400 below) — never conflate the two.
+        if (!getMemberNames().includes(member)) {
+          const agent = await backendForTenant(backend, tenantId).getAgent(member)
+          if (!agent) return reply.code(400).send({ ok: false, error: `unknown member '${member}'` })
+        }
         const session = registry.create({ member, prompt, tenantId })
         queue.declareSession(session)
         logger.info('session delegated', { sessionId: session.id, correlationId: session.correlationId, member })
@@ -345,6 +358,9 @@ export async function createAppServer(params: {
 
     // --- M5 files subgraph (#296): git workspace list/read/diff/commit ---
     registerFilesSubgraph(api, { backend, workspaceRoot: workspaceRootFor(log.dataDir) })
+
+    // --- Phase D workspace REST: same canvas, REST shape for the dashboard ---
+    registerWorkspaceRoutes(api, { backend, workspaceRoot: workspaceRootFor(log.dataDir) })
   }, { prefix: '/v1' })
 
   app.setNotFoundHandler((_request, reply) => {
@@ -437,6 +453,12 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
           await runSession({
             registry,
             session,
+            // custom agents execute as their base member — the persona already
+            // rides the stored prompt, so the registry/store keep the custom
+            // name for display while the runtime sees a canonical member.
+            // A throwing lookup fails the run loudly; falling back to the
+            // custom name would only misreport an infra failure as unknown member.
+            resolveMember: async (name) => (await costBackend.getAgent(name))?.baseMember ?? name,
             config: resolveSessionConfig(config.agenthood, session.task),
             onEvent: (event: RunEvent) => {
               broadcaster.emit({ eventId: 0, ...event, tenantId })

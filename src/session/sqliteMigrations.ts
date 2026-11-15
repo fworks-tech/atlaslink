@@ -208,4 +208,23 @@ export const sqliteMigrations: Migration[] = [
     `,
     down: `DROP TABLE notifications;`,
   },
+  {
+    version: 10,
+    name: 'agents',
+    up: `
+      CREATE TABLE agents (
+        tenant_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        display_name TEXT NOT NULL DEFAULT '',
+        persona TEXT NOT NULL DEFAULT '',
+        base_member TEXT NOT NULL DEFAULT '',
+        provider TEXT NULL,
+        model TEXT NULL,
+        created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+        updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+        PRIMARY KEY (tenant_id, name)
+      );
+    `,
+    down: `DROP TABLE agents;`,
+  },
 ]

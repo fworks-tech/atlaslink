@@ -42,6 +42,8 @@ export async function runSession(params: {
   onEvent?: (event: RunEvent) => void
   checkpointStore?: AtlasCheckpointStore
   resume?: { checkpointId: string; reply: string }
+  /** Map a custom agent name to its canonical base member before the run. */
+  resolveMember?: (memberName: string) => Promise<string>
   createApp?: (params: {
     config: LLMConfig
     correlationId: string
@@ -79,10 +81,13 @@ export async function runSession(params: {
         })
 
     unsubscribe = app.events.subscribe(params.onEvent ?? (() => {}))
+    // custom agents run as their base member; the registry session keeps the
+    // custom name, so only the runner call is remapped — never the record
+    const runMember = params.resolveMember ? await params.resolveMember(params.session.task.member) : params.session.task.member
     // settled values, never rejections: the raw promise keeps exactly one
     // consumer (this chain), so the post-abort orphan cannot go unhandled
     const run = app.runner
-      .runMemberTask(params.session.task.member, params.session.task.prompt, params.config, resume)
+      .runMemberTask(runMember, params.session.task.prompt, params.config, resume)
       .then(
         (res) => ({ aborted: false as const, ok: true as const, res }),
         (err) => ({ aborted: false as const, ok: false as const, err }),

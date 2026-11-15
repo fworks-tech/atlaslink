@@ -84,3 +84,18 @@ export interface MemberDirectoryEntry {
   email: string;
   displayName: string;
 }
+
+export interface CustomAgent {
+  name: string;
+  displayName: string;
+  persona: string;
+  baseMember: string;
+  provider?: string;
+  model?: string;
+}
+
+export interface AgentListResponse {
+  ok: boolean;
+  builtIn: string[];
+  agents: CustomAgent[];
+}

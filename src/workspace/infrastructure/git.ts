@@ -273,3 +273,27 @@ export async function diff(repo: string, from: string, to: string): Promise<stri
   safeRev(to)
   return await git(repo, ['diff', from, to], { raw: true })
 }
+
+/**
+ * Recent history for the workspace panel — newest first, capped at 100.
+ * Returns `[]` on a fresh workspace (unborn HEAD), never throws for that.
+ *
+ * @param repo - absolute workspace path
+ * @param limit - max entries (1..100, defaults 20)
+ */
+export async function logCommits(repo: string, limit: number): Promise<Array<{ sha: string; at: string; message: string }>> {
+  const n = Math.max(1, Math.min(Math.floor(limit) || 20, 100))
+  try {
+    const out = await git(repo, ['log', `-${n}`, '--format=%H%x1f%ct%x1f%s'], { raw: true })
+    return out
+      .split('\n')
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        const [sha = '', at = '', message = ''] = line.split('')
+        const epoch = Number(at)
+        return { sha, at: Number.isFinite(epoch) ? new Date(epoch * 1000).toISOString() : '', message }
+      })
+  } catch {
+    return []
+  }
+}

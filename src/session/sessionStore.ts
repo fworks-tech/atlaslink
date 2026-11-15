@@ -1,4 +1,4 @@
-import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, ProjectInvite, ProjectMember, ProjectRole, Notification, NotificationInput } from './types'
+import type { Session, SessionEvent, SessionDelta, SessionSnapshot, Project, ProjectInvite, ProjectMember, ProjectRole, Notification, NotificationInput, CustomAgent, CustomAgentInput } from './types'
 import { StreamIntegrityError, VersionConflictError, firstQuestionLabel } from './types'
 import type { SessionBackend, SessionFilter, SessionList, CostUsageRow, DailyCostFilter } from './sessionBackend'
 import { deepFreeze } from './deepFreeze'
@@ -24,6 +24,7 @@ interface SharedStore {
   projectInvites: Map<string, ProjectInvite>
   projectInvitesByHash: Map<string, ProjectInvite>
   notifications: Map<string, Notification>
+  agents: Map<string, CustomAgent>
   checkpoints: Map<string, { sessionId: string; rows: CheckpointRow[] }>
   costUsage: Map<string, CostUsageRow & { tenant: string }>
 }
@@ -190,6 +191,7 @@ export class SessionStore implements SessionBackend {
   private readonly _invites: Map<string, ProjectInvite>
   private readonly _invitesByHash: Map<string, ProjectInvite>
   private readonly _notifications: Map<string, Notification>
+  private readonly _agents: Map<string, CustomAgent>
   private readonly _checkpoints: Map<string, { sessionId: string; rows: CheckpointRow[] }>
   private readonly _costUsage: Map<string, CostUsageRow & { tenant: string }>
   private readonly _tenantId: string
@@ -205,6 +207,7 @@ export class SessionStore implements SessionBackend {
       this._invites = shared.projectInvites
       this._invitesByHash = shared.projectInvitesByHash
       this._notifications = shared.notifications
+      this._agents = shared.agents
       this._checkpoints = shared.checkpoints
       this._costUsage = shared.costUsage
     } else {
@@ -216,6 +219,7 @@ export class SessionStore implements SessionBackend {
       this._invites = new Map<string, ProjectInvite>()
       this._invitesByHash = new Map<string, ProjectInvite>()
       this._notifications = new Map<string, Notification>()
+      this._agents = new Map<string, CustomAgent>()
       this._checkpoints = new Map<string, { sessionId: string; rows: CheckpointRow[] }>()
       this._costUsage = new Map<string, CostUsageRow & { tenant: string }>()
     }
@@ -232,6 +236,7 @@ export class SessionStore implements SessionBackend {
       projectInvites: this._invites,
       projectInvitesByHash: this._invitesByHash,
       notifications: this._notifications,
+      agents: this._agents,
       checkpoints: this._checkpoints,
       costUsage: this._costUsage,
     })
@@ -487,6 +492,52 @@ export class SessionStore implements SessionBackend {
     // idempotent: re-reading an owned row stays true, never throws
     if (row.readAt === null) row.readAt = new Date().toISOString()
     return true
+  }
+
+  async listAgents(): Promise<CustomAgent[]> {
+    return [...this._agents.values()]
+      .filter((a) => a.tenantId === this._tenantId)
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  async getAgent(name: string): Promise<CustomAgent | null> {
+    return this._agents.get(`${this._tenantId}:${name}`) ?? null
+  }
+
+  async createAgent(input: CustomAgentInput): Promise<CustomAgent> {
+    const key = `${this._tenantId}:${input.name}`
+    if (this._agents.has(key)) throw new Error(`agent '${input.name}' already exists`)
+    const row: CustomAgent = {
+      name: input.name,
+      displayName: input.displayName ?? input.name,
+      persona: input.persona,
+      baseMember: input.baseMember,
+      ...(input.provider !== undefined ? { provider: input.provider } : {}),
+      ...(input.model !== undefined ? { model: input.model } : {}),
+      tenantId: this._tenantId,
+    }
+    this._agents.set(key, row)
+    return row
+  }
+
+  async updateAgent(name: string, patch: { displayName?: string; persona?: string; baseMember?: string; provider?: string; model?: string }): Promise<CustomAgent | null> {
+    const key = `${this._tenantId}:${name}`
+    const row = this._agents.get(key)
+    if (!row) return null
+    const next: CustomAgent = {
+      ...row,
+      ...(patch.displayName !== undefined ? { displayName: patch.displayName } : {}),
+      ...(patch.persona !== undefined ? { persona: patch.persona } : {}),
+      ...(patch.baseMember !== undefined ? { baseMember: patch.baseMember } : {}),
+      ...(patch.provider !== undefined ? { provider: patch.provider } : {}),
+      ...(patch.model !== undefined ? { model: patch.model } : {}),
+    }
+    this._agents.set(key, next)
+    return next
+  }
+
+  async deleteAgent(name: string): Promise<boolean> {
+    return this._agents.delete(`${this._tenantId}:${name}`)
   }
 
   async deleteSession(sessionId: string): Promise<void> {
