@@ -1,4 +1,4 @@
-import type { Session, TaskListResponse, Project, ProjectListResponse, MemberDirectoryEntry, NotificationListResponse, AgentListResponse } from "./types";
+import type { Session, TaskListResponse, Project, ProjectListResponse, MemberDirectoryEntry, NotificationListResponse, AgentListResponse, CustomAgent } from "./types";
 import { loadAuth, clearAuth, saveAuth } from "./auth";
 
 export class ApiError extends Error {
@@ -286,6 +286,52 @@ export function getMembers(): Promise<{ ok: boolean; members: MemberDirectoryEnt
 /** Agent catalog: canonical built-ins plus tenant-owned custom personas. */
 export function getAgents(): Promise<AgentListResponse> {
   return fetchJSON<AgentListResponse>("/agents");
+}
+
+export interface AgentInput {
+  name: string;
+  displayName?: string;
+  persona: string;
+  baseMember: string;
+  provider?: string;
+  model?: string;
+}
+
+export interface AgentResponse {
+  ok: boolean;
+  agent: CustomAgent;
+}
+
+export function createAgent(input: AgentInput): Promise<AgentResponse> {
+  return fetchJSON<AgentResponse>("/agents", { method: "POST", body: JSON.stringify(input) });
+}
+
+export function updateAgent(name: string, patch: Partial<Omit<AgentInput, "name">>): Promise<AgentResponse> {
+  return fetchJSON<AgentResponse>(`/agents/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function deleteAgent(name: string): Promise<{ ok: boolean }> {
+  return fetchJSON<{ ok: boolean }>(`/agents/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+const AGENTS_CHANGED_EVENT = "atlaslink:agents-changed";
+
+// The composer picker and the manager both read /agents; a mutation in one
+// must refresh the other without a page reload.
+export function notifyAgentsChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(AGENTS_CHANGED_EVENT));
+}
+
+export function subscribeAgentsChanged(listener: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(AGENTS_CHANGED_EVENT, listener);
+  return () => {
+    window.removeEventListener(AGENTS_CHANGED_EVENT, listener);
+  };
 }
 
 export interface WorkspaceCommit {

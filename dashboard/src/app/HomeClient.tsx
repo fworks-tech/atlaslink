@@ -22,6 +22,7 @@ import { clearLastSession, isDiagramMode, loadDiagramMode, loadLastSession, save
 import { replyToSession, steerSession, cancelSession, createTask, askFollowup, getMembers, ApiError } from "@/lib/api";
 import { ChatComposer, type ReplyTarget } from "@/components/ChatComposer";
 import { WorkspacePanel } from "@/components/WorkspacePanel";
+import { AgentManager } from "@/components/AgentManager";
 import type { MemberDirectoryEntry } from "@/lib/types";
 import { useRoomPresence } from "@/hooks/useRoomPresence";
 import { useDeliveryReceipts } from "@/hooks/useDeliveryReceipts";
@@ -649,6 +650,11 @@ function HomeInner() {
                 </ErrorBoundary>
               </div>
             ) : null}
+            <div className="mt-6">
+              <ErrorBoundary>
+                <AgentManager />
+              </ErrorBoundary>
+            </div>
           </div>
         ) : (
           <div className="px-4 pt-4 sm:px-8 sm:pt-8">
@@ -658,6 +664,11 @@ function HomeInner() {
             <ErrorBoundary>
               <SessionComposer projects={projects} onCreateSession={handleSelectSession} />
             </ErrorBoundary>
+            <div className="mx-auto mt-6 max-w-2xl">
+              <ErrorBoundary>
+                <AgentManager />
+              </ErrorBoundary>
+            </div>
           </div>
         )}
       </main>
