@@ -13,6 +13,9 @@ interface WorkspaceDeps {
 const MAX_FILE_BYTES = 256 * 1024
 const MAX_DIFF_BYTES = 512 * 1024
 
+/** git's well-known empty-tree object — the only valid "beginning of history" rev. */
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+
 /**
  * Workspace REST surface (Phase D): the project git repo as the shared
  * human+agent canvas — file list/read, diffs, history, and attributed
@@ -85,7 +88,9 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: WorkspaceDep
       try {
         const resolved = await repoForProject(request.params.projectId, tenantCtx.backend)
         if ('code' in resolved) return reply.code(resolved.code).send({ ok: false, error: resolved.error })
-        const text = await diff(resolved.repo, request.query.from ?? 'HEAD~1', request.query.to ?? 'HEAD')
+        // No params diffs the whole tree (EMPTY_TREE..HEAD): HEAD~1-style
+        // revs never reach git — safeRev only allows HEAD or plain hex shas.
+        const text = await diff(resolved.repo, request.query.from ?? EMPTY_TREE, request.query.to ?? 'HEAD')
         if (text.length > MAX_DIFF_BYTES) return reply.code(413).send({ ok: false, error: 'diff too large for inline view' })
         return reply.send({ ok: true, diff: text })
       } catch (err) {
