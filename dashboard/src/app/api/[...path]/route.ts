@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 // Daemon origin, read at runtime (server-side). Dev defaults to the loopback
-// daemon; Vercel sets it to the Render backend URL.
+// daemon; production sets it to the EC2 backend URL.
 const API_URL = process.env.ATLASLINK_API_URL ?? "http://127.0.0.1:3000";
 // Gate token, server-side only — the browser bundle never sees it.
 const API_TOKEN = process.env.ATLASLINK_API_TOKEN;
@@ -70,7 +70,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     });
   } catch (err) {
     if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
-      return NextResponse.json({ ok: false, error: "Server is starting. Please wait." }, { status: 504 });
+      return NextResponse.json({ ok: false, error: "daemon request timed out" }, { status: 504 });
     }
     throw err;
   }
@@ -86,12 +86,12 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
   if (!upstream.ok) {
     console.warn(`[bff] ${req.method} /${path.join("/")} -> ${upstream.status}`);
     // The daemon answers every failure with JSON. A non-JSON failure body can
-    // only come from Render's edge (paused/spinning free-tier service → 404 or
-    // 502 pages) — normalize those into the waking 504 so the client keeps
-    // retrying instead of rendering a dead 404.
+    // only come from the hosting edge (gateway 404 or 502 pages) — normalize
+    // those into a 504 so the client keeps retrying instead of rendering a
+    // dead 404.
     const contentType = upstream.headers.get("content-type") ?? "";
     if (!contentType.includes("application/json")) {
-      return NextResponse.json({ ok: false, error: "Server is starting. Please wait." }, { status: 504 });
+      return NextResponse.json({ ok: false, error: "daemon request timed out" }, { status: 504 });
     }
   }
   // upstream.body streams — SSE frames pass through verbatim instead of buffering

@@ -58,7 +58,7 @@ export function SessionComposer({
           if (def?.model) setModel(def.model);
         }
       } catch {
-        // transient backend hiccups (cold start, proxy blip) must not
+        // transient backend hiccups (restart, proxy blip) must not
         // permanently disable the picker — retry, then fall back silently:
         // the form works with the daemon default without a roster
         if (cancelled) return;

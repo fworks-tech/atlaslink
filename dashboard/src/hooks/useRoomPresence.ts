@@ -34,9 +34,9 @@ export function useRoomPresence(sessionId?: string) {
         const res = await getRoomMembers(sessionId);
         if (!cancelled) setMembers(res.members);
       } catch (err) {
-        // A 404 means the session no longer exists (Render's ephemeral disk
-        // wipes SQLite on every restart) — the dead id would otherwise be
-        // hammered every 5s forever. Only real transport blips keep polling.
+        // A 404 means the session no longer exists (demo storage resets on
+        // restart) — the dead id would otherwise be hammered every 5s
+        // forever. Only real transport blips keep polling.
         if (err instanceof ApiError && err.status === 404 && !cancelled) {
           clearInterval(timer);
           timer = undefined;

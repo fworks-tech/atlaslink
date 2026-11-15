@@ -12,8 +12,8 @@ interface CostTotal {
 const POLL_INTERVAL_MS = 5000;
 
 /**
- * Lifetime rollup from GET /cost. Same cold-start retry contract as
- * useSessions — shares the shape, not the fetcher. Polls every 5s while the
+ * Lifetime rollup from GET /cost. Same retry contract as useSessions —
+ * shares the shape, not the fetcher. Polls every 5s while the
  * tab is visible so a session finishing in another window surfaces without a
  * reload; a failed poll keeps the last good data instead of blanking the UI.
  * Pass { poll: false } when another mounted component already polls the same

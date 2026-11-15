@@ -23,10 +23,9 @@ export function useSessions() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      // Initial load is the deep-link/cold-start path: the Render free tier
-      // answers 404/502 while spinning. The BFF normalizes those to a waking
-      // 504, so retry the whole window (8×2s ≈ backend boot) instead of
-      // dead-ending on the first blip.
+      // Initial load retries the whole window (8×2s) instead of dead-ending
+      // on the first blip: the daemon may be restarting and the BFF
+      // normalizes edge failures to 504.
       for (let attempt = 0; ; ++attempt) {
         try {
           const res = await getTasks();
@@ -38,9 +37,9 @@ export function useSessions() {
         } catch (err) {
           if (cancelled) return;
           setError(err instanceof Error ? err.message : "failed to load sessions");
-          // Retry only wake-class failures: Render's paused edge 404s (BFF
-          // normalizes to 504) and gateway 502/503. A 500 with a JSON body is
-          // a daemon domain error — retrying a real failure just adds noise.
+          // Retry only transient failures: edge 404s (BFF normalizes to 504)
+          // and gateway 502/503. A 500 with a JSON body is a daemon domain
+          // error — retrying a real failure just adds noise.
           const status = (err as { status?: number }).status;
           if (attempt >= 7 || ![404, 502, 503, 504].includes(status ?? 500)) break;
           await new Promise((r) => setTimeout(r, 2000));
