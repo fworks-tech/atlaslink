@@ -11,7 +11,8 @@ import {
 } from "@/lib/api";
 
 // git's well-known empty-tree object — diffing the oldest commit against it
-// shows the initial tree without teaching the server new rev syntax
+// shows the initial tree without teaching the server new rev syntax.
+// Keep in sync with EMPTY_TREE in src/api/workspace.ts.
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 /**
@@ -31,13 +32,17 @@ export function WorkspacePanel({ projectId, sessionId }: { projectId: string; se
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
+  // Single loader for mount and manual refresh; the cancelled check keeps a
+  // slow fetch for a previous project from overwriting the current one.
+  const refresh = useCallback(async (isCancelled: () => boolean = () => false) => {
     try {
       const [f, l] = await Promise.all([listWorkspaceFiles(projectId), logWorkspaceCommits(projectId)]);
+      if (isCancelled()) return;
       setFiles(f.files);
       setCommits(l.commits);
       setError(null);
     } catch (err) {
+      if (isCancelled()) return;
       setError(err instanceof Error ? err.message : "workspace unavailable");
     }
   }, [projectId]);
@@ -45,20 +50,12 @@ export function WorkspacePanel({ projectId, sessionId }: { projectId: string; se
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      try {
-        const [f, l] = await Promise.all([listWorkspaceFiles(projectId), logWorkspaceCommits(projectId)]);
-        if (cancelled) return;
-        setFiles(f.files);
-        setCommits(l.commits);
-        setError(null);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "workspace unavailable");
-      }
+      await refresh(() => cancelled);
     })();
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [refresh]);
 
   const openFile = async (path: string): Promise<void> => {
     setSelectedFile(path);
