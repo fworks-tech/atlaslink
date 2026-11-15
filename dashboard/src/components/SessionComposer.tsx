@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createTask, getProviders, getAgents, ApiError } from "@/lib/api";
+import { createTask, getProviders, getAgents, subscribeAgentsChanged, ApiError } from "@/lib/api";
 import type { ProviderChoice } from "@/lib/api";
 import type { Project } from "@/lib/types";
 import FadeIn from "./FadeIn";
@@ -47,23 +47,29 @@ export function SessionComposer({
 
   useEffect(() => {
     let cancelled = false;
-    void getAgents()
-      .then((res) => {
-        if (cancelled) return;
-        const options = [
-          ...res.builtIn.map((name) => ({ name, custom: false })),
-          ...res.agents.map((a) => ({ name: a.name, custom: true })),
-        ];
-        if (options.length > 0) {
-          setAgentOptions(options);
-          if (!options.some((o) => o.name === "the-mediator")) setAgent(options[0].name);
-        }
-      })
-      .catch(() => {
-        // catalog down — mediator default still submits; server has final say
-      });
+    const load = (): void => {
+      void getAgents()
+        .then((res) => {
+          if (cancelled) return;
+          const options = [
+            ...res.builtIn.map((name) => ({ name, custom: false })),
+            ...res.agents.map((a) => ({ name: a.name, custom: true })),
+          ];
+          if (options.length > 0) {
+            setAgentOptions(options);
+            if (!options.some((o) => o.name === "the-mediator")) setAgent(options[0].name);
+          }
+        })
+        .catch(() => {
+          // catalog down — mediator default still submits; server has final say
+        });
+    };
+    load();
+    // the agent manager mutates the same catalog — refresh the picker
+    const unsubscribe = subscribeAgentsChanged(load);
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, []);
   // Provider pick (#145): options from the daemon's roster, model prefilled

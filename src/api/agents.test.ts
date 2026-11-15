@@ -98,3 +98,31 @@ test('Phase C: sessions validate members, bake persona, inject provider', async 
     cleanup(dir)
   }
 })
+
+test('Phase C: agents are tenant-isolated (404 cross-tenant, no oracle)', async () => {
+  const dir = tmpDataDir()
+  // no authStore: unauthenticated tenant-header mode, like the room tests
+  const srv = await startServer(dir)
+  const tenantA = { 'x-tenant-id': 'tenant-a' }
+  const tenantB = { 'x-tenant-id': 'tenant-b' }
+  try {
+    await jsonRequest(srv.port, 'POST', '/v1/agents', { name: 'reviewer', persona: 'you review diffs', baseMember: 'the-reviewer' }, tenantA)
+
+    // tenant-b's catalog is empty — tenant-a's custom is invisible, built-ins shared
+    const bobList = JSON.parse((await jsonRequest(srv.port, 'GET', '/v1/agents', undefined, tenantB)).body)
+    assert.deepEqual(bobList.agents, [])
+    assert.ok(bobList.builtIn.includes('the-builder'))
+
+    // cross-tenant reads/writes 404 (never 403 — no existence oracle)
+    assert.equal((await jsonRequest(srv.port, 'GET', '/v1/agents/reviewer', undefined, tenantB)).status, 404)
+    assert.equal((await jsonRequest(srv.port, 'DELETE', '/v1/agents/reviewer', undefined, tenantB)).status, 404)
+    assert.equal((await jsonRequest(srv.port, 'PUT', '/v1/agents/reviewer', { persona: 'hijacked' }, tenantB)).status, 404)
+
+    // tenant-a's agent untouched by tenant-b's attempts
+    const one = JSON.parse((await jsonRequest(srv.port, 'GET', '/v1/agents/reviewer', undefined, tenantA)).body)
+    assert.equal(one.agent.persona, 'you review diffs')
+  } finally {
+    await srv.close()
+    cleanup(dir)
+  }
+})
