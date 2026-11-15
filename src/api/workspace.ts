@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { SessionBackend } from '../session/sessionBackend'
 import { commitAll, diff, ensureWorkspace, listAt, logCommits, readAt, workspacePathFor } from '../workspace'
 import { DEFAULT_TENANT_ID } from '../session/migrations'
@@ -13,7 +13,7 @@ interface WorkspaceDeps {
 const MAX_FILE_BYTES = 256 * 1024
 const MAX_DIFF_BYTES = 512 * 1024
 
-/** git's well-known empty-tree object — the only valid "beginning of history" rev. */
+/** git's well-known empty-tree object — the only valid "beginning of history" rev. Keep in sync with EMPTY_TREE in dashboard/src/components/WorkspacePanel.tsx. */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
 /**
@@ -36,18 +36,37 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: WorkspaceDep
     return { repo }
   }
 
+  // Shared opening for every workspace route: tenant scope, read permission,
+  // then repo resolution. Returns null once the error reply is sent, so a
+  // future route cannot forget one of the three checks.
+  async function readableRepo(
+    request: FastifyRequest<{ Params: { projectId: string } }>,
+    reply: FastifyReply
+  ): Promise<{ backend: SessionBackend; repo: string } | null> {
+    const tenantCtx = tenantBackendForRequest(request, deps.backend)
+    if (tenantCtx.error) {
+      await reply.code(400).send({ ok: false, error: tenantCtx.error })
+      return null
+    }
+    if (!(await canReadProject(tenantCtx.backend, request.params.projectId, request.auth?.userId))) {
+      await reply.code(404).send({ ok: false, error: 'unknown project' })
+      return null
+    }
+    const resolved = await repoForProject(request.params.projectId, tenantCtx.backend)
+    if ('code' in resolved) {
+      await reply.code(resolved.code).send({ ok: false, error: resolved.error })
+      return null
+    }
+    return { backend: tenantCtx.backend, repo: resolved.repo }
+  }
+
   app.get<{ Params: { projectId: string }; Querystring: { commit?: string } }>(
     '/projects/:projectId/workspace/files',
     async (request, reply) => {
-      const tenantCtx = tenantBackendForRequest(request, deps.backend)
-      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
-      if (!(await canReadProject(tenantCtx.backend, request.params.projectId, request.auth?.userId))) {
-        return reply.code(404).send({ ok: false, error: 'unknown project' })
-      }
+      const ctx = await readableRepo(request, reply)
+      if (!ctx) return reply
       try {
-        const resolved = await repoForProject(request.params.projectId, tenantCtx.backend)
-        if ('code' in resolved) return reply.code(resolved.code).send({ ok: false, error: resolved.error })
-        const files = await listAt(resolved.repo, request.query.commit ?? 'HEAD')
+        const files = await listAt(ctx.repo, request.query.commit ?? 'HEAD')
         return reply.send({ ok: true, files })
       } catch (err) {
         return reply.code(400).send({ ok: false, error: err instanceof Error ? err.message : 'workspace read failed' })
@@ -58,16 +77,11 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: WorkspaceDep
   app.get<{ Params: { projectId: string }; Querystring: { path?: string; commit?: string } }>(
     '/projects/:projectId/workspace/file',
     async (request, reply) => {
-      const tenantCtx = tenantBackendForRequest(request, deps.backend)
-      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
-      if (!(await canReadProject(tenantCtx.backend, request.params.projectId, request.auth?.userId))) {
-        return reply.code(404).send({ ok: false, error: 'unknown project' })
-      }
+      const ctx = await readableRepo(request, reply)
+      if (!ctx) return reply
       if (!request.query.path) return reply.code(400).send({ ok: false, error: 'path is required' })
       try {
-        const resolved = await repoForProject(request.params.projectId, tenantCtx.backend)
-        if ('code' in resolved) return reply.code(resolved.code).send({ ok: false, error: resolved.error })
-        const content = await readAt(resolved.repo, request.query.commit ?? 'HEAD', request.query.path)
+        const content = await readAt(ctx.repo, request.query.commit ?? 'HEAD', request.query.path)
         if (content === null) return reply.code(404).send({ ok: false, error: 'unknown file' })
         if (content.length > MAX_FILE_BYTES) return reply.code(413).send({ ok: false, error: 'file too large for inline view' })
         return reply.send({ ok: true, content })
@@ -80,17 +94,12 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: WorkspaceDep
   app.get<{ Params: { projectId: string }; Querystring: { from?: string; to?: string } }>(
     '/projects/:projectId/workspace/diff',
     async (request, reply) => {
-      const tenantCtx = tenantBackendForRequest(request, deps.backend)
-      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
-      if (!(await canReadProject(tenantCtx.backend, request.params.projectId, request.auth?.userId))) {
-        return reply.code(404).send({ ok: false, error: 'unknown project' })
-      }
+      const ctx = await readableRepo(request, reply)
+      if (!ctx) return reply
       try {
-        const resolved = await repoForProject(request.params.projectId, tenantCtx.backend)
-        if ('code' in resolved) return reply.code(resolved.code).send({ ok: false, error: resolved.error })
         // No params diffs the whole tree (EMPTY_TREE..HEAD): HEAD~1-style
         // revs never reach git — safeRev only allows HEAD or plain hex shas.
-        const text = await diff(resolved.repo, request.query.from ?? EMPTY_TREE, request.query.to ?? 'HEAD')
+        const text = await diff(ctx.repo, request.query.from ?? EMPTY_TREE, request.query.to ?? 'HEAD')
         if (text.length > MAX_DIFF_BYTES) return reply.code(413).send({ ok: false, error: 'diff too large for inline view' })
         return reply.send({ ok: true, diff: text })
       } catch (err) {
@@ -102,15 +111,10 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: WorkspaceDep
   app.get<{ Params: { projectId: string }; Querystring: { limit?: string } }>(
     '/projects/:projectId/workspace/log',
     async (request, reply) => {
-      const tenantCtx = tenantBackendForRequest(request, deps.backend)
-      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
-      if (!(await canReadProject(tenantCtx.backend, request.params.projectId, request.auth?.userId))) {
-        return reply.code(404).send({ ok: false, error: 'unknown project' })
-      }
+      const ctx = await readableRepo(request, reply)
+      if (!ctx) return reply
       try {
-        const resolved = await repoForProject(request.params.projectId, tenantCtx.backend)
-        if ('code' in resolved) return reply.code(resolved.code).send({ ok: false, error: resolved.error })
-        const commits = await logCommits(resolved.repo, parseInt(request.query.limit ?? '20', 10) || 20)
+        const commits = await logCommits(ctx.repo, parseInt(request.query.limit ?? '20', 10) || 20)
         return reply.send({ ok: true, commits })
       } catch (err) {
         return reply.code(400).send({ ok: false, error: err instanceof Error ? err.message : 'workspace log failed' })
@@ -134,23 +138,18 @@ export function registerWorkspaceRoutes(app: FastifyInstance, deps: WorkspaceDep
       },
     },
     async (request, reply) => {
-      const tenantCtx = tenantBackendForRequest(request, deps.backend)
-      if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
-      if (!(await canReadProject(tenantCtx.backend, request.params.projectId, request.auth?.userId))) {
-        return reply.code(404).send({ ok: false, error: 'unknown project' })
-      }
-      if (!(await canWriteProject(tenantCtx.backend, request.params.projectId, request.auth?.userId))) {
+      const ctx = await readableRepo(request, reply)
+      if (!ctx) return reply
+      if (!(await canWriteProject(ctx.backend, request.params.projectId, request.auth?.userId))) {
         return reply.code(403).send({ ok: false, error: 'viewer cannot commit' })
       }
       try {
-        const resolved = await repoForProject(request.params.projectId, tenantCtx.backend)
-        if ('code' in resolved) return reply.code(resolved.code).send({ ok: false, error: resolved.error })
         // human commits carry the user trailer; agent runs pass sessionId
         const userId = request.auth?.userId
         const text = request.body.message ?? ''
         if (!text.trim()) return reply.code(400).send({ ok: false, error: 'message must not be blank' })
         const message = userId ? `${text}\n\nuser: ${userId}` : text
-        const sha = await commitAll(resolved.repo, {
+        const sha = await commitAll(ctx.repo, {
           message,
           ...(request.body.sessionId !== undefined ? { sessionId: request.body.sessionId } : {}),
         })
