@@ -18,9 +18,10 @@ describe("landing page", () => {
     render(<LandingPage />);
     expect(screen.getByText("Ask Atlas.")).toBeDefined();
     expect(screen.getByText("Together, live.")).toBeDefined();
-    const open = screen.getByRole("link", { name: "Open Atlas — live demo" });
-    expect(open.getAttribute("href")).toBe("/atlas");
-    expect(screen.getByRole("link", { name: "My Atlas — sign in" }).getAttribute("href")).toBe("/login");
+    const open = screen.getByText("Open Atlas · live demo");
+    expect(open.getAttribute("aria-disabled")).toBe("true");
+    expect(screen.queryByRole("link", { name: "Open Atlas · live demo" })).toBeNull();
+    expect(screen.getByRole("link", { name: "My Atlas · sign in" }).getAttribute("href")).toBe("/login");
   });
 
   it("renders the room band, evidence band and final CTA — and none of the copied agenthood sections", () => {
@@ -31,7 +32,9 @@ describe("landing page", () => {
     expect(screen.getByText(/Live Shared Room/i)).toBeInTheDocument();
     expect(screen.getByText(/Session History/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Get Started" }).getAttribute("href")).toBe("/login");
-    expect(screen.getByRole("link", { name: "Request a Demo" }).getAttribute("href")).toBe("/atlas");
+    const demo = screen.getByText("Request a Demo");
+    expect(demo.getAttribute("aria-disabled")).toBe("true");
+    expect(screen.queryByRole("link", { name: "Request a Demo" })).toBeNull();
     expect(screen.queryByText(/specialized members/i)).toBeNull();
     expect(screen.queryByText(/Meet the team/i)).toBeNull();
     expect(screen.queryByText(/How it works/i)).toBeNull();

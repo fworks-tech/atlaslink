@@ -14,7 +14,7 @@ import SharedRoomCard from "@/components/SharedRoomCard";
 const collab = [
   {
     title: "One room, one run",
-    body: "Humans and agents share a live session — presence, typing indicators, delivery receipts. You see members thinking while they think.",
+    body: "Humans and agents share one live session. You see presence, typing, and receipts as they happen.",
   },
   {
     title: "Steer mid-flight",
@@ -22,7 +22,7 @@ const collab = [
   },
   {
     title: "Approval gates keep you in the loop",
-    body: "When a decision is required — apply the fix? call this tool? — the room waits on you. Approve, reject, or reply in place.",
+    body: "When the room needs a decision, it waits. Approve, reject, or reply in place.",
   },
 ];
 
@@ -54,8 +54,7 @@ export default function LandingPage() {
               </h1>
               <p className="mt-5 max-w-md text-lg leading-relaxed text-muted">
                 Bring people and AI agents into one shared session.
-                Delegate work, follow what happens, steer a run, and make decisions
-                together — without losing sight of the process.
+                Hand off work, watch it happen, step in when it counts.
               </p>
               <p className="mt-3 max-w-md text-sm leading-relaxed text-muted">
                 An experimental proof of concept built on{" "}
@@ -70,17 +69,19 @@ export default function LandingPage() {
                 .
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
-                <Link
-                  href="/atlas"
-                  className="inline-block rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-background transition-opacity hover:opacity-90"
+                {/* TEMP: demo entry parked until the room UI matches the hand-it-to-the-room video — restore the /atlas Link. */}
+                <span
+                  aria-disabled="true"
+                  title="Back soon. The room is catching up with the video."
+                  className="inline-block cursor-not-allowed rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-background opacity-40"
                 >
-                  Open Atlas — live demo
-                </Link>
+                  Open Atlas · live demo
+                </span>
                 <Link
                   href="/login"
                   className="inline-block rounded-lg border border-line px-6 py-3 text-sm font-medium text-foreground transition-colors hover:border-accent/40"
                 >
-                  My Atlas — sign in
+                  My Atlas · sign in
                 </Link>
               </div>
             </FadeIn>
@@ -140,9 +141,8 @@ export default function LandingPage() {
             Session activity, recorded for review.
           </h2>
           <p className="mb-10 max-w-2xl leading-relaxed text-muted">
-            Sessions are durable events, not chat scrollback. Reasoning,
-            decisions, tool calls and costs — inspectable after the fact,
-            shareable with one link.
+            Sessions are durable events, not chat scrollback. Replay
+            reasoning, tool calls, and decisions from one link.
           </p>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             {evidence.map((f) => (
@@ -167,8 +167,8 @@ export default function LandingPage() {
               Hand it to the room.
             </h2>
             <p className="mx-auto mb-8 max-w-2xl text-lg leading-relaxed text-muted">
-              Hand a PR review to the room — humans and agents triage, fix, and
-              verify together, with an approval gate at every decision.
+              Hand a PR review to the room. Humans and agents triage and
+              fix it, and every decision waits for your approval.
             </p>
             <div className="mb-10 flex flex-wrap items-center justify-center gap-3">
               <Link
@@ -177,12 +177,14 @@ export default function LandingPage() {
               >
                 Get Started
               </Link>
-              <Link
-                href="/atlas"
-                className="inline-block rounded-lg border border-gold/60 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:border-gold"
+              {/* TEMP: same as the hero demo CTA — parked until the room matches the video. */}
+              <span
+                aria-disabled="true"
+                title="Back soon. The room is catching up with the video."
+                className="inline-block cursor-not-allowed rounded-lg border border-gold/60 px-6 py-3 text-sm font-medium text-foreground opacity-40"
               >
                 Request a Demo
-              </Link>
+              </span>
             </div>
             <div className="text-left">
               <SharedRoomCard />

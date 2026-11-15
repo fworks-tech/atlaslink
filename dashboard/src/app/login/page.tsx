@@ -30,7 +30,7 @@ export default function LoginPage() {
       else await registerAccount(email.trim(), password);
       router.push("/atlas");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong — try again");
+      setError(err instanceof ApiError ? err.message : "Something went wrong. Try again");
     } finally {
       setBusy(false);
     }
@@ -44,7 +44,7 @@ export default function LoginPage() {
             {mode === "login" ? "Welcome back" : "Create your Atlas"}
           </h1>
           <p className="mt-1 text-xs text-muted">
-            {mode === "login" ? "Your sessions, projects and costs, per tenant." : "One account — your own Atlas workspace."}
+            {mode === "login" ? "Your sessions, projects and costs, per tenant." : "One account. Your own Atlas workspace."}
           </p>
 
           <form onSubmit={submit} className="mt-5 flex flex-col gap-3">
@@ -116,7 +116,7 @@ export default function LoginPage() {
         <p className="mt-4 text-center text-xs text-muted">
           Just looking around?{" "}
           <Link href="/atlas" className="text-accent underline">
-            Try the demo — no account needed
+            Try the demo. No account needed
           </Link>
         </p>
       </FadeIn>
