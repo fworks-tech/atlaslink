@@ -32,7 +32,9 @@ describe("landing page", () => {
     expect(screen.getByText(/Live Shared Room/i)).toBeInTheDocument();
     expect(screen.getByText(/Session History/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Get Started" }).getAttribute("href")).toBe("/login");
-    expect(screen.getByRole("link", { name: "Request a Demo" }).getAttribute("href")).toBe("/atlas");
+    const demo = screen.getByText("Request a Demo");
+    expect(demo.getAttribute("aria-disabled")).toBe("true");
+    expect(screen.queryByRole("link", { name: "Request a Demo" })).toBeNull();
     expect(screen.queryByText(/specialized members/i)).toBeNull();
     expect(screen.queryByText(/Meet the team/i)).toBeNull();
     expect(screen.queryByText(/How it works/i)).toBeNull();

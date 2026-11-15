@@ -177,12 +177,14 @@ export default function LandingPage() {
               >
                 Get Started
               </Link>
-              <Link
-                href="/atlas"
-                className="inline-block rounded-lg border border-gold/60 px-6 py-3 text-sm font-medium text-foreground transition-colors hover:border-gold"
+              {/* TEMP: same as the hero demo CTA — parked until the room matches the video. */}
+              <span
+                aria-disabled="true"
+                title="Back soon. The room is catching up with the video."
+                className="inline-block cursor-not-allowed rounded-lg border border-gold/60 px-6 py-3 text-sm font-medium text-foreground opacity-40"
               >
                 Request a Demo
-              </Link>
+              </span>
             </div>
             <div className="text-left">
               <SharedRoomCard />
