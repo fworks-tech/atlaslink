@@ -69,3 +69,90 @@ test('Phase D: workspace files/read/log/commit round-trip with ACL', async () =>
     cleanup(dir)
   }
 })
+
+test('Phase D: workspace diff/file/commit error paths and size limits', async () => {
+  const dir = tmpDataDir()
+  const { authStore, close: closeAuth } = await createAuthStore()
+  const srv = await startServer(dir, { authStore, jwtSecret: JWT_SECRET })
+  try {
+    const alice = await register(srv.port, 'alice-wd@example.com')
+    const carol = await register(srv.port, 'carol-wd@example.com')
+    const projectId = JSON.parse(
+      (await jsonRequest(srv.port, 'POST', '/v1/projects', { name: 'ws-err' }, auth(alice.token))).body
+    ).project.id
+    const repo = workspacePathFor(workspaceRootFor(dir), alice.tenantId, projectId)
+    mkdirSync(repo, { recursive: true })
+    writeFileSync(`${repo}/notes.md`, '# hello\n', 'utf8')
+    const first = await jsonRequest(srv.port, 'POST', `/v1/projects/${projectId}/workspace/commit`, { message: 'add notes' }, auth(alice.token))
+    assert.equal(first.status, 201)
+    const sha = JSON.parse(first.body).sha as string
+
+    // tenant header is rejected on authenticated requests (every route)
+    for (const path of [
+      `/v1/projects/${projectId}/workspace/files`,
+      `/v1/projects/${projectId}/workspace/file?path=notes.md`,
+      `/v1/projects/${projectId}/workspace/diff`,
+      `/v1/projects/${projectId}/workspace/log`,
+    ]) {
+      assert.equal(
+        (await jsonRequest(srv.port, 'GET', path, undefined, { ...auth(alice.token), 'x-tenant-id': 'other' })).status,
+        400
+      )
+    }
+    assert.equal(
+      (await jsonRequest(srv.port, 'POST', `/v1/projects/${projectId}/workspace/commit`, { message: 'x' }, { ...auth(alice.token), 'x-tenant-id': 'other' })).status,
+      400
+    )
+
+    // non-member sees 404 on every route (project has an owner, so not legacy)
+    for (const path of [
+      `/v1/projects/${projectId}/workspace/file?path=notes.md`,
+      `/v1/projects/${projectId}/workspace/diff`,
+      `/v1/projects/${projectId}/workspace/log`,
+    ]) {
+      assert.equal((await jsonRequest(srv.port, 'GET', path, undefined, auth(carol.token))).status, 404)
+    }
+    assert.equal((await jsonRequest(srv.port, 'POST', `/v1/projects/${projectId}/workspace/commit`, { message: 'x' }, auth(carol.token))).status, 404)
+
+    // file route: missing path, bad commit
+    assert.equal((await jsonRequest(srv.port, 'GET', `/v1/projects/${projectId}/workspace/file`, undefined, auth(alice.token))).status, 400)
+    assert.equal((await jsonRequest(srv.port, 'GET', `/v1/projects/${projectId}/workspace/file?path=notes.md&commit=not-a-sha!!`, undefined, auth(alice.token))).status, 400)
+
+    // explicit-commit reads (covers the ?? 'HEAD' fallbacks)
+    const filesAt = JSON.parse((await jsonRequest(srv.port, 'GET', `/v1/projects/${projectId}/workspace/files?commit=${sha}`, undefined, auth(alice.token))).body)
+    assert.ok(filesAt.ok && filesAt.files.includes('notes.md'))
+    const readAt = JSON.parse((await jsonRequest(srv.port, 'GET', `/v1/projects/${projectId}/workspace/file?path=notes.md&commit=${sha}`, undefined, auth(alice.token))).body)
+    assert.equal(readAt.content, '# hello\n')
+
+    // diff route: defaults (whole tree), explicit sha range, bad rev
+    const diffDefault = JSON.parse((await jsonRequest(srv.port, 'GET', `/v1/projects/${projectId}/workspace/diff`, undefined, auth(alice.token))).body)
+    assert.ok(diffDefault.ok && diffDefault.diff.includes('notes.md'))
+
+    // log route: default and invalid limits fall back to 20
+    assert.ok(JSON.parse((await jsonRequest(srv.port, 'GET', `/v1/projects/${projectId}/workspace/log`, undefined, auth(alice.token))).body).ok)
+    assert.ok(JSON.parse((await jsonRequest(srv.port, 'GET', `/v1/projects/${projectId}/workspace/log?limit=abc`, undefined, auth(alice.token))).body).ok)
+
+    // commit route: blank message, trailer-injection sessionId, then valid sessionId
+    assert.equal((await jsonRequest(srv.port, 'POST', `/v1/projects/${projectId}/workspace/commit`, { message: '   ' }, auth(alice.token))).status, 400)
+    writeFileSync(`${repo}/notes.md`, '# hello\n# more\n', 'utf8')
+    assert.equal((await jsonRequest(srv.port, 'POST', `/v1/projects/${projectId}/workspace/commit`, { message: 'bad trailer', sessionId: 'a\nb' }, auth(alice.token))).status, 400)
+    const withSession = await jsonRequest(srv.port, 'POST', `/v1/projects/${projectId}/workspace/commit`, { message: 'agent edit', sessionId: 's-1' }, auth(alice.token))
+    assert.equal(withSession.status, 201)
+    const sha2 = JSON.parse(withSession.body).sha as string
+
+    // explicit sha range (covers the ?? fallbacks' other side)
+    const diffExplicit = JSON.parse((await jsonRequest(srv.port, 'GET', `/v1/projects/${projectId}/workspace/diff?from=${sha}&to=${sha2}`, undefined, auth(alice.token))).body)
+    assert.ok(diffExplicit.ok && diffExplicit.diff.includes('# more'))
+    assert.equal((await jsonRequest(srv.port, 'GET', `/v1/projects/${projectId}/workspace/diff?from=not-a-sha!!`, undefined, auth(alice.token))).status, 400)
+
+    // size limits: ~600 KB text file exceeds inline view caps for both file and diff
+    writeFileSync(`${repo}/big.txt`, `${'x'.repeat(100)}\n`.repeat(6000), 'utf8')
+    assert.equal((await jsonRequest(srv.port, 'POST', `/v1/projects/${projectId}/workspace/commit`, { message: 'big' }, auth(alice.token))).status, 201)
+    assert.equal((await jsonRequest(srv.port, 'GET', `/v1/projects/${projectId}/workspace/file?path=big.txt`, undefined, auth(alice.token))).status, 413)
+    assert.equal((await jsonRequest(srv.port, 'GET', `/v1/projects/${projectId}/workspace/diff`, undefined, auth(alice.token))).status, 413)
+  } finally {
+    await srv.close()
+    closeAuth()
+    cleanup(dir)
+  }
+})
