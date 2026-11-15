@@ -37,7 +37,7 @@ async function setupRoom(port: number): Promise<{
   ).project.id
   await jsonRequest(port, 'PUT', `/v1/projects/${projectId}/members`, { userId: bob.userId, role: 'editor' }, auth(alice.token))
   const created = JSON.parse(
-    (await jsonRequest(port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId }, auth(alice.token))).body
+    (await jsonRequest(port, 'POST', '/v1/tasks', { member: 'the-builder', prompt: 'p', projectId }, auth(alice.token))).body
   )
   return { alice, bob, projectId, sessionId: created.session.sessionId, correlationId: created.session.correlationId }
 }

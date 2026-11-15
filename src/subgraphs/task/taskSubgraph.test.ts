@@ -88,23 +88,23 @@ test('createTask rejects invalid payloads the way POST /tasks does', async () =>
   const srv = await startServer(dir, { providers: PROVIDERS })
   try {
     const unknown = await gql(srv.port, `mutation {
-      createTask(member: "m", prompt: "p", projectId: "proj-1", tweaks: { provider: "stale" }) { id }
+      createTask(member: "the-builder", prompt: "p", projectId: "proj-1", tweaks: { provider: "stale" }) { id }
     }`)
     assert.equal(unknown.errors?.[0].extensions?.code, '400')
     assert.match(unknown.errors![0].message, /unknown provider, choose from opencode-go, groq/)
 
     const model = await gql(srv.port, `mutation {
-      createTask(member: "m", prompt: "p", projectId: "proj-1", tweaks: { member: { model: "" } }) { id }
+      createTask(member: "the-builder", prompt: "p", projectId: "proj-1", tweaks: { member: { model: "" } }) { id }
     }`)
     assert.equal(model.errors?.[0].extensions?.code, '400')
     assert.equal(model.errors![0].message, 'tweaks.member.model must be a non-empty string up to 200 chars')
 
-    const blankProject = await gql(srv.port, `mutation { createTask(member: "m", prompt: "p", projectId: " ") { id } }`)
+    const blankProject = await gql(srv.port, `mutation { createTask(member: "the-builder", prompt: "p", projectId: " ") { id } }`)
     assert.equal(blankProject.errors?.[0].extensions?.code, '400')
     assert.equal(blankProject.errors![0].message, 'projectId must not be blank')
 
     const longPrompt = await gql(srv.port, `mutation ($p: String!) {
-      createTask(member: "m", prompt: $p, projectId: "proj-1") { id }
+      createTask(member: "the-builder", prompt: $p, projectId: "proj-1") { id }
     }`, { p: 'x'.repeat(10001) })
     assert.equal(longPrompt.errors?.[0].extensions?.code, '400')
     assert.equal(longPrompt.errors![0].message, 'prompt must be at most 10000 characters')

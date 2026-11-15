@@ -110,7 +110,7 @@ test('A4: creator becomes owner; non-member reads 404; viewer 403 on write', asy
     assert.equal(put.status, 200)
     const bobRead2 = await jsonRequest(port, 'GET', `/v1/projects/${projectId}`, undefined, auth(bob.token))
     assert.equal(bobRead2.status, 200)
-    const bobWrite = await jsonRequest(port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId }, auth(bob.token))
+    const bobWrite = await jsonRequest(port, 'POST', '/v1/tasks', { member: 'the-builder', prompt: 'p', projectId }, auth(bob.token))
     assert.equal(bobWrite.status, 403)
     const bobDelete = await jsonRequest(port, 'DELETE', `/v1/projects/${projectId}`, undefined, auth(bob.token))
     assert.equal(bobDelete.status, 403)
@@ -139,7 +139,7 @@ test('A4: invite single-use/expiry enforced, tenant-bound', async () => {
     assert.equal(replay.status, 404)
 
     // editor can now write
-    const task = await jsonRequest(port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId }, auth(bob.token))
+    const task = await jsonRequest(port, 'POST', '/v1/tasks', { member: 'the-builder', prompt: 'p', projectId }, auth(bob.token))
     assert.equal(task.status, 201)
   } finally {
     await close()
@@ -263,13 +263,13 @@ test('A4: authenticated sessions need a real project; task pages stay complete',
     await jsonRequest(port, 'PUT', `/v1/projects/${visible}/members`, { userId: bob.userId, role: 'viewer' }, auth(alice.token))
 
     // ghost project ids are 404 for authenticated callers (no ACL bypass)
-    assert.equal((await jsonRequest(port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-ghost-123' }, auth(bob.token))).status, 404)
+    assert.equal((await jsonRequest(port, 'POST', '/v1/tasks', { member: 'the-builder', prompt: 'p', projectId: 'proj-ghost-123' }, auth(bob.token))).status, 404)
 
     for (let i = 0; i < 3; i += 1) {
-      assert.equal((await jsonRequest(port, 'POST', '/v1/tasks', { member: 'm', prompt: `v${i}`, projectId: visible }, auth(alice.token))).status, 201)
+      assert.equal((await jsonRequest(port, 'POST', '/v1/tasks', { member: 'the-builder', prompt: `v${i}`, projectId: visible }, auth(alice.token))).status, 201)
     }
     for (let i = 0; i < 2; i += 1) {
-      assert.equal((await jsonRequest(port, 'POST', '/v1/tasks', { member: 'm', prompt: `h${i}`, projectId: hidden }, auth(alice.token))).status, 201)
+      assert.equal((await jsonRequest(port, 'POST', '/v1/tasks', { member: 'the-builder', prompt: `h${i}`, projectId: hidden }, auth(alice.token))).status, 201)
     }
     // hidden sessions never page into bob's view; totals stay honest
     const p1 = JSON.parse((await jsonRequest(port, 'GET', '/v1/tasks?limit=2&offset=0', undefined, auth(bob.token))).body)
@@ -354,7 +354,7 @@ test('tasks: malformed filters and tenant claims are 400', async () => {
     const alice = await register(port, 'filter-alice@example.com')
     assert.equal((await jsonRequest(port, 'GET', '/v1/tasks?since=not-a-date', undefined, auth(alice.token))).status, 400)
     assert.equal(
-      (await jsonRequest(port, 'POST', '/v1/tasks', { member: 'm', prompt: 'p', projectId: 'proj-x' }, { authorization: `Bearer ${alice.token}`, 'x-tenant-id': 'other' })).status,
+      (await jsonRequest(port, 'POST', '/v1/tasks', { member: 'the-builder', prompt: 'p', projectId: 'proj-x' }, { authorization: `Bearer ${alice.token}`, 'x-tenant-id': 'other' })).status,
       400
     )
   } finally {
