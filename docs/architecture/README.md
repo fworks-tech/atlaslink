@@ -29,11 +29,11 @@ GET /events (SSE) ──► dashboard: live DAG + WebSocket room (HITL ask_human
 
 - **Writes are event-sourced.** `session.*` events are the commit; `version` is
   the optimistic CAS token; rehydration is deterministic (ADR-004). The HTTP
-  layer never executes agents inline — everything routes through
+  layer never executes agents inline. Everything routes through
   `SessionQueue` (ADR-002's projection contract).
 - **Reads are projections.** The `sessions` directory table keeps project
   listings O(1); the SSE stream replays envelopes verbatim with
-  `Last-Event-ID` resume and gap detection — a stale resume surfaces
+  `Last-Event-ID` resume and gap detection. A stale resume surfaces
   `bridge.gap`, never silence.
 - **Humans are in the loop.** Agents pause on `ask_human`, park the session,
   and resume from your reply; the per-session WebSocket room lets several
@@ -44,11 +44,11 @@ GET /events (SSE) ──► dashboard: live DAG + WebSocket room (HITL ask_human
   propagates `Authorization` through to them.
 - **Data model in one breath:** `session_events` (append-only, per-tenant),
   `sessions` (directory projection), `projects`, `users`, `api_keys`
-  (SHA-256 hashes), `daily_cost_buckets`, `run_checkpoints` — same SQL runs
+  (SHA-256 hashes), `daily_cost_buckets`, `run_checkpoints`. Same SQL runs
   on `pglite` in CI and managed Postgres in production.
 - **Deployment:** one runtime image; AWS EC2 + RDS serves production and staging
   via the compose overlay (ADR-013), driven by the same post-CI deploy workflow.
-  Tests are hermetic — offline, no LLM,
+  Tests are hermetic: offline, no LLM,
   no network.
 
 ## What this is
@@ -80,7 +80,7 @@ the same event-sourced sessions.
             │  agent-run provenance feed; SSE replay source  │
             └───────────────────────────────────────────────┘
 
-   M3 session layer (ADR-004/006) — wired into the HTTP server:
+   M3 session layer (ADR-004/006): wired into the HTTP server:
             ┌───────────────────────────────────────────────┐
             │  session/  SessionBackend port                │
             │   ├─ SessionStore (in-memory, shipped)        │
@@ -98,16 +98,16 @@ planes: the GraphQL router plane and the deploy plane.
 
 Two cooperating surfaces:
 
-1. **One-shot CLI** — `atlaslink --run <member> "<task>"` creates a session in the
+1. **One-shot CLI**: `atlaslink --run <member> "<task>"` creates a session in the
    in-memory `TaskRegistry`, builds a per-run `ApplicationContext` (lazily, at run
-   time — never at boot), subscribes to its `RunEventBus`, executes, then finalizes
+   time, never at boot), subscribes to its `RunEventBus`, executes, then finalizes
    the session from the real outcome.
-2. **Daemon HTTP server** — `tsx src/server.ts` boots with config validated
+2. **Daemon HTTP server**: `tsx src/server.ts` boots with config validated
    up front. Routes:
-   - `GET /health` — liveness JSON with version + uptime.
-   - `POST /runs` (M3 preview) — validates `{member, prompt}` by JSON schema,
+   - `GET /health`: liveness JSON with version + uptime.
+   - `POST /runs` (M3 preview): validates `{member, prompt}` by JSON schema,
      creates a session, delegates it to the serial `SessionQueue`.
-   - `GET /events` — SSE stream with the reconnection contract below.
+   - `GET /events`: SSE stream with the reconnection contract below.
    - 404/400 envelopes are `{ ok, error }` JSON; 5xx are fail-closed.
 
 ## The Event Bridge (M2)
@@ -116,7 +116,7 @@ Everything crossing to a client is a **bridge envelope**: `{ eventId, type, ... 
 The chain is `RunEventBus → session worker → EventBroadcaster → EventLogStore → SSE`:
 
 - `EventBroadcaster` assigns a monotonic `eventId`, persists the envelope to the
-  NDJSON log, and fans it out **verbatim** to subscribers (ADR-002 — the emitter
+  NDJSON log, and fans it out **verbatim** to subscribers (ADR-002: the emitter
   owns `type`; the bridge never rewrites it).
 - `EventLogStore` is the append-only, 10 MB × 3 rotating NDJSON log. The cursor is
   restored from a sidecar plus a boot-time tail scan; a failed append/rotate is
@@ -141,10 +141,10 @@ change observable semantics.
 
 **M3 shipped (ADR-006):** the HTTP layer runs on Fastify and Postgres is the primary
 store. The NDJSON log is demoted to agent-run provenance; sessions persist to
-Postgres event tables keyed by `tenant_id` + `session_id` (tenancy is additive —
+Postgres event tables keyed by `tenant_id` + `session_id` (tenancy is additive.
 `schema_migrations` and a `Db` seam run identical SQL on `pglite` in CI and managed
-Postgres in production). The task-rest surface — `POST/GET /tasks`,
-`GET /tasks/{id}`, cancel, and per-session SSE — sits behind a pre-auth bearer
+Postgres in production). The task-rest surface (`POST/GET /tasks`,
+`GET /tasks/{id}`, cancel, per-session SSE) sits behind a pre-auth bearer
 gate with rate limiting, auth-rejection logging, and fail-closed boot on
 non-loopback binds (PRs #44, #46).
 
@@ -152,19 +152,19 @@ non-loopback binds (PRs #44, #46).
 
 Projects are workspace containers for sessions. The projects layer adds:
 
-- **`projects` table** — stores project metadata (`id`, `name`, `created_at`) per
+- **`projects` table**: stores project metadata (`id`, `name`, `created_at`) per
   tenant. CRUD via `POST/GET /projects`, `GET /projects/:projectId` (token-gated).
-- **`sessions` directory table** — a maintained projection upserted transactionally
+- **`sessions` directory table**: a maintained projection upserted transactionally
   on each `session.created` event with `projectId`. Provides fast project-scoped
   listing without scanning the `session_events` table.
-- **`projectId` on `SessionEvent`** — optional field that rides on the event. When
+- **`projectId` on `SessionEvent`**: optional field that rides on the event. When
   present, the `PostgresBackend` maintains the directory projection on append.
-- **`SessionFilter.projectId`** — when provided, the backend uses the `sessions`
+- **`SessionFilter.projectId`**: when provided, the backend uses the `sessions`
   directory for O(1) project lookups instead of rehydrating all events.
-- **`GET /projects/:projectId/events`** — project-scoped SSE: replays and tails
+- **`GET /projects/:projectId/events`**: project-scoped SSE: replays and tails
   events for all sessions belonging to a project, filtered by correlation ID set.
-- **`POST /tasks` accepts `projectId`** — sessions can be created within a project.
-- **`GET /tasks?projectId=...`** — project-scoped session listing with existing
+- **`POST /tasks` accepts `projectId`**: sessions can be created within a project.
+- **`GET /tasks?projectId=...`**: project-scoped session listing with existing
   status/since/limit/offset filters.
 
 The `SessionBackend` port is extended with `listProjects()`, `getProject()`, and
@@ -175,18 +175,18 @@ The `SessionBackend` port is extended with `listProjects()`, `getProject()`, and
 
 Per-user authentication and tenant isolation (PR #185):
 
-- **JWT sessions** — HS256 tokens via `ATLASLINK_JWT_SECRET`, 7-day expiry. Used
+- **JWT sessions**: HS256 tokens via `ATLASLINK_JWT_SECRET`, 7-day expiry. Used
   by dashboard users.
-- **API keys** — `ak_`-prefixed, stored as SHA-256 hashes. Used by programmatic
+- **API keys**: `ak_`-prefixed, stored as SHA-256 hashes. Used by programmatic
   consumers. `last_used_at` updated on each successful auth.
-- **Legacy bearer** — `ATLASLINK_API_TOKEN` still works as a shared token fallback.
-- **Tenant binding** — tenant is derived from `request.auth.tenantId`, not from
+- **Legacy bearer**: `ATLASLINK_API_TOKEN` still works as a shared token fallback.
+- **Tenant binding**: tenant is derived from `request.auth.tenantId`, not from
   the `x-tenant-id` header (which is rejected when auth is present).
-- **Auth gate** — `registerAuthGate()` replaces `registerTokenGate()` for
+- **Auth gate**: `registerAuthGate()` replaces `registerTokenGate()` for
   deployments that have migrated to per-user auth. Supports all three auth methods.
-- **Security headers** — CSP, X-Frame-Options, X-Content-Type-Options,
+- **Security headers**: CSP, X-Frame-Options, X-Content-Type-Options,
   Referrer-Policy, Permissions-Policy on every response.
-- **Request signing** — HMAC-SHA256 for webhook payloads via
+- **Request signing**: HMAC-SHA256 for webhook payloads via
   `ATLASLINK_SIGNING_SECRET`.
 
 Ungated routes: `/auth/register`, `/auth/login`.
@@ -205,20 +205,20 @@ client ──► Caddy (TLS, routes) ──► cosmo router ──┬──► /
                                                        (all on the daemon :3000)
 ```
 
-- **Composition** — `npm run compose` runs `wgc router compose` over
+- **Composition**: `npm run compose` runs `wgc router compose` over
   `src/subgraphs/compose.yaml` and emits the router's execution config; CI and
   the router image stage run the same pinned `wgc@0.132.2` via `npx` (fetched
   from the registry, not vendored).
-- **Subgraphs** — `files`, `sessions`, `tasks`, `insights` are routes on the
+- **Subgraphs**: `files`, `sessions`, `tasks`, `insights` are routes on the
   same daemon; ADR-011 records the decomposition direction (independent
   deployables tracked in #321) while keeping the REST surface as a compat
   window (ADR-011, #297).
-- **Auth** — every subgraph is bearer-gated (ADR-008): an unauthenticated
+- **Auth**: every subgraph is bearer-gated (ADR-008): an unauthenticated
   GraphQL request gets `401` rendered as a GraphQL error envelope, never
   partial data. The router forwards `Authorization` to subgraphs explicitly
-  (`headers.all.request: propagate` in the router overrides — it does not
+  (`headers.all.request: propagate` in the router overrides; it does not
   forward it by default).
-- **Workspaces** — session files live in git-backed workspace repositories
+- **Workspaces**: session files live in git-backed workspace repositories
   (ADR-012), served through the `files` subgraph and the workspace HTTP
   endpoints (session-scoped paths, secret-shaped content refused).
 
@@ -226,12 +226,12 @@ client ──► Caddy (TLS, routes) ──► cosmo router ──┬──► /
 
 One image, two planes, both gated on green CI:
 
-- **Image** — multi-stage Dockerfile: a `router` stage bakes the pinned Cosmo
-  router binary, its config, and the composed execution config (hermetic — no
+- **Image**: multi-stage Dockerfile: a `router` stage bakes the pinned Cosmo
+  router binary, its config, and the composed execution config (hermetic: no
   network at boot); the `runtime` stage ships the daemon (Node 22, `git` for
   the files subgraph) and is always the last stage.
   `docker-compose.yml` pins `target: runtime` explicitly.
-- **AWS (production, ADR-013)** — `docker-compose.aws.yml` overlays the router +
+- **AWS (production, ADR-013)**: `docker-compose.aws.yml` overlays the router +
   AWS Caddyfile (`staging.atlas.flabs.tech, api.atlas.flabs.tech`) on the base
   compose file;
   `deploy-aws.yml` runs after green CI, SSHes to the EC2 host and runs

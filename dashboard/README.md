@@ -1,9 +1,9 @@
-# Atlaslink — Live Dashboard
+# Atlaslink: Live Dashboard
 
-Ask Atlas. Together, live — the Next.js front room for an experimental shared workspace where people and AI agents work through tasks together, built on Agenthood: live sessions, human approvals, costs by agent and day.
+Ask Atlas. Together, live. The Next.js front room for an experimental shared workspace where people and AI agents work through tasks together, built on Agenthood: live sessions, human approvals, costs by agent and day.
 
 Next.js 16 (App Router) frontend for the Atlaslink daemon. Renders the live
-society diagram — Atlas as the root node, sessions as delegation graphs — from
+society diagram, with Atlas as the root node and sessions as delegation graphs, from
 the Fastify backend's REST + SSE surface.
 
 ## Run
