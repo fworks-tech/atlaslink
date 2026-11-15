@@ -407,7 +407,7 @@ export class PostgresBackend implements SessionBackend {
        ORDER BY created_at DESC`,
       [this.#tenantId]
     )
-    return rows.map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at }))
+    return rows.map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at, tenantId: this.#tenantId }))
   }
 
   async getProject(id: string): Promise<Project | null> {
@@ -417,7 +417,7 @@ export class PostgresBackend implements SessionBackend {
       [this.#tenantId, id]
     )
     if (rows.length === 0) return null
-    return { id: rows[0].id, name: rows[0].name, createdAt: rows[0].created_at }
+    return { id: rows[0].id, name: rows[0].name, createdAt: rows[0].created_at, tenantId: this.#tenantId }
   }
 
   async createProject(id: string, name: string): Promise<Project> {
@@ -427,7 +427,7 @@ export class PostgresBackend implements SessionBackend {
        VALUES ($1, $2, $3, $4)`,
       [this.#tenantId, id, name, at]
     )
-    return { id, name, createdAt: at }
+    return { id, name, createdAt: at, tenantId: this.#tenantId }
   }
 
   async deleteProject(id: string): Promise<boolean> {
