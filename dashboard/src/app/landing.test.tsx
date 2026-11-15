@@ -18,8 +18,9 @@ describe("landing page", () => {
     render(<LandingPage />);
     expect(screen.getByText("Ask Atlas.")).toBeDefined();
     expect(screen.getByText("Together, live.")).toBeDefined();
-    const open = screen.getByRole("link", { name: "Open Atlas · live demo" });
-    expect(open.getAttribute("href")).toBe("/atlas");
+    const open = screen.getByText("Open Atlas · live demo");
+    expect(open.getAttribute("aria-disabled")).toBe("true");
+    expect(screen.queryByRole("link", { name: "Open Atlas · live demo" })).toBeNull();
     expect(screen.getByRole("link", { name: "My Atlas · sign in" }).getAttribute("href")).toBe("/login");
   });
 

@@ -69,12 +69,14 @@ export default function LandingPage() {
                 .
               </p>
               <div className="mt-8 flex flex-wrap items-center gap-3">
-                <Link
-                  href="/atlas"
-                  className="inline-block rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-background transition-opacity hover:opacity-90"
+                {/* TEMP: demo entry parked until the room UI matches the hand-it-to-the-room video — restore the /atlas Link. */}
+                <span
+                  aria-disabled="true"
+                  title="Back soon. The room is catching up with the video."
+                  className="inline-block cursor-not-allowed rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-background opacity-40"
                 >
                   Open Atlas · live demo
-                </Link>
+                </span>
                 <Link
                   href="/login"
                   className="inline-block rounded-lg border border-line px-6 py-3 text-sm font-medium text-foreground transition-colors hover:border-accent/40"
