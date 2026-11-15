@@ -288,9 +288,11 @@ export async function createAppServer(params: {
         const { member, prompt } = request.body as { member: string; prompt: string }
         const { tenantId, error } = resolveTenantIdFromAuth(request.auth?.tenantId, request.headers)
         if (error) return reply.code(400).send({ ok: false, error })
-        // same member gate as session creation: unknown names 400 here, not at runtime
+        // same member gate as session creation: unknown names 400 here, not at runtime.
+        // getAgent throws on infra failure (500 via Fastify) and returns null
+        // for unknown names (400 below) — never conflate the two.
         if (!getMemberNames().includes(member)) {
-          const agent = await backendForTenant(backend, tenantId).getAgent(member).catch(() => null)
+          const agent = await backendForTenant(backend, tenantId).getAgent(member)
           if (!agent) return reply.code(400).send({ ok: false, error: `unknown member '${member}'` })
         }
         const session = registry.create({ member, prompt, tenantId })
@@ -453,8 +455,10 @@ async function listen(config: DaemonConfig): Promise<{ server: Server; sse: SseH
             session,
             // custom agents execute as their base member — the persona already
             // rides the stored prompt, so the registry/store keep the custom
-            // name for display while the runtime sees a canonical member
-            resolveMember: async (name) => (await costBackend.getAgent(name).catch(() => null))?.baseMember ?? name,
+            // name for display while the runtime sees a canonical member.
+            // A throwing lookup fails the run loudly; falling back to the
+            // custom name would only misreport an infra failure as unknown member.
+            resolveMember: async (name) => (await costBackend.getAgent(name))?.baseMember ?? name,
             config: resolveSessionConfig(config.agenthood, session.task),
             onEvent: (event: RunEvent) => {
               broadcaster.emit({ eventId: 0, ...event, tenantId })
