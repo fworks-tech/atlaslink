@@ -364,7 +364,7 @@ function HomeInner() {
       if (res?.resumedSession?.sessionId) handleSelectSession(res.resumedSession.sessionId);
     } catch (e) {
       settleSend(receiptKey, false);
-      setReplyError(e instanceof Error ? e.message : "Reply failed — retry or check the session state.");
+      setReplyError(e instanceof Error ? e.message : "Reply failed. Check the session and retry.");
     } finally {
       setReplyBusy(false);
     }
@@ -387,7 +387,7 @@ function HomeInner() {
       await refreshSessions();
     } catch (e) {
       settleSend(receiptKey, false);
-      setSteerError(e instanceof Error ? e.message : "Steer failed — retry or check the session state.");
+      setSteerError(e instanceof Error ? e.message : "Steer failed. Check the session and retry.");
     } finally {
       setSteerBusy(false);
     }
@@ -401,7 +401,7 @@ function HomeInner() {
       await cancelSession(selectedSessionId);
       await refreshSessions();
     } catch (e) {
-      setSteerError(e instanceof Error ? e.message : "Interrupt failed — retry or check the session state.");
+      setSteerError(e instanceof Error ? e.message : "Interrupt failed. Check the session and retry.");
     } finally {
       setSteerBusy(false);
     }
@@ -428,7 +428,7 @@ function HomeInner() {
       router.push(res.session.projectId ? canonicalUrl(res.session.projectId, res.session.sessionId) : `/`);
       await refreshSessions();
     } catch (e) {
-      setResumeError(e instanceof Error ? e.message : "Could not resume — start a new session instead.");
+      setResumeError(e instanceof Error ? e.message : "Could not resume. Start a new session instead.");
     } finally {
       setResumeBusy(false);
     }
@@ -448,7 +448,7 @@ function HomeInner() {
       await refreshSessions();
       handleSelectSession(res.followupSession.sessionId);
     } catch (e) {
-      setFollowupError(e instanceof Error ? e.message : "Follow-up failed — resume or start a new session instead.");
+      setFollowupError(e instanceof Error ? e.message : "Follow-up failed. Resume or start a new session.");
     } finally {
       setFollowupBusy(false);
     }
@@ -545,17 +545,17 @@ function HomeInner() {
             </div>
             <header className="mb-6">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>The room, live.</h1>
-              <p className="mt-2 text-sm leading-6 text-muted">The session as a live diagram — reasoning, tools, decisions, all on the record. Click any card to inspect. {selectedSession?.status === "awaiting_input" ? "Atlas is awaiting your input — reply below." : ""}</p>
+              <p className="mt-2 text-sm leading-6 text-muted">The session as a live diagram. Reasoning, tools, and decisions stay on the record. Click any card to inspect. {selectedSession?.status === "awaiting_input" ? "Atlas is awaiting your input. Reply below." : ""}</p>
             </header>
             {sharedSessionGone ? (
               <div role="alert" className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-gold/40 bg-gold/10 p-4 text-sm text-gold">
-                <span>That room is gone — demo storage resets when the backend restarts. Start fresh and invite the room back.</span>
+                <span>That room is gone. Demo storage resets on restart. Start a new session.</span>
                 <button type="button" onClick={handleCloseSession} className="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold text-background transition-opacity hover:opacity-90">Start a new session</button>
               </div>
             ) : sessionsError && !selectedSession && !dismissedSessionsError ? (
               <div role="alert" className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
                 <span className="flex flex-wrap items-center gap-2">
-                  {sessionsError.includes("Server is starting") ? "Backend is waking — retrying automatically…" : `Couldn't load sessions (${sessionsError}).`}
+                  {sessionsError.includes("Server is starting") ? "Backend is waking. Retrying…" : `Couldn't load sessions (${sessionsError}).`}
                 </span>
                 <button type="button" onClick={() => void refreshSessions()} className="underline hover:text-danger">Retry</button>
                 <button type="button" onClick={() => setDismissedSessionsError(true)} className="ml-2 underline hover:text-green-400">Dismiss</button>

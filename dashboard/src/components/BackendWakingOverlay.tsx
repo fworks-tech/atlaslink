@@ -38,7 +38,7 @@ export function BackendWakingOverlay() {
           className="mx-auto h-5 w-5 animate-spin rounded-full border-2 border-line border-t-accent"
           aria-hidden
         />
-        <p className="mt-3 text-sm font-medium text-foreground">Server is starting — please wait</p>
+        <p className="mt-3 text-sm font-medium text-foreground">Server is starting. Hang on.</p>
         <p className="mt-1 text-xs text-muted" role="status" aria-live="polite">
           {subtitle} {attempt > 0 ? `· attempt ${attempt}` : null}
         </p>

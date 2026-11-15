@@ -100,7 +100,7 @@ describe("SessionInspector selectedNode", () => {
     const props = { open: true, onClose: () => {}, session: session(), events: [] as BridgeEvent[] };
     const { rerender } = render(<SessionInspector {...props} selectedNode={node} />);
     // New node selection auto-switches away from overview.
-    expect(screen.getByText("No reasoning yet — mediator has not streamed.")).toBeDefined();
+    expect(screen.getByText("No reasoning yet. The mediator has not streamed anything.")).toBeDefined();
 
     // Manual tab switches survive re-renders with the same node.
     fireEvent.click(screen.getByRole("button", { name: "overview" }));
@@ -111,7 +111,7 @@ describe("SessionInspector selectedNode", () => {
     // Closing (null) resets the latch so reopening re-autos.
     rerender(<SessionInspector {...props} selectedNode={null} />);
     rerender(<SessionInspector {...props} selectedNode={node} />);
-    expect(screen.getByText("No reasoning yet — mediator has not streamed.")).toBeDefined();
+    expect(screen.getByText("No reasoning yet. The mediator has not streamed anything.")).toBeDefined();
   });
 
   it("renders decision payload and auto-switches to decisions", () => {

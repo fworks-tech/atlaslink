@@ -70,7 +70,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     });
   } catch (err) {
     if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
-      return NextResponse.json({ ok: false, error: "Server is starting — please wait" }, { status: 504 });
+      return NextResponse.json({ ok: false, error: "Server is starting. Please wait." }, { status: 504 });
     }
     throw err;
   }
@@ -91,7 +91,7 @@ async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }
     // retrying instead of rendering a dead 404.
     const contentType = upstream.headers.get("content-type") ?? "";
     if (!contentType.includes("application/json")) {
-      return NextResponse.json({ ok: false, error: "Server is starting — please wait" }, { status: 504 });
+      return NextResponse.json({ ok: false, error: "Server is starting. Please wait." }, { status: 504 });
     }
   }
   // upstream.body streams — SSE frames pass through verbatim instead of buffering
