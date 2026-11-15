@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { IconEye, IconGitFork, IconShieldCheck, IconWallet } from "@tabler/icons-react";
 import FadeIn from "@/components/FadeIn";
-import SharedRoomCard from "@/components/SharedRoomCard";
 
 /**
  * Marketing surface for visitors — the app lives at /atlas (spec:
@@ -156,42 +155,6 @@ export default function LandingPage() {
         </section>
       </FadeIn>
 
-      {/* Final CTA — hand the work to a shared room */}
-      <FadeIn>
-        <section>
-          <div className="mx-auto max-w-6xl px-6 pb-24 pt-12 text-center">
-            <h2
-              className="mb-4 text-4xl font-semibold text-foreground sm:text-5xl"
-              style={{ fontFamily: "var(--font-display)" }}
-            >
-              Hand it to the room.
-            </h2>
-            <p className="mx-auto mb-8 max-w-2xl text-lg leading-relaxed text-muted">
-              Hand a PR review to the room. Humans and agents triage and
-              fix it, and every decision waits for your approval.
-            </p>
-            <div className="mb-10 flex flex-wrap items-center justify-center gap-3">
-              <Link
-                href="/login"
-                className="inline-block rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-background transition-opacity hover:opacity-90"
-              >
-                Get Started
-              </Link>
-              {/* TEMP: same as the hero demo CTA — parked until the room matches the video. */}
-              <span
-                aria-disabled="true"
-                title="Back soon. The room is catching up with the video."
-                className="inline-block cursor-not-allowed rounded-lg border border-gold/60 px-6 py-3 text-sm font-medium text-foreground opacity-40"
-              >
-                Request a Demo
-              </span>
-            </div>
-            <div className="text-left">
-              <SharedRoomCard />
-            </div>
-          </div>
-        </section>
-      </FadeIn>
     </main>
   );
 }

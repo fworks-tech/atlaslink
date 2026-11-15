@@ -24,17 +24,12 @@ describe("landing page", () => {
     expect(screen.getByRole("link", { name: "My Atlas · sign in" }).getAttribute("href")).toBe("/login");
   });
 
-  it("renders the room band, evidence band and final CTA — and none of the copied agenthood sections", () => {
+  it("renders the room band and evidence band — and none of the copied agenthood sections", () => {
     render(<LandingPage />);
     expect(screen.getByText(/The room, not the queue/i)).toBeInTheDocument();
     expect(screen.getByText(/Session activity, recorded for review/i)).toBeInTheDocument();
-    expect(screen.getByText(/Hand it to the room/i)).toBeInTheDocument();
-    expect(screen.getByText(/Live Shared Room/i)).toBeInTheDocument();
-    expect(screen.getByText(/Session History/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Get Started" }).getAttribute("href")).toBe("/login");
-    const demo = screen.getByText("Request a Demo");
-    expect(demo.getAttribute("aria-disabled")).toBe("true");
-    expect(screen.queryByRole("link", { name: "Request a Demo" })).toBeNull();
+    expect(screen.queryByText(/Hand it to the room/i)).toBeNull();
+    expect(screen.queryByText(/Live Shared Room/i)).toBeNull();
     expect(screen.queryByText(/specialized members/i)).toBeNull();
     expect(screen.queryByText(/Meet the team/i)).toBeNull();
     expect(screen.queryByText(/How it works/i)).toBeNull();
@@ -68,15 +63,4 @@ describe("hero video", () => {
 });
 
 
-describe("SharedRoomCard", () => {
-  it("storyboards a PR review: agents flank the chat, approval gates the history", async () => {
-    const SharedRoomCard = (await import("@/components/SharedRoomCard")).default;
-    render(<SharedRoomCard />);
-    expect(screen.getByLabelText(/resolving a PR security review/i)).toBeInTheDocument();
-    expect(screen.getByText("Agent: triage")).toBeInTheDocument();
-    expect(screen.getByText("Agent: implementer")).toBeInTheDocument();
-    expect(screen.getByText(/Vulnerability no longer detected/i)).toBeInTheDocument();
-    expect(screen.getByText("approval")).toBeInTheDocument();
-    expect(screen.getByText("Vulnerability resolved")).toBeInTheDocument();
-  });
-});
+
