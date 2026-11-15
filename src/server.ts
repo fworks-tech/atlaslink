@@ -44,6 +44,7 @@ import rateLimit from '@fastify/rate-limit'
 import websocket from '@fastify/websocket'
 import cors from '@fastify/cors'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
+import { getMemberNames } from 'agenthood'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
 import { ASK_HUMAN_MAX_CONTEXT_LENGTH, ASK_HUMAN_MAX_QUESTION_LENGTH } from 'agenthood/dist/tools/human/AskHumanTool.js'
 
@@ -287,6 +288,11 @@ export async function createAppServer(params: {
         const { member, prompt } = request.body as { member: string; prompt: string }
         const { tenantId, error } = resolveTenantIdFromAuth(request.auth?.tenantId, request.headers)
         if (error) return reply.code(400).send({ ok: false, error })
+        // same member gate as session creation: unknown names 400 here, not at runtime
+        if (!getMemberNames().includes(member)) {
+          const agent = await backendForTenant(backend, tenantId).getAgent(member).catch(() => null)
+          if (!agent) return reply.code(400).send({ ok: false, error: `unknown member '${member}'` })
+        }
         const session = registry.create({ member, prompt, tenantId })
         queue.declareSession(session)
         logger.info('session delegated', { sessionId: session.id, correlationId: session.correlationId, member })

@@ -17,7 +17,9 @@ const MAX_FIELD_LENGTH = 200
  * built-in base member. Creation bakes the persona into the session prompt;
  * the run maps the custom name back to its base member, so sessions, costs,
  * and threads keep the custom identity while the agenthood runtime only ever
- * sees canonical members. Deleting an agent never breaks existing sessions.
+ * sees canonical members. Deleting an agent fails its queued sessions loudly
+ * at run start (unknown member); in-flight runs already resolved their base
+ * member and keep working.
  */
 export function registerAgentRoutes(app: FastifyInstance, deps: AgentDeps): void {
   app.get('/agents', async (request, reply) => {
