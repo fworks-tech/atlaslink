@@ -33,23 +33,23 @@
   },
   "dependencies": {
     "@apollo/subgraph": "^2.15.1",
-    "@electric-sql/pglite": "^0.5.14",
-    "@fastify/cors": "^11.4.0",
+    "@electric-sql/pglite": "^0.5.16",
+    "@fastify/cors": "^11.4.3",
     "@fastify/rate-limit": "^11.2.2",
-    "@fastify/websocket": "^11.3.6",
+    "@fastify/websocket": "^11.3.7",
     "agenthood": "^3.75.0",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "^13.1.1",
     "fastify": "^5.12.8",
-    "graphql": "^16.14.2",
+    "graphql": "^17.1.0",
     "pg": "^8.23.1"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
     "@eslint/js": "^10.0.1",
-    "@graphql-codegen/cli": "^7.4.6",
-    "@graphql-codegen/typescript": "^6.1.0",
-    "@graphql-codegen/typescript-resolvers": "^6.1.1",
+    "@graphql-codegen/cli": "^8.0.0",
+    "@graphql-codegen/typescript": "^7.0.1",
+    "@graphql-codegen/typescript-resolvers": "^7.0.1",
     "@semantic-release/changelog": "^7.0.0",
     "@semantic-release/git": "^11.0.1",
     "@types/better-sqlite3": "^9.6.0",
@@ -63,6 +63,6 @@
     "semantic-release": "^25.0.9",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.72.1"
+    "typescript-eslint": "^8.72.2"
   }
 }
