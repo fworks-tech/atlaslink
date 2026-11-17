@@ -184,8 +184,8 @@ test('POST /runs rejects unknown members at submit, accepts custom agents', asyn
     const unknown = await jsonRequest(srv.port, 'POST', '/v1/runs', { member: 'nobody', prompt: 'hi' })
     assert.equal(unknown.status, 400)
     assert.match(JSON.parse(unknown.body).error, /unknown member/)
-    await srv.backend.createAgent({ name: 'reviewer', persona: 'you review', baseMember: 'the-reviewer' })
-    const custom = await jsonRequest(srv.port, 'POST', '/v1/runs', { member: 'reviewer', prompt: 'hi' })
+    await srv.backend.createAgent({ name: 'diff-reviewer', persona: 'you review', baseMember: 'the-reviewer' })
+    const custom = await jsonRequest(srv.port, 'POST', '/v1/runs', { member: 'diff-reviewer', prompt: 'hi' })
     assert.equal(custom.status, 202)
     await srv.close()
   } finally {

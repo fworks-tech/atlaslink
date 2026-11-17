@@ -7,6 +7,7 @@ import type { DaemonConfig } from './config'
 import { validateConfig, MissingApiKeyError } from './daemon/contextFactory'
 import { TaskRegistry, msg } from './tasks/taskRegistry'
 import { log as logger } from './log'
+import { isKnownMember } from './members'
 import { runSession } from './daemon/runTask'
 import { finalizeWorkspace } from './daemon/sessionWrites'
 import { workspaceRootFor } from './workspace'
@@ -44,7 +45,6 @@ import rateLimit from '@fastify/rate-limit'
 import websocket from '@fastify/websocket'
 import cors from '@fastify/cors'
 import type { LLMConfig } from 'agenthood/dist/llm/types.js'
-import { getMemberNames } from 'agenthood'
 import type { RunEvent } from 'agenthood/dist/core/RunEventBus.js'
 import { ASK_HUMAN_MAX_CONTEXT_LENGTH, ASK_HUMAN_MAX_QUESTION_LENGTH } from 'agenthood/dist/tools/human/AskHumanTool.js'
 
@@ -291,7 +291,7 @@ export async function createAppServer(params: {
         // same member gate as session creation: unknown names 400 here, not at runtime.
         // getAgent throws on infra failure (500 via Fastify) and returns null
         // for unknown names (400 below) — never conflate the two.
-        if (!getMemberNames().includes(member)) {
+        if (!isKnownMember(member)) {
           const agent = await backendForTenant(backend, tenantId).getAgent(member)
           if (!agent) return reply.code(400).send({ ok: false, error: `unknown member '${member}'` })
         }

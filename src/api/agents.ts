@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { getMemberNames } from 'agenthood'
+import { isKnownMember } from '../members'
 import type { SessionBackend } from '../session/sessionBackend'
 import { isUniqueViolation } from '../session/db'
 import { tenantBackendForRequest } from './tenant'
@@ -65,10 +66,12 @@ export function registerAgentRoutes(app: FastifyInstance, deps: AgentDeps): void
       if (!NAME_PATTERN.test(name!)) {
         return reply.code(400).send({ ok: false, error: 'name must be lowercase alphanumeric with dashes' })
       }
-      if (!getMemberNames().includes(baseMember!)) {
+      if (!isKnownMember(baseMember!)) {
         return reply.code(400).send({ ok: false, error: `unknown base member '${baseMember}'` })
       }
-      if (getMemberNames().includes(name!)) {
+      // alias names count as shadows: a custom `the-builder` would win over
+      // the runtime's legacy alias resolution for every legacy caller.
+      if (isKnownMember(name!)) {
         return reply.code(409).send({ ok: false, error: `name '${name}' shadows a built-in member` })
       }
       try {
@@ -115,7 +118,7 @@ export function registerAgentRoutes(app: FastifyInstance, deps: AgentDeps): void
       const tenantCtx = tenantBackendForRequest(request, deps.backend)
       if (tenantCtx.error) return reply.code(400).send({ ok: false, error: tenantCtx.error })
       const { baseMember } = request.body
-      if (baseMember !== undefined && !getMemberNames().includes(baseMember)) {
+      if (baseMember !== undefined && !isKnownMember(baseMember)) {
         return reply.code(400).send({ ok: false, error: `unknown base member '${baseMember}'` })
       }
       const agent = await tenantCtx.backend.updateAgent(request.params.name, request.body)

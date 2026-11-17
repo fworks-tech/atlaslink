@@ -42,26 +42,28 @@ to understand the Society's standards before taking any action in a repository.
 
 Load skills from `.agenthood/skills/` to activate specialized agents:
 
-- `the-scribe` — commit messages, PR descriptions, changelogs
-- `the-architect` — spec-driven development, planning, ADRs
-- `the-builder` — coding, implementation, refactoring, test updates, local validation
-- `the-reviewer` — code review, quality gates
-- `the-tester` — TDD, test generation, coverage
-- `the-debugger` — error triage, root cause analysis
-- `the-auditor` — security review, dependency audit
-- `the-herald` — semantic versioning, release notes
-- `the-librarian` — documentation, knowledge management
-- `the-doorman` — validation, health checks, enforcement
-- `the-oracle` — institutional knowledge, member authoring templates, naming guidance
-- `the-envoy` — cross-provider translation, bootstrap generation, convention validation
-- `the-sentinel` — Society document integrity, cross-member contradiction detection, structural drift
-- `the-warden` — code smell detection, complexity enforcement, architectural boundary violations
-- `the-steward` — context economy, member routing, provider cache strategy, session triage
-- `the-operator` — runtime health, deployment, incidents, rollback, monitoring
-- `the-strategist` — goal refinement, requirement discovery, ambiguity resolution
-- `the-mediator` — first-in-line intent router, classify intent → hand off to specialist
-- `the-mailman` — message delivery, content scheduling, notification dispatch, cross-posting
-- `the-inspector` — visual-reasoning benchmarking, pixel-level analysis, multi-panel correspondence
+- `scribe` — commit messages, PR descriptions, changelogs
+- `architect` — spec-driven development, planning, ADRs
+- `builder` — coding, implementation, refactoring, test updates, local validation
+- `reviewer` — code review, quality gates
+- `tester` — TDD, test generation, coverage
+- `debugger` — error triage, root cause analysis
+- `auditor` — security review, dependency audit
+- `herald` — semantic versioning, release notes
+- `librarian` — documentation, knowledge management
+- `doorman` — validation, health checks, enforcement
+- `oracle` — institutional knowledge, member authoring templates, naming guidance
+- `envoy` — cross-provider translation, bootstrap generation, convention validation
+- `sentinel` — Society document integrity, cross-member contradiction detection, structural drift
+- `warden` — code smell detection, complexity enforcement, architectural boundary violations
+- `steward` — context economy, member routing, provider cache strategy, session triage
+- `operator` — runtime health, deployment, incidents, rollback, monitoring
+- `strategist` — goal refinement, requirement discovery, ambiguity resolution
+- `mediator` — first-in-line intent router, classify intent → hand off to specialist
+- `mailman` — message delivery, content scheduling, notification dispatch, cross-posting
+- `inspector` — visual-reasoning benchmarking, pixel-level analysis, multi-panel correspondence
+
+Legacy `the-*` member names still resolve at runtime, but new references use the bare names.
 
 ## Autonomous Runtime (agenthood run)
 
@@ -69,7 +71,7 @@ Members can also be executed as real LLM agents via the TypeScript runtime.
 This is optional and additive — the prompt-driven workflow above continues to work unchanged.
 
 ```bash
-# The runtime ships as the published `agenthood` npm package (^3.75.0) — no
+# The runtime ships as the published `agenthood` npm package (^4.0.0) — no
 # sibling build step. `npm install` also wires .githooks/ and the commit template.
 
 # Set the LLM provider key in your environment (do NOT commit it)
@@ -81,9 +83,9 @@ This is optional and additive — the prompt-driven workflow above continues to 
 npx agenthood list
 
 # Invoke any member against a task
-npx agenthood run the-scribe "write a commit message for the current diff"
-npx agenthood run the-reviewer "review the open PR"
-npx agenthood run the-architect "plan the implementation for issue #42"
+npx agenthood run scribe "write a commit message for the current diff"
+npx agenthood run reviewer "review the open PR"
+npx agenthood run architect "plan the implementation for issue #42"
 ```
 
 The runtime reads `.agenthood/config.json` (written by `npx agenthood init`) and respects
