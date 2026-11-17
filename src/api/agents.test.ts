@@ -38,6 +38,7 @@ test('Phase C: custom agent CRUD with validation', async () => {
     assert.equal((await jsonRequest(srv.port, 'POST', '/v1/agents', { name: 'Bad Name!', persona: 'p', baseMember: 'the-builder' }, auth(alice.token))).status, 400)
     assert.equal((await jsonRequest(srv.port, 'POST', '/v1/agents', { name: 'ghost', persona: 'p', baseMember: 'the-nope' }, auth(alice.token))).status, 400)
     assert.equal((await jsonRequest(srv.port, 'POST', '/v1/agents', { name: 'the-builder', persona: 'p', baseMember: 'the-builder' }, auth(alice.token))).status, 409)
+    assert.equal((await jsonRequest(srv.port, 'POST', '/v1/agents', { name: 'builder', persona: 'p', baseMember: 'builder' }, auth(alice.token))).status, 409)
 
     const created = JSON.parse(
       (await jsonRequest(srv.port, 'POST', '/v1/agents', { name: 'diff-reviewer', persona: 'you review diffs', baseMember: 'the-reviewer', provider: 'groq', model: 'm1' }, auth(alice.token))).body
@@ -56,6 +57,7 @@ test('Phase C: custom agent CRUD with validation', async () => {
     const updated = JSON.parse((await jsonRequest(srv.port, 'PUT', '/v1/agents/diff-reviewer', { persona: 'you review carefully' }, auth(alice.token))).body)
     assert.equal(updated.agent.persona, 'you review carefully')
     assert.equal((await jsonRequest(srv.port, 'PUT', '/v1/agents/diff-reviewer', { baseMember: 'the-nope' }, auth(alice.token))).status, 400)
+    assert.equal((await jsonRequest(srv.port, 'PUT', '/v1/agents/diff-reviewer', { baseMember: 'builder' }, auth(alice.token))).status, 200)
 
     assert.equal((await jsonRequest(srv.port, 'DELETE', '/v1/agents/diff-reviewer', undefined, auth(alice.token))).status, 200)
     assert.equal((await jsonRequest(srv.port, 'DELETE', '/v1/agents/diff-reviewer', undefined, auth(alice.token))).status, 404)
