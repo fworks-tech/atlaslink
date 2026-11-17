@@ -59,6 +59,7 @@ const MEMBER_EVENT_TYPES: ReadonlySet<RunEvent['type']> = new Set([
   'tool.called',
   'tool.result',
   'tool.approval',
+  'tool.denied',
   'decision.recorded',
   'provenance.recorded',
 ])

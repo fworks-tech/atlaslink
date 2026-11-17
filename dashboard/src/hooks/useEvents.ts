@@ -24,6 +24,7 @@ const EVENT_TYPES = [
   "reasoning",
   "tool.called",
   "tool.result",
+  "tool.denied",
   "decision.recorded",
   "provenance.recorded",
   "session.typing",

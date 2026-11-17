@@ -16,6 +16,7 @@ export type RunEventType =
   | "reasoning"
   | "tool.called"
   | "tool.result"
+  | "tool.denied"
   | "decision.recorded"
   | "provenance.recorded"
   | "run.finished"
