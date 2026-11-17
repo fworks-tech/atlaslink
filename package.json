@@ -37,7 +37,7 @@
     "@fastify/cors": "^11.4.0",
     "@fastify/rate-limit": "^11.2.2",
     "@fastify/websocket": "^11.3.6",
-    "agenthood": "^3.75.0",
+    "agenthood": "^4.0.0",
     "better-sqlite3": "^13.0.3",
     "fastify": "^5.12.8",
     "graphql": "^16.14.2",
