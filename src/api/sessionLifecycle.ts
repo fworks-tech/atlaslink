@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { getMemberNames } from 'agenthood'
+import { isKnownMember } from '../members'
 import type { Session as AggregateSession, SessionEvent } from '../session/types'
 import { VersionConflictError } from '../session/types'
 import type { IngressDeps, ActionResult } from './sessionActions'
@@ -62,7 +62,7 @@ export async function createSessionAction(deps: IngressDeps, args: CreateSession
   let prompt = args.prompt
   let provider = args.provider
   let tweaks = args.tweaks
-  if (!getMemberNames().includes(args.member)) {
+  if (!isKnownMember(args.member)) {
     const agent = await deps.backend.getAgent(args.member)
     if (!agent) return { code: 400, error: `unknown member '${args.member}'` }
     prompt = `<agent_persona name="${agent.name}">\n${agent.persona}\n</agent_persona>\n\n${args.prompt}`
