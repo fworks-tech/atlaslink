@@ -40,7 +40,7 @@
     "agenthood": "^4.0.0",
     "better-sqlite3": "^13.2.0",
     "fastify": "^5.12.8",
-    "graphql": "^17.1.0",
+    "graphql": "^16.14.2",
     "pg": "^8.23.1"
   },
   "devDependencies": {
