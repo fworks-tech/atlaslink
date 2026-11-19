@@ -63,6 +63,8 @@
     "semantic-release": "^25.0.9",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.72.2"
+    "typescript-eslint": "^8.72.2",
+    "conventional-commits-filter": "^6.0.1",
+    "conventional-commits-parser": "^7.1.3"
   }
 }
