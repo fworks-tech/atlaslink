@@ -282,4 +282,4 @@ through that facade so the logged shape stays fixed. SSE streams never emit a
 
 See [`docs/spec/m3-task-api.md`](../spec/m3-task-api.md) for the M3 plan,
 [`docs/spec/m5-federation-workspace.md`](../spec/m5-federation-workspace.md) for
-federation + workspace, and [`PROGRESS.md`](../../PROGRESS.md) for shipped state.
+federation + workspace, and the GitHub issue tracker for shipped state.

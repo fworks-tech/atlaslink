@@ -74,7 +74,7 @@ sequenceDiagram
     user->>arch: task: draft ADR-021 (projection contract)
     arch->>tools: read RunEventBus/ProvenanceStore/DecisionLog
     tools-->>arch: BLOCKED (path traversal: sibling repo denied)
-    arch->>tools: read AGENTS.md + PROGRESS.md (fallback)
+    arch->>tools: read AGENTS.md (fallback)
     arch->>tools: WRITE atlaslink/docs/adr/ADR-021.md
     arch-->>user: DONE + caveat: "move target repo needed"
 ```
