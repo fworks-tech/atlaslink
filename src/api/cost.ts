@@ -23,14 +23,12 @@ interface CostRow {
 }
 
 /** One pass over the aggregates; reasoning rows without token fields contribute zero, not NaN. */
-const MEMBER_EVENT_CAP = 300
-
 export function aggregateCost(sessions: AggregateSession[]): { breakdown: CostRow[]; total: { promptTokens: number; completionTokens: number; stepCost: number }; truncated: boolean } {
   const byAgent = new Map<string, CostRow>()
   const total = { promptTokens: 0, completionTokens: 0, stepCost: 0 }
   let truncated = false
   for (const session of sessions) {
-    if ((session.memberEvents?.length ?? 0) >= MEMBER_EVENT_CAP) truncated = true
+    if (session.memberEventsTruncated) truncated = true
     for (const e of session.memberEvents ?? []) {
       if (e.type !== 'reasoning') continue
       const agent = typeof e.member === 'string' && e.member.length > 0 ? e.member : 'unknown'

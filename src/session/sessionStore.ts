@@ -160,7 +160,10 @@ export function rehydrate(events: SessionEvent[]): Session | null {
           memberEvents.push(e.payload)
           // ponytail: 300-event ceiling per session, trim oldest on overflow —
           // raise the cap when full-run replays matter more than memory
-          if (memberEvents.length > 300) memberEvents.splice(0, memberEvents.length - 300)
+          if (memberEvents.length > 300) {
+            memberEvents.splice(0, memberEvents.length - 300)
+            session.memberEventsTruncated = true
+          }
         }
         break
     }
