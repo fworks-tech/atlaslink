@@ -11,6 +11,7 @@ import type {
   UsageGroup,
   MemberUsage,
   ModelUsage,
+  ProviderUsage,
 } from './graphql'
 
 const typeDefs = parse(readFileSync(join(import.meta.dirname, 'schema.graphql'), 'utf8'))
@@ -46,6 +47,7 @@ function mapReport(report: InsightsReport): GraphInsightsReport {
     total: mapGroup(report.total),
     byMember: Object.entries(report.byMember).map(([member, usage]): MemberUsage => ({ member, usage: mapGroup(usage) })),
     byModel: Object.entries(report.byModel).map(([model, usage]): ModelUsage => ({ model, usage: mapGroup(usage) })),
+    byProvider: Object.entries(report.byProvider).map(([provider, usage]): ProviderUsage => ({ provider, usage: mapGroup(usage) })),
     topCost: report.topCost,
     topContext: report.topContext,
     highestOutputRatio: report.highestOutputRatio,

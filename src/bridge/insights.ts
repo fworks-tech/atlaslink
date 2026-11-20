@@ -42,6 +42,7 @@ export interface InsightsReport {
   total: PerGroup
   byMember: Record<string, PerGroup>
   byModel: Record<string, PerGroup>
+  byProvider: Record<string, PerGroup>
   topCost: { member: string; cost: number; token: TokenBuckets }[]
   topContext: { member: string; maxInputTokens: number; avgInputTokens: number }[]
   highestOutputRatio: { member: string; ratio: number }[]
@@ -88,6 +89,7 @@ interface Classified {
   total: PerGroup
   byMember: Record<string, PerGroup>
   byModel: Record<string, PerGroup>
+  byProvider: Record<string, PerGroup>
   inputByMember: Record<string, number[]>
   ratioByMember: Record<string, number[]>
   utilSamples: number[]
@@ -103,6 +105,7 @@ function classify(envelopes: TraceEnvelope[]): Classified {
   const ordered = [...envelopes].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
   const byMember: Record<string, PerGroup> = {}
   const byModel: Record<string, PerGroup> = {}
+  const byProvider: Record<string, PerGroup> = {}
   const inputByMember: Record<string, number[] | undefined> = {}
   const ratioByMember: Record<string, number[] | undefined> = {}
   const utilSamples: number[] = []
@@ -111,10 +114,13 @@ function classify(envelopes: TraceEnvelope[]): Classified {
   for (const e of ordered) {
     const member = e.member || 'unknown'
     const model = e.model || 'unknown'
+    const provider = e.provider || 'unknown'
     byMember[member] ??= emptyGroup()
     addGroup(byMember[member], e)
     byModel[model] ??= emptyGroup()
     addGroup(byModel[model], e)
+    byProvider[provider] ??= emptyGroup()
+    addGroup(byProvider[provider], e)
 
     const input = e.tokenCount?.input ?? 0
     const output = e.tokenCount?.output ?? 0
@@ -138,6 +144,7 @@ function classify(envelopes: TraceEnvelope[]): Classified {
     total: fold(ordered),
     byMember,
     byModel,
+    byProvider,
     inputByMember: inputByMember as Record<string, number[]>,
     ratioByMember: ratioByMember as Record<string, number[]>,
     utilSamples,
@@ -205,6 +212,7 @@ export function buildInsightsReport(envelopes: TraceEnvelope[]): InsightsReport 
     total: classified.total,
     byMember: classified.byMember,
     byModel: classified.byModel,
+    byProvider: classified.byProvider,
     topCost,
     topContext,
     highestOutputRatio,
