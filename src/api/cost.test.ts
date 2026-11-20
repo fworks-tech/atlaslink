@@ -27,6 +27,13 @@ test('aggregateCost is zero-shaped for empty input', () => {
   assert.deepEqual(aggregateCost([session(undefined)]).total, { promptTokens: 0, completionTokens: 0, stepCost: 0 })
 })
 
+test('aggregateCost flags truncated when a session exceeded the event cap', () => {
+  const s = session([{ type: 'reasoning', member: 'a', model: 'm', promptTokens: 1, completionTokens: 1, stepCost: 0.001 }])
+  ;(s as { memberEventsTruncated?: boolean }).memberEventsTruncated = true
+  assert.equal(aggregateCost([s]).truncated, true)
+  assert.equal(aggregateCost([session([{ type: 'reasoning', member: 'a', model: 'm', promptTokens: 1, completionTokens: 1, stepCost: 0.001 }])]).truncated, false)
+})
+
 const row = (extra: Partial<CostUsageRow> = {}): CostUsageRow => ({
   day: '2026-09-10',
   agent: 'the-builder',

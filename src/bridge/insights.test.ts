@@ -37,6 +37,16 @@ test('aggregates totals, errors, and groups by member and model', () => {
   assert.equal(report.byMember['the-scribe'].cost, 0.01)
   assert.equal(report.byModel['deepseek-v4-pro'].runs, 1)
   assert.equal(report.byModel['deepseek-v4-flash'].cost, 0.02)
+  assert.equal(report.byProvider['unknown'].runs, 3)
+})
+
+test('folds traces by provider when present', () => {
+  const report = buildInsightsReport([
+    envelope({ timestamp: '2026-08-22T00:00:00.000Z', provider: 'opencode-go' }),
+    envelope({ timestamp: '2026-08-22T00:00:01.000Z', provider: 'groq' }),
+  ])
+  assert.equal(report.byProvider['opencode-go'].runs, 1)
+  assert.equal(report.byProvider['groq'].runs, 1)
 })
 
 test('errors are counted but still aggregated into cost/tokens', () => {
