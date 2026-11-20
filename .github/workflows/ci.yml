@@ -35,6 +35,12 @@ jobs:
       - name: Skills match the installed agenthood package
         run: node scripts/sync-skills.mjs --check
 
+      - name: Agenthood doctor
+        run: npx agenthood doctor
+
+      - name: Agenthood verify (strict)
+        run: npx agenthood verify --strict
+
       - name: Lint
         run: npm run lint
 
