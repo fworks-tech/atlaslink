@@ -12,6 +12,7 @@ type InsightsReport {
   total: UsageGroup!
   byMember: [MemberUsage!]!
   byModel: [ModelUsage!]!
+  byProvider: [ProviderUsage!]!
   topCost: [CostCenter!]!
   topContext: [ContextPressure!]!
   highestOutputRatio: [OutputRatio!]!
@@ -40,6 +41,11 @@ type MemberUsage {
 
 type ModelUsage {
   model: String!
+  usage: UsageGroup!
+}
+
+type ProviderUsage {
+  provider: String!
   usage: UsageGroup!
 }
 

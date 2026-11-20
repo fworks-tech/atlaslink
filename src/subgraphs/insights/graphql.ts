@@ -43,6 +43,7 @@ export type InsightsReport = {
   __typename?: 'InsightsReport';
   byMember: Array<MemberUsage>;
   byModel: Array<ModelUsage>;
+  byProvider: Array<ProviderUsage>;
   contextUtil?: Maybe<ContextUtil>;
   costTrend?: Maybe<CostTrend>;
   count: Scalars['Int']['output'];
@@ -70,6 +71,12 @@ export type OutputRatio = {
   __typename?: 'OutputRatio';
   member: Scalars['String']['output'];
   ratio: Scalars['Float']['output'];
+};
+
+export type ProviderUsage = {
+  __typename?: 'ProviderUsage';
+  provider: Scalars['String']['output'];
+  usage: UsageGroup;
 };
 
 export type Query = {
@@ -177,6 +184,7 @@ export type ResolversTypes = {
   MemberUsage: ResolverTypeWrapper<MemberUsage>;
   ModelUsage: ResolverTypeWrapper<ModelUsage>;
   OutputRatio: ResolverTypeWrapper<OutputRatio>;
+  ProviderUsage: ResolverTypeWrapper<ProviderUsage>;
   Query: ResolverTypeWrapper<Record<PropertyKey, never>>;
   TokenBuckets: ResolverTypeWrapper<TokenBuckets>;
   UsageGroup: ResolverTypeWrapper<UsageGroup>;
@@ -196,6 +204,7 @@ export type ResolversParentTypes = {
   MemberUsage: MemberUsage;
   ModelUsage: ModelUsage;
   OutputRatio: OutputRatio;
+  ProviderUsage: ProviderUsage;
   Query: Record<PropertyKey, never>;
   TokenBuckets: TokenBuckets;
   UsageGroup: UsageGroup;
@@ -229,6 +238,7 @@ export type CostTrendResolvers<ContextType = InsightsSubgraphDeps, ParentType ex
 export type InsightsReportResolvers<ContextType = InsightsSubgraphDeps, ParentType extends ResolversParentTypes['InsightsReport'] = ResolversParentTypes['InsightsReport']> = {
   byMember?: Resolver<Array<ResolversTypes['MemberUsage']>, ParentType, ContextType>;
   byModel?: Resolver<Array<ResolversTypes['ModelUsage']>, ParentType, ContextType>;
+  byProvider?: Resolver<Array<ResolversTypes['ProviderUsage']>, ParentType, ContextType>;
   contextUtil?: Resolver<Maybe<ResolversTypes['ContextUtil']>, ParentType, ContextType>;
   costTrend?: Resolver<Maybe<ResolversTypes['CostTrend']>, ParentType, ContextType>;
   count?: Resolver<ResolversTypes['Int'], ParentType, ContextType>;
@@ -253,6 +263,11 @@ export type ModelUsageResolvers<ContextType = InsightsSubgraphDeps, ParentType e
 export type OutputRatioResolvers<ContextType = InsightsSubgraphDeps, ParentType extends ResolversParentTypes['OutputRatio'] = ResolversParentTypes['OutputRatio']> = {
   member?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
   ratio?: Resolver<ResolversTypes['Float'], ParentType, ContextType>;
+};
+
+export type ProviderUsageResolvers<ContextType = InsightsSubgraphDeps, ParentType extends ResolversParentTypes['ProviderUsage'] = ResolversParentTypes['ProviderUsage']> = {
+  provider?: Resolver<ResolversTypes['String'], ParentType, ContextType>;
+  usage?: Resolver<ResolversTypes['UsageGroup'], ParentType, ContextType>;
 };
 
 export type QueryResolvers<ContextType = InsightsSubgraphDeps, ParentType extends ResolversParentTypes['Query'] = ResolversParentTypes['Query']> = {
@@ -282,6 +297,7 @@ export type Resolvers<ContextType = InsightsSubgraphDeps> = {
   MemberUsage?: MemberUsageResolvers<ContextType>;
   ModelUsage?: ModelUsageResolvers<ContextType>;
   OutputRatio?: OutputRatioResolvers<ContextType>;
+  ProviderUsage?: ProviderUsageResolvers<ContextType>;
   Query?: QueryResolvers<ContextType>;
   TokenBuckets?: TokenBucketsResolvers<ContextType>;
   UsageGroup?: UsageGroupResolvers<ContextType>;

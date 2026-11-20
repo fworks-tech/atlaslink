@@ -35,6 +35,16 @@ jobs:
       - name: Skills match the installed agenthood package
         run: node scripts/sync-skills.mjs --check
 
+      - name: Agenthood doctor
+        # doctor only checks that provider keys are present; CI never runs agents,
+        # so a placeholder keeps the check meaningful without a real secret.
+        env:
+          OPENCODE_API_KEY: ci-placeholder
+        run: npx agenthood doctor
+
+      - name: Agenthood verify (strict)
+        run: npx agenthood verify --strict
+
       - name: Lint
         run: npm run lint
 

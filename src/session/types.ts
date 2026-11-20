@@ -89,6 +89,8 @@ export interface Session {
   // raw RunEvents mirrored from the run (member.event), kept for the
   // inspector tabs of past/failed sessions the live stream no longer covers
   memberEvents?: Record<string, unknown>[]
+  // true when the store trimmed older memberEvents at the 300-event cap
+  memberEventsTruncated?: boolean
   diagram: { nodes: { id: string; type: string; position: { x: number; y: number } }[]; edges: { id: string; source: string; target: string }[]; mode: string } | null
 }
 

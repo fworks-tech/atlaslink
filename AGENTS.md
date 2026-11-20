@@ -71,7 +71,7 @@ Members can also be executed as real LLM agents via the TypeScript runtime.
 This is optional and additive — the prompt-driven workflow above continues to work unchanged.
 
 ```bash
-# The runtime ships as the published `agenthood` npm package (^4.0.0) — no
+# The runtime ships as the published `agenthood` npm package (^4.4.0) — no
 # sibling build step. `npm install` also wires .githooks/ and the commit template.
 
 # Set the LLM provider key in your environment (do NOT commit it)
