@@ -34,8 +34,9 @@ CMD ["-config", "router.yaml,router.overrides.yaml"]
 FROM base AS runtime
 # git backs the workspace (ADR-012) — the files subgraph shells out to it
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends git wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system atlaslink && useradd --system --gid atlaslink --create-home atlaslink
 ENV ATLASLINK_HOST=0.0.0.0 \
     NODE_ENV=production \
     ATLASLINK_SQLITE_DIR=/app/data/atlaslink.sqlite
@@ -48,6 +49,9 @@ COPY tsconfig.json ./
 COPY .agenthood/config.json ./.agenthood/config.json
 # SQLite persists its database here; the daemon binds /app/data to a volume
 # so sessions survive restarts.
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data && chown -R atlaslink:atlaslink /app/data /app
+USER atlaslink
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/health || exit 1
 EXPOSE 3000
 CMD ["node", "--import", "tsx", "src/server.ts"]
