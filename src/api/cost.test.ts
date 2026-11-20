@@ -23,7 +23,7 @@ test('aggregateCost rolls tokens and cost per agent, sorted by spend', () => {
 })
 
 test('aggregateCost is zero-shaped for empty input', () => {
-  assert.deepEqual(aggregateCost([]), { breakdown: [], total: { promptTokens: 0, completionTokens: 0, stepCost: 0 } })
+  assert.deepEqual(aggregateCost([]), { breakdown: [], total: { promptTokens: 0, completionTokens: 0, stepCost: 0 }, truncated: false })
   assert.deepEqual(aggregateCost([session(undefined)]).total, { promptTokens: 0, completionTokens: 0, stepCost: 0 })
 })
 
