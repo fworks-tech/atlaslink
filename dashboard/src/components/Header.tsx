@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { track } from "@vercel/analytics";
 import { Burger, Drawer, Group, Stack } from "@mantine/core";
 import ThemeToggle from "@/components/ThemeToggle";
 import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/hooks/useAuth";
-import { useCost } from "@/hooks/useCost";
 import { useNotifications } from "@/hooks/useNotifications";
 
 interface NavLink {
@@ -32,18 +31,10 @@ export default function Header() {
     }
   }, []);
 
-  const pathname = usePathname();
   const router = useRouter();
   const { session, signOut } = useAuth();
   // bells poll only when signed in — anonymous visitors get no badge
   const { notifications, unreadCount, markRead } = useNotifications({ poll: session !== null });
-  // the /cost page already polls useCost + useCostHistory — skip a second
-  // interval there so the header never duplicates pollers on that route
-  const { total, error } = useCost({ poll: pathname !== "/cost" });
-  // compact on purpose: the badge keeps 2 decimals while /cost shows 4 —
-  // intentional precision split, the header stays narrow on small screens
-  const hasCost = !error && total.stepCost > 0;
-  const costTotal = total.stepCost > 0 ? `$${total.stepCost.toFixed(2)}` : "—";
 
   return (
     <nav className="border-b border-line">
@@ -81,12 +72,6 @@ export default function Header() {
               className="rounded-lg bg-accent/15 px-3 py-1.5 text-xs font-medium text-accent transition-colors hover:bg-accent/25"
             >
               My Atlas
-            </Link>
-          )}
-          {hasCost && (
-            <Link href="/cost" onClick={() => trackNav("cost")} className="flex items-center gap-1.5 text-sm text-muted">
-              <span>cost</span>
-              <span className="rounded bg-raised px-2 py-0.5 font-medium text-accent">{costTotal}</span>
             </Link>
           )}
           {navLinks.map((link) =>
@@ -156,18 +141,6 @@ export default function Header() {
               className="block rounded-lg bg-accent/15 px-3 py-2 text-center text-sm font-medium text-accent"
             >
               My Atlas
-            </Link>
-          )}
-          {hasCost && (
-            <Link
-              href="/cost"
-              onClick={() => {
-                trackNav("cost");
-                setMenuOpen(false);
-              }}
-              className="block text-sm font-medium text-accent"
-            >
-              {costTotal}
             </Link>
           )}
           {navLinks.map((link) =>
