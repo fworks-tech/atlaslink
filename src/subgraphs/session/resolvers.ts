@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { GraphQLError, parse } from 'graphql'
+import { createRequire } from 'node:module'
 import { buildSubgraphSchema } from '@apollo/subgraph'
+
+const require = createRequire(import.meta.url)
+// Use the CJS graphql instance to match @apollo/subgraph (CJS) and avoid dual-package hazard.
+const { GraphQLError, parse } = require('graphql') as typeof import('graphql')
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { SessionBackend, SessionFilter } from '../../session/sessionBackend'
 import type { Session as AggregateSession } from '../../session/types'
