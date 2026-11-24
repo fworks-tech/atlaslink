@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import type { NodeChange } from "@xyflow/react";
+import { NodeChangeset, type Node, type OnNodesChange } from "@xyflow/react";
 import { render, screen, cleanup, act, waitFor } from "@testing-library/react";
 import { SocietyDiagram } from "./SocietyDiagram";
 
@@ -14,7 +14,7 @@ vi.mock("@/hooks/useEvents", () => ({
   useEvents: () => eventsMock(),
 }));
 
-let capturedOnNodesChange: ((changes: NodeChange[]) => void) | null = null;
+let capturedOnNodesChange: OnNodesChange | null = null;
 
 vi.mock("@xyflow/react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@xyflow/react")>();
@@ -25,7 +25,7 @@ vi.mock("@xyflow/react", async (importOriginal) => {
       onNodesChange,
     }: {
       nodes: Array<{ id: string }>;
-      onNodesChange?: (changes: NodeChange[]) => void;
+      onNodesChange?: OnNodesChange;
     }) => {
       capturedOnNodesChange = onNodesChange ?? null;
       return (
@@ -78,11 +78,11 @@ describe("SocietyDiagram user size preservation", () => {
 
     // Simulate the user selecting, dragging, and resizing the node.
     await act(async () => {
-      capturedOnNodesChange?.([
+      capturedOnNodesChange?.(new NodeChangeset<Node>([
         { type: "select", id: "ses-1", selected: true },
-        { type: "position", id: "ses-1", position: { x: 111, y: 222 } },
+        { type: "position", id: "ses-1", position: { x: 111, y: 222 }, dragging: true },
         { type: "dimensions", id: "ses-1", dimensions: { width: 400, height: 300 } },
-      ]);
+      ]));
     });
     expect(screen.getByTestId("rf-node-ses-1").getAttribute("data-selected")).toBe("true");
     expect(screen.getByTestId("rf-node-ses-1").getAttribute("data-measured")).toContain("400");

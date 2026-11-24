@@ -6,6 +6,7 @@ import {
   Background,
   Controls,
   MiniMap,
+  NodeChangeset,
   ReactFlowProvider,
   useNodesState,
   useEdgesState,
@@ -13,6 +14,7 @@ import {
   type Connection,
   type Edge,
   type Node,
+  type NodeChange,
   type NodeTypes,
   type OnNodesChange,
   type XYPosition,
@@ -130,15 +132,19 @@ export function SocietyDiagram({
   // tracker entirely, so they can't pin themselves into the projection.
   const draggedRef = useRef(new Set<string>());
   const handleNodesChange: OnNodesChange = (changes) => {
-    const draftChanges = changes.filter((c) => "id" in c && isDraftId(c.id));
-    const liveChanges = changes.filter((c) => !("id" in c) || !isDraftId(c.id));
-    if (draftChanges.length > 0) onDraftNodesChange?.(draftChanges);
-    if (liveChanges.length === 0) return;
-    for (const c of liveChanges) {
+    const draft: NodeChange[] = [];
+    const live: NodeChange[] = [];
+    for (const c of changes) {
+      if ("id" in c && isDraftId(c.id)) draft.push(c);
+      else live.push(c);
+    }
+    if (draft.length > 0) onDraftNodesChange?.(new NodeChangeset(draft));
+    if (live.length === 0) return;
+    for (const c of live) {
       if (c.type === "position" && c.dragging && "id" in c) draggedRef.current.add(c.id);
       if (c.type === "remove" && "id" in c) draggedRef.current.delete(c.id);
     }
-    onNodesChange(liveChanges);
+    onNodesChange(new NodeChangeset(live));
   };
 
   const handleConnect = (connection: Connection) => {
@@ -208,7 +214,7 @@ export function SocietyDiagram({
           snapToGrid
           snapGrid={[8, 8]}
           deleteKeyCode={null}
-          colorMode="dark"
+          forceColorMode="dark"
         >
           <Background gap={16} size={1} color="#ffffff14" />
           <Controls />

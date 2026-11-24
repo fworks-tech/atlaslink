@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { applyNodeChanges, type Edge, type Node, type NodeChange, type XYPosition } from "@xyflow/react";
+import { type Edge, type Node, type NodeChangeset, type XYPosition } from "@xyflow/react";
 import { createDraftEdge, createDraftNode, loadDraftFlow, saveDraftFlow } from "@/lib/draftFlow";
 import type { AgentConfig } from "@/lib/config";
 
@@ -28,8 +28,8 @@ export function useDraftFlow(sessionId: string) {
     setState((s) => ({ ...s, edges: [...s.edges, createDraftEdge(source, target)] }));
   }, []);
 
-  const applyDraftChanges = useCallback((changes: NodeChange[]) => {
-    setState((s) => ({ ...s, nodes: applyNodeChanges(changes, s.nodes) }));
+  const applyDraftChanges = useCallback((changes: NodeChangeset<Node>) => {
+    setState((s) => ({ ...s, nodes: changes.applyTo(s.nodes) }));
   }, []);
 
   const updateNodeConfig = useCallback((nodeId: string, config: AgentConfig) => {

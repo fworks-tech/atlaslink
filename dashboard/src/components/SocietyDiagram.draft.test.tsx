@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import type { Connection, Node, NodeChange, XYPosition } from "@xyflow/react";
+import { NodeChangeset, type Connection, type Node, type OnNodesChange, type XYPosition } from "@xyflow/react";
 import { fireEvent, render, screen, cleanup, act, waitFor } from "@testing-library/react";
 import { SocietyDiagram } from "./SocietyDiagram";
 
@@ -14,7 +14,7 @@ vi.mock("@/hooks/useEvents", () => ({
   useEvents: () => eventsMock(),
 }));
 
-let capturedOnNodesChange: ((changes: NodeChange[]) => void) | null = null;
+let capturedOnNodesChange: OnNodesChange | null = null;
 let capturedOnConnect: ((connection: Connection) => void) | null = null;
 
 vi.mock("@xyflow/react", async (importOriginal) => {
@@ -28,7 +28,7 @@ vi.mock("@xyflow/react", async (importOriginal) => {
       onConnect,
     }: {
       nodes: Array<{ id: string }>;
-      onNodesChange?: (changes: NodeChange[]) => void;
+      onNodesChange?: OnNodesChange;
       onConnect?: (connection: Connection) => void;
     }) => {
       capturedOnNodesChange = onNodesChange ?? null;
@@ -131,7 +131,7 @@ describe("SocietyDiagram draft overlay", () => {
     render(<SocietyDiagram selectedSessionId="ses-1" draftNodes={[]} onDraftNodesChange={onDraftNodesChange} />);
     expect(capturedOnNodesChange).not.toBeNull();
     await act(async () => {
-      capturedOnNodesChange?.([{ type: "position", id: "draft-abc", position: { x: 5, y: 5 } }]);
+      capturedOnNodesChange?.(new NodeChangeset<Node>([{ type: "position", id: "draft-abc", position: { x: 5, y: 5 }, dragging: true }]));
     });
     expect(onDraftNodesChange).toHaveBeenCalledTimes(1);
   });
