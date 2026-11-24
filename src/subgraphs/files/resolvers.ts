@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { GraphQLError, parse } from 'graphql'
+import { createRequire } from 'node:module'
 import { buildSubgraphSchema } from '@apollo/subgraph'
+
+const require = createRequire(import.meta.url)
+// Use the CJS graphql instance to match @apollo/subgraph (CJS) and avoid dual-package hazard.
+const { GraphQLError, parse } = require('graphql') as typeof import('graphql')
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { SessionBackend } from '../../session/sessionBackend'
 import { tenantBackendForRequest } from '../../api/tenant'
@@ -59,7 +63,7 @@ function take(ctx: FilesContext): FilesContext {
  * @param err - error thrown by the workspace layer or path resolution
  * @returns a GraphQLError carrying the numeric status code in extensions
  */
-function gitError(err: unknown): GraphQLError {
+function gitError(err: unknown): InstanceType<typeof GraphQLError> {
   const message = err instanceof Error ? err.message : String(err)
   const isInput = /^unsafe |^commit message must not be empty|^sessionId must be a single line/.test(message)
   return new GraphQLError(message, { extensions: { code: isInput ? '400' : '500' } })

@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { parse } from 'graphql'
+import { createRequire } from 'node:module'
 import { buildSubgraphSchema } from '@apollo/subgraph'
+
+const require = createRequire(import.meta.url)
+// Use the CJS graphql instance to match @apollo/subgraph (CJS) and avoid dual-package hazard.
+const { parse } = require('graphql') as typeof import('graphql')
 import type { FastifyInstance } from 'fastify'
 import { buildInsightsReport, readTraceEnvelopes, type InsightsReport, type PerGroup } from '../../bridge/insights'
 import { registerSubgraph } from '../executor'

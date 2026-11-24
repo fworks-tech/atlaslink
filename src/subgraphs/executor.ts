@@ -1,5 +1,10 @@
-import { graphql, type GraphQLSchema } from 'graphql'
+import { createRequire } from 'node:module'
+import type { GraphQLSchema } from 'graphql'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
+
+const require = createRequire(import.meta.url)
+// Use the CJS graphql instance to match schemas built by @apollo/subgraph (CJS).
+const { graphql } = require('graphql') as typeof import('graphql')
 
 interface SubgraphBody {
   query?: unknown
